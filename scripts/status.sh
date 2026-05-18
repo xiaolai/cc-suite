@@ -58,7 +58,7 @@ if [ -L .agents/skills ]; then
   _target="$(readlink .agents/skills)"
   if [ "$_target" = "../.claude/skills" ]; then
     if [ -d .agents/skills ]; then
-      _count="$(find .agents/skills/ -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+      _count="$(find -L .agents/skills/ -maxdepth 2 -mindepth 2 -type d 2>/dev/null | wc -l | tr -d ' ')"
       mark ".agents/skills" ok "→ ../.claude/skills (${_count} skills)"
     else
       mark ".agents/skills" warn "→ ../.claude/skills (TARGET MISSING — broken symlink)"
