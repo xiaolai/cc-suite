@@ -47,8 +47,11 @@ def _extract_commands(handlers: list) -> list[str]:
 
 
 def _validate_settings(claude: object, src: Path) -> tuple[dict | None, str | None]:
-    """Validate .claude/settings.json shape enough that the rest of the script
-    can rely on dict-shaped access."""
+    """Validate .claude/settings.json shape down to individual hook entries.
+
+    We refuse to mirror a malformed file rather than propagating garbage into
+    .codex/hooks.json where Codex would then reject it at runtime.
+    """
     if not isinstance(claude, dict):
         return None, f"{src}: top-level JSON must be an object, got {type(claude).__name__}"
     hooks = claude.get("hooks")
@@ -62,14 +65,36 @@ def _validate_settings(claude: object, src: Path) -> tuple[dict | None, str | No
         for i, group in enumerate(handlers):
             if not isinstance(group, dict):
                 return None, f"{src}: hooks['{event}'][{i}] must be an object"
+            # matcher, when present, must be a string (it gets pattern-matched at runtime).
+            if "matcher" in group and not isinstance(group["matcher"], str):
+                return None, f"{src}: hooks['{event}'][{i}].matcher must be a string"
             inner = group.get("hooks", [])
             if not isinstance(inner, list):
                 return None, f"{src}: hooks['{event}'][{i}].hooks must be a list"
+            for j, hook in enumerate(inner):
+                where = f"{src}: hooks['{event}'][{i}].hooks[{j}]"
+                if not isinstance(hook, dict):
+                    return None, f"{where} must be an object"
+                htype = hook.get("type")
+                if htype is None:
+                    return None, f"{where}.type is required"
+                if not isinstance(htype, str):
+                    return None, f"{where}.type must be a string, got {type(htype).__name__}"
+                if htype == "command":
+                    cmd = hook.get("command")
+                    if not isinstance(cmd, str) or not cmd:
+                        return None, f"{where}.command must be a non-empty string"
+                # Other types (prompt/agent) are parsed-but-skipped by Codex per its
+                # current spec; we propagate them as-is but require them to be objects.
     return hooks, None
 
 
 def _atomic_write(target: Path, content: str) -> None:
-    """Write `content` to `target` atomically (same-dir tempfile + os.replace)."""
+    """Write `content` to `target` atomically (same-dir tempfile + os.replace).
+
+    Used when we have decided that overwriting target is intentional (e.g.,
+    refreshing a bridge-owned file we previously created).
+    """
     target.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=".tmp-", dir=str(target.parent))
     try:
@@ -82,6 +107,24 @@ def _atomic_write(target: Path, content: str) -> None:
         except FileNotFoundError:
             pass
         raise
+
+
+def _exclusive_create(target: Path, content: str) -> bool:
+    """Create `target` only if it does not already exist (race-free).
+
+    Returns True on success, False if the file already exists (another writer
+    won the race or the user manually created the file between our check and
+    this call). The caller can then re-evaluate the target.
+    """
+    target.parent.mkdir(parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    try:
+        fd = os.open(str(target), flags, 0o644)
+    except FileExistsError:
+        return False
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(content)
+    return True
 
 
 def main() -> int:
@@ -132,18 +175,42 @@ def main() -> int:
     # side file for the user to review and merge.
     Path(".codex").mkdir(exist_ok=True)
     primary = Path(".codex/hooks.json")
-    target = primary
+    output_json = json.dumps({MARKER_KEY: MARKER_VALUE, "hooks": mirrored}, indent=2) + "\n"
+    fallback = Path(".codex/hooks.cc-bridge.json")
+
     if primary.exists():
+        # Existing file: re-read, decide based on marker.
         try:
             existing = json.loads(primary.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             existing = None
-        if not isinstance(existing, dict) or existing.get(MARKER_KEY) != MARKER_VALUE:
-            target = Path(".codex/hooks.cc-bridge.json")
+        if isinstance(existing, dict) and existing.get(MARKER_KEY) == MARKER_VALUE:
+            target = primary
+            _atomic_write(target, output_json)
+        else:
+            target = fallback
             print(f"! .codex/hooks.json is user-owned (no cc-bridge marker) — wrote to {target} for review/merge")
-
-    output = {MARKER_KEY: MARKER_VALUE, "hooks": mirrored}
-    _atomic_write(target, json.dumps(output, indent=2) + "\n")
+            _atomic_write(target, output_json)
+    else:
+        # No existing primary: use O_EXCL create to win-or-lose atomically.
+        # This closes the TOCTOU window where another process or the user
+        # could create primary between our check and our write.
+        if _exclusive_create(primary, output_json):
+            target = primary
+        else:
+            # Lost the race — re-evaluate whether the newcomer is bridge-owned.
+            try:
+                newcomer = json.loads(primary.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                newcomer = None
+            if isinstance(newcomer, dict) and newcomer.get(MARKER_KEY) == MARKER_VALUE:
+                # Concurrent bridge run wrote the same shape — accept and refresh.
+                target = primary
+                _atomic_write(target, output_json)
+            else:
+                target = fallback
+                print(f"! .codex/hooks.json appeared during write (now user-owned) — wrote to {target}")
+                _atomic_write(target, output_json)
     print(f"✓ {target}: mirrored events {sorted(mirrored)}")
     if skipped:
         print(f"· skipped Claude-only events: {sorted(skipped)}")
