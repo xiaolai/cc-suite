@@ -69,11 +69,21 @@ if [ -L .agents/skills ]; then
 elif [ -d .agents/skills ]; then
   mark ".agents/skills" warn "real directory (not symlink)"
 else
-  if [ -d .claude/skills ]; then
-    mark ".agents/skills" miss "→ run /cc-suite:bridge-skills"
+  mark ".agents/skills" miss "→ run /cc-suite:bridge-skills"
+fi
+
+# .claude/skills/cc-suite symlink (plugin skills exposed to Codex)
+if [ -L .claude/skills/cc-suite ]; then
+  if [ -d .claude/skills/cc-suite ]; then
+    _skill_count="$(find .claude/skills/cc-suite/ -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+    mark ".claude/skills/cc-suite" ok "→ plugin skills (${_skill_count} skills visible to Codex)"
   else
-    mark ".agents/skills" miss "(no .claude/skills/ to bridge)"
+    mark ".claude/skills/cc-suite" warn "symlink broken — run /cc-suite:bridge-skills"
   fi
+elif [ -d .claude/skills/cc-suite ]; then
+  mark ".claude/skills/cc-suite" warn "real directory (not symlink) — Codex may see stale skills"
+else
+  mark ".claude/skills/cc-suite" miss "plugin skills not exposed — run /cc-suite:bridge-skills"
 fi
 
 # .codex
