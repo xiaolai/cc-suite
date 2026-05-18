@@ -1,0 +1,828 @@
+#!/usr/bin/env bash
+# tests/integration.sh — integration tests for cc-bridge scripts.
+# Run from any directory: bash tests/integration.sh
+# Or from repo root:     bash tests/integration.sh
+
+set -euo pipefail
+
+SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")/../scripts" && pwd)"
+PASS=0
+FAIL=0
+declare -a ERRORS=()
+
+# ── colours ──────────────────────────────────────────────────────────────────
+if [ -t 1 ]; then
+  G='\033[0;32m'; R='\033[0;31m'; B='\033[1;34m'; N='\033[0m'
+else
+  G=''; R=''; B=''; N=''
+fi
+
+# ── assert helpers ───────────────────────────────────────────────────────────
+ok_msg()   { ((PASS++));   printf "${G}  ✓${N} %s\n" "$*"; }
+fail_msg() { ((FAIL++));   ERRORS+=("$*"); printf "${R}  ✗${N} %s\n" "$*"; }
+section()  { printf "\n${B}%s${N}\n" "$*"; }
+
+assert_file() {
+  if [ -f "$1" ]; then ok_msg "file exists: $1"
+  else                  fail_msg "MISSING file: $1"; fi
+}
+assert_no_file() {
+  if [ ! -f "$1" ]; then ok_msg "file absent: $1"
+  else                   fail_msg "UNEXPECTED file: $1"; fi
+}
+assert_dir() {
+  if [ -d "$1" ]; then ok_msg "dir exists: $1"
+  else                 fail_msg "MISSING dir: $1"; fi
+}
+assert_symlink() {
+  if [ -L "$1" ]; then ok_msg "symlink exists: $1"
+  else                 fail_msg "NOT a symlink: $1"; fi
+}
+assert_no_symlink() {
+  if [ ! -L "$1" ]; then ok_msg "no symlink at: $1"
+  else                   fail_msg "UNEXPECTED symlink: $1"; fi
+}
+assert_contains() {
+  if grep -qF "$2" "$1" 2>/dev/null; then ok_msg "contains '$2': $1"
+  else                                    fail_msg "MISSING '$2' in $1"; fi
+}
+assert_not_contains() {
+  if ! grep -qF "$2" "$1" 2>/dev/null; then ok_msg "absent '$2': $1"
+  else                                      fail_msg "UNEXPECTED '$2' in $1"; fi
+}
+assert_symlink_target() {
+  local link="$1" want="$2"
+  local got
+  got="$(readlink "$link" 2>/dev/null || true)"
+  if [ "$got" = "$want" ]; then ok_msg "symlink target: $link → $want"
+  else                          fail_msg "WRONG target: $link → '$got' (want '$want')"; fi
+}
+assert_file_content() {
+  # Compares trimmed content (command substitution strips trailing newlines).
+  local file="$1" want="$2"
+  local got
+  got="$(cat "$1" 2>/dev/null || true)"
+  if [ "$got" = "$want" ]; then ok_msg "content ok: $file"
+  else fail_msg "WRONG content in $file — want '$(printf '%s' "$want" | head -1)' got '$(printf '%s' "$got" | head -1)'"; fi
+}
+assert_exit0() {
+  # Run command, assert it exits 0.
+  if "$@" >/dev/null 2>&1; then ok_msg "exit 0: $*"
+  else                          fail_msg "NONZERO exit: $*"; fi
+}
+assert_exit_nonzero() {
+  # Run command, assert it exits non-0.
+  if ! "$@" >/dev/null 2>&1; then ok_msg "exit nonzero (expected): $*"
+  else                            fail_msg "EXPECTED FAILURE but got exit 0: $*"; fi
+}
+assert_count() {
+  # assert_count pattern file N  — grep -c pattern file == N
+  local pat="$1" file="$2" want="$3"
+  local got
+  got="$(grep -cF "$pat" "$file" 2>/dev/null || true)"
+  if [ "$got" = "$want" ]; then ok_msg "count($pat in $file) = $want"
+  else                          fail_msg "count($pat in $file) = $got (want $want)"; fi
+}
+
+# ── temp dir management ───────────────────────────────────────────────────────
+TMP=""
+make_tmp() { TMP="$(mktemp -d)"; cd "$TMP"; }
+cleanup()   { cd /; rm -rf "${TMP:-}"; TMP=""; }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T01  init.sh — fresh project (no CLAUDE.md, no AGENTS.md)
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T01: init.sh — fresh project"
+make_tmp
+
+bash "$SCRIPTS/init.sh" --description "Test Project" >/dev/null 2>&1
+
+assert_file "AGENTS.md"
+assert_contains "AGENTS.md" "Test Project"
+assert_file_content "CLAUDE.md" "@AGENTS.md"
+assert_file_content "GEMINI.md" "@AGENTS.md"
+assert_dir  ".codex/prompts"
+assert_file ".codex/prompts/.gitkeep"
+assert_file ".codex/config.toml"
+assert_dir  ".gemini/skills"
+assert_dir  ".gemini/commands"
+assert_file ".gitignore"
+assert_contains ".gitignore" "# >>> cc-bridge >>>"
+assert_contains ".gitignore" "# <<< cc-bridge <<<"
+assert_file ".codex/.cc-bridge.provenance"
+assert_contains ".codex/.cc-bridge.provenance" "CC_BRIDGE_CREATED_CLAUDE=1"
+assert_contains ".codex/.cc-bridge.provenance" "CC_BRIDGE_CREATED_GEMINI=1"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T02  init.sh — migrate existing CLAUDE.md
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T02: init.sh — migrate existing CLAUDE.md"
+make_tmp
+
+printf "# My Project\n\nHello world.\n" > CLAUDE.md
+assert_exit0 bash "$SCRIPTS/init.sh"
+
+assert_file "AGENTS.md"
+assert_contains "AGENTS.md" "# My Project"
+assert_contains "AGENTS.md" "Hello world."
+assert_file_content "CLAUDE.md" "@AGENTS.md"
+# Original saved verbatim for perfect restore
+assert_file ".codex/.cc-bridge-original-claude.md"
+assert_contains ".codex/.cc-bridge-original-claude.md" "# My Project"
+assert_contains ".codex/.cc-bridge.provenance" "CLAUDE_MIGRATED=1"
+# CLAUDE_MIGRATED migration means CC_BRIDGE_CREATED_CLAUDE should NOT be set
+assert_not_contains ".codex/.cc-bridge.provenance" "CC_BRIDGE_CREATED_CLAUDE=1"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T03  init.sh — skip pure @AGENTS.md CLAUDE.md (already bridged)
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T03: init.sh — skip pure @AGENTS.md CLAUDE.md"
+make_tmp
+
+printf "@AGENTS.md\n" > CLAUDE.md
+assert_exit0 bash "$SCRIPTS/init.sh"
+
+# Fresh AGENTS.md should be created (no migration)
+assert_file "AGENTS.md"
+assert_not_contains "AGENTS.md" "Hello"   # no CLAUDE.md body leaked in
+# CLAUDE.md untouched
+assert_file_content "CLAUDE.md" "@AGENTS.md"
+# No migration flag
+assert_not_contains ".codex/.cc-bridge.provenance" "CLAUDE_MIGRATED=1"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T04  init.sh — skip hybrid CLAUDE.md (@AGENTS.md + other content)
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T04: init.sh — skip hybrid CLAUDE.md"
+make_tmp
+
+printf "@AGENTS.md\n\n# Extra content that must survive\n" > CLAUDE.md
+assert_exit0 bash "$SCRIPTS/init.sh"
+
+# Hybrid should be left alone (not overwritten with @AGENTS.md)
+assert_contains "CLAUDE.md" "# Extra content that must survive"
+assert_contains "CLAUDE.md" "@AGENTS.md"
+# No migration
+assert_not_contains ".codex/.cc-bridge.provenance" "CLAUDE_MIGRATED=1"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T05  init.sh — idempotent re-run
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T05: init.sh — idempotent re-run"
+make_tmp
+
+assert_exit0 bash "$SCRIPTS/init.sh"
+hash1="$(md5 -q AGENTS.md 2>/dev/null || md5sum AGENTS.md | awk '{print $1}')"
+
+assert_exit0 bash "$SCRIPTS/init.sh"
+hash2="$(md5 -q AGENTS.md 2>/dev/null || md5sum AGENTS.md | awk '{print $1}')"
+
+if [ "$hash1" = "$hash2" ]; then ok_msg "AGENTS.md unchanged on re-run"
+else                              fail_msg "AGENTS.md changed on re-run"; fi
+
+assert_count "# >>> cc-bridge >>>" ".gitignore" 1
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T06  init.sh — --private mode sets gitignore block
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T06: init.sh — --private mode"
+make_tmp
+
+bash "$SCRIPTS/init.sh" --private >/dev/null 2>&1
+
+assert_contains ".gitignore" "cc-bridge: PRIVATE mode"
+assert_contains ".gitignore" "AGENTS.md"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T07  init.sh — --private mode change replaces sentinel block cleanly
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T07: init.sh — switching --private mode replaces block"
+make_tmp
+
+assert_exit0 bash "$SCRIPTS/init.sh"           # public mode
+assert_not_contains ".gitignore" "cc-bridge: PRIVATE mode"
+
+bash "$SCRIPTS/init.sh" --private >/dev/null 2>&1 # switch to private
+assert_contains ".gitignore" "cc-bridge: PRIVATE mode"
+assert_count "# >>> cc-bridge >>>" ".gitignore" 1  # no duplicate blocks
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T08  bridge_skills.sh — creates .agents/skills → .claude/skills symlink
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T08: bridge_skills.sh — creates symlink"
+make_tmp
+
+mkdir -p .claude/skills/my-skill
+echo "# My Skill" > .claude/skills/my-skill/SKILL.md
+
+assert_exit0 bash "$SCRIPTS/bridge_skills.sh"
+
+assert_symlink       ".agents/skills"
+assert_symlink_target ".agents/skills" "../.claude/skills"
+assert_file          ".agents/skills/my-skill/SKILL.md"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T09  bridge_skills.sh — idempotent re-run
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T09: bridge_skills.sh — idempotent"
+make_tmp
+
+mkdir -p .claude/skills
+assert_exit0 bash "$SCRIPTS/bridge_skills.sh"
+assert_exit0 bash "$SCRIPTS/bridge_skills.sh"
+assert_symlink ".agents/skills"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T10  bridge_skills.sh — refuses to replace a real directory
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T10: bridge_skills.sh — refuses to overwrite real .agents/skills/"
+make_tmp
+
+mkdir -p .agents/skills .claude/skills
+assert_exit_nonzero bash "$SCRIPTS/bridge_skills.sh"
+assert_no_symlink ".agents/skills"   # still a real dir, not converted to symlink
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T11  bridge_hooks.py — mirrors shared events, skips Claude-only events
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T11: bridge_hooks.py — mirrors SessionStart, skips Notification"
+make_tmp
+mkdir -p .claude
+
+cat > .claude/settings.json <<'JSON'
+{
+  "hooks": {
+    "SessionStart":    [{"hooks": [{"type": "command", "command": "echo start"}]}],
+    "UserPromptSubmit":[{"hooks": [{"type": "command", "command": "echo prompt"}]}],
+    "PreToolUse":      [{"hooks": [{"type": "command", "command": "echo pre"}]}],
+    "Notification":    [{"hooks": [{"type": "command", "command": "echo notify"}]}],
+    "SessionEnd":      [{"hooks": [{"type": "command", "command": "echo end"}]}]
+  }
+}
+JSON
+
+assert_exit0 python3 "$SCRIPTS/bridge_hooks.py"
+
+assert_file ".codex/hooks.json"
+assert_contains     ".codex/hooks.json" '"_cc_bridge_version"'
+assert_contains     ".codex/hooks.json" '"SessionStart"'
+assert_contains     ".codex/hooks.json" '"UserPromptSubmit"'
+assert_contains     ".codex/hooks.json" '"PreToolUse"'
+assert_not_contains ".codex/hooks.json" '"Notification"'
+assert_not_contains ".codex/hooks.json" '"SessionEnd"'
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T12  bridge_hooks.py — existing hooks.json → writes .cc-bridge.json instead
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T12: bridge_hooks.py — doesn't overwrite existing hooks.json"
+make_tmp
+mkdir -p .claude .codex
+
+echo '{"user_hooks": true}' > .codex/hooks.json
+
+cat > .claude/settings.json <<'JSON'
+{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "echo hi"}]}]}}
+JSON
+
+assert_exit0 python3 "$SCRIPTS/bridge_hooks.py"
+
+assert_file    ".codex/hooks.cc-bridge.json"
+assert_file_content ".codex/hooks.json" '{"user_hooks": true}'  # original unchanged
+assert_contains ".codex/hooks.cc-bridge.json" '"SessionStart"'
+assert_contains ".codex/hooks.cc-bridge.json" '"_cc_bridge_version"'
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T13  bridge_mcp.sh — mirrors servers, skips codex-cli
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T13: bridge_mcp.sh — mirrors servers, skips codex-cli"
+make_tmp
+mkdir -p .codex
+echo "# existing config" > .codex/config.toml
+
+cat > .mcp.json <<'JSON'
+{
+  "mcpServers": {
+    "codex-cli":  {"type": "stdio", "command": "npx", "args": ["-y", "codex-mcp-server"]},
+    "my-server":  {"type": "stdio", "command": "npx", "args": ["-y", "my-pkg"]},
+    "sse-server": {"type": "sse",   "url": "https://example.com/sse"}
+  }
+}
+JSON
+
+assert_exit0 bash "$SCRIPTS/bridge_mcp.sh"
+
+assert_contains     ".codex/config.toml" "[mcp_servers.my-server]"
+assert_contains     ".codex/config.toml" "command = \"npx\""
+assert_contains     ".codex/config.toml" "[mcp_servers.sse-server]"
+assert_contains     ".codex/config.toml" "url = \"https://example.com/sse\""
+assert_not_contains ".codex/config.toml" "[mcp_servers.codex-cli]"
+assert_contains     ".codex/config.toml" "# >>> cc-bridge-mcp >>>"
+assert_contains     ".codex/config.toml" "# <<< cc-bridge-mcp <<<"
+# Original config preserved outside the sentinel block
+assert_contains     ".codex/config.toml" "# existing config"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T14  bridge_mcp.sh — TOML-quotes server names with special characters
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T14: bridge_mcp.sh — TOML-quotes names with dots/spaces"
+make_tmp
+mkdir -p .codex
+echo "# empty" > .codex/config.toml
+
+cat > .mcp.json <<'JSON'
+{
+  "mcpServers": {
+    "my.server":    {"type": "stdio", "command": "cmd1"},
+    "plain-server": {"type": "stdio", "command": "cmd2"}
+  }
+}
+JSON
+
+assert_exit0 bash "$SCRIPTS/bridge_mcp.sh"
+
+assert_contains     ".codex/config.toml" '[mcp_servers."my.server"]'
+assert_contains     ".codex/config.toml" '[mcp_servers.plain-server]'
+assert_not_contains ".codex/config.toml" '[mcp_servers.my.server]'  # unquoted would be invalid
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T15  bridge_mcp.sh — env vars replaced with TOML comments (no secret leak)
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T15: bridge_mcp.sh — env secrets not written to config.toml"
+make_tmp
+mkdir -p .codex
+echo "# empty" > .codex/config.toml
+
+cat > .mcp.json <<'JSON'
+{
+  "mcpServers": {
+    "secret-srv": {
+      "type": "stdio",
+      "command": "cmd",
+      "env": {"MY_API_KEY": "super-secret", "ANOTHER_VAR": "also-secret"}
+    }
+  }
+}
+JSON
+
+assert_exit0 bash "$SCRIPTS/bridge_mcp.sh"
+
+assert_contains     ".codex/config.toml" "[mcp_servers.secret-srv]"
+assert_not_contains ".codex/config.toml" "super-secret"     # literal value must not appear
+assert_not_contains ".codex/config.toml" "also-secret"
+assert_contains     ".codex/config.toml" "MY_API_KEY"       # name appears in comment
+assert_contains     ".codex/config.toml" "ANOTHER_VAR"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T16  bridge_mcp.sh — idempotent re-run (no duplication)
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T16: bridge_mcp.sh — idempotent re-run"
+make_tmp
+mkdir -p .codex
+echo "# base config" > .codex/config.toml
+
+cat > .mcp.json <<'JSON'
+{"mcpServers": {"srv": {"type": "stdio", "command": "cmd"}}}
+JSON
+
+assert_exit0 bash "$SCRIPTS/bridge_mcp.sh"
+assert_exit0 bash "$SCRIPTS/bridge_mcp.sh"
+
+assert_count "[mcp_servers.srv]" ".codex/config.toml" 1
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T17  bridge_mcp.sh — half-sentinel guard (one marker present, one missing)
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T17: bridge_mcp.sh — refuses to run when only one sentinel marker present"
+make_tmp
+mkdir -p .codex
+
+# Simulate a botched previous run that left only the start marker
+cat > .codex/config.toml <<'TOML'
+# >>> cc-bridge-mcp >>>
+[mcp_servers.orphan]
+command = "cmd"
+TOML
+
+cat > .mcp.json <<'JSON'
+{"mcpServers": {"new-server": {"type": "stdio", "command": "cmd2"}}}
+JSON
+
+assert_exit_nonzero bash "$SCRIPTS/bridge_mcp.sh"
+# The broken config should not have been modified
+assert_not_contains ".codex/config.toml" "[mcp_servers.new-server]"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T18  bridge_commands.sh — converts .claude/commands/ to Claude skills
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T18: bridge_commands.sh — converts commands to skills"
+make_tmp
+mkdir -p .claude/commands
+
+cat > .claude/commands/review.md <<'MD'
+---
+description: Run a code review on the changed files.
+---
+
+# Review
+
+Do a thorough code review.
+MD
+
+assert_exit0 bash "$SCRIPTS/bridge_commands.sh"
+
+assert_file ".claude/skills/cmd-review/SKILL.md"
+assert_file ".claude/skills/cmd-review/agents/openai.yaml"
+assert_contains ".claude/skills/cmd-review/SKILL.md" "cmd-review"
+assert_contains ".claude/skills/cmd-review/SKILL.md" "Do a thorough code review."
+assert_contains ".claude/skills/cmd-review/agents/openai.yaml" "allow_implicit_invocation: false"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T19  bridge_commands.sh — YAML-escapes description with special chars
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T19: bridge_commands.sh — safely quotes special chars in description"
+make_tmp
+mkdir -p .claude/commands
+
+cat > .claude/commands/tricky.md <<'MD'
+---
+description: Handle "quoted" values & special: chars.
+---
+Body.
+MD
+
+assert_exit0 bash "$SCRIPTS/bridge_commands.sh"
+
+assert_file ".claude/skills/cmd-tricky/SKILL.md"
+# Description line must be quoted YAML (starts with double-quote)
+if grep -qE '^description: "' ".claude/skills/cmd-tricky/SKILL.md"; then
+  ok_msg "description is quoted YAML scalar"
+else
+  fail_msg "description with special chars should be quoted in YAML"
+fi
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T20  bridge_commands.sh — idempotent
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T20: bridge_commands.sh — idempotent re-run"
+make_tmp
+mkdir -p .claude/commands
+cat > .claude/commands/foo.md <<'MD'
+---
+description: Foo.
+---
+Body.
+MD
+
+assert_exit0 bash "$SCRIPTS/bridge_commands.sh"
+hash1="$(md5 -q .claude/skills/cmd-foo/SKILL.md 2>/dev/null || md5sum .claude/skills/cmd-foo/SKILL.md | awk '{print $1}')"
+
+assert_exit0 bash "$SCRIPTS/bridge_commands.sh"
+hash2="$(md5 -q .claude/skills/cmd-foo/SKILL.md 2>/dev/null || md5sum .claude/skills/cmd-foo/SKILL.md | awk '{print $1}')"
+
+if [ "$hash1" = "$hash2" ]; then ok_msg "SKILL.md unchanged on re-run"
+else                              fail_msg "SKILL.md changed on re-run"; fi
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T21  mcp_codex.sh — adds codex-cli to .mcp.json
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T21: mcp_codex.sh — adds codex-cli server"
+make_tmp
+
+cat > .mcp.json <<'JSON'
+{"mcpServers": {"other": {"type": "stdio", "command": "cmd"}}}
+JSON
+
+assert_exit0 bash "$SCRIPTS/mcp_codex.sh"
+
+assert_contains ".mcp.json" '"codex-cli"'
+assert_contains ".mcp.json" '"other"'    # original preserved
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T22  mcp_codex.sh — idempotent when codex-cli already registered
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T22: mcp_codex.sh — idempotent"
+make_tmp
+
+cat > .mcp.json <<'JSON'
+{"mcpServers": {"codex-cli": {"type": "stdio", "command": "npx", "args": ["-y", "codex-mcp-server"]}}}
+JSON
+hash1="$(md5 -q .mcp.json 2>/dev/null || md5sum .mcp.json | awk '{print $1}')"
+
+assert_exit0 bash "$SCRIPTS/mcp_codex.sh"
+hash2="$(md5 -q .mcp.json 2>/dev/null || md5sum .mcp.json | awk '{print $1}')"
+
+if [ "$hash1" = "$hash2" ]; then ok_msg ".mcp.json unchanged on re-run"
+else                              fail_msg ".mcp.json changed on re-run"; fi
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T23  unbridge.sh — CC_BRIDGE_CREATED_CLAUDE: removes cc-bridge-created CLAUDE.md
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T23: unbridge.sh — removes cc-bridge-created CLAUDE.md"
+make_tmp
+mkdir -p .codex
+
+echo "# AGENTS content" > AGENTS.md
+printf "@AGENTS.md\n" > CLAUDE.md
+printf "CC_BRIDGE_CREATED_CLAUDE=1\n" > .codex/.cc-bridge.provenance
+
+assert_exit0 bash "$SCRIPTS/unbridge.sh"
+
+assert_no_file "AGENTS.md"
+assert_no_file "CLAUDE.md"    # cc-bridge created it — remove on unbridge
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T24  unbridge.sh — CLAUDE_MIGRATED: restores original CLAUDE.md verbatim
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T24: unbridge.sh — restores original CLAUDE.md via provenance backup"
+make_tmp
+mkdir -p .codex
+
+printf "# My Original Project\n\nWith real content.\n" > .codex/.cc-bridge-original-claude.md
+echo "# AGENTS.md content + cc-bridge scaffolding" > AGENTS.md
+printf "@AGENTS.md\n" > CLAUDE.md
+printf "CLAUDE_MIGRATED=1\n" > .codex/.cc-bridge.provenance
+
+assert_exit0 bash "$SCRIPTS/unbridge.sh"
+
+assert_no_file  "AGENTS.md"
+assert_file     "CLAUDE.md"
+assert_contains "CLAUDE.md" "# My Original Project"
+assert_contains "CLAUDE.md" "With real content."
+# Provenance backup removed after consumption
+assert_no_file ".codex/.cc-bridge-original-claude.md"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T25  unbridge.sh — no provenance, CLAUDE.md has own content → backup AGENTS.md
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T25: unbridge.sh — backup when CLAUDE.md has own content (no provenance)"
+make_tmp
+
+printf "# Own content\nNot going anywhere.\n" > CLAUDE.md
+printf "# AGENTS content\n" > AGENTS.md
+# no .codex/.cc-bridge.provenance
+
+assert_exit0 bash "$SCRIPTS/unbridge.sh"
+
+assert_no_file "AGENTS.md"
+assert_file    "AGENTS.md.cc-bridge-backup"
+assert_file    "CLAUDE.md"
+assert_contains "CLAUDE.md" "# Own content"   # untouched
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T26  unbridge.sh — backup counter for repeated runs (no overwrite)
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T26: unbridge.sh — backup counter avoids overwriting existing backup"
+make_tmp
+
+# Pre-existing backup from a previous unbridge run
+echo "previous backup" > AGENTS.md.cc-bridge-backup
+
+printf "# Own content\n" > CLAUDE.md
+printf "# New AGENTS\n" > AGENTS.md
+
+assert_exit0 bash "$SCRIPTS/unbridge.sh"
+
+assert_file "AGENTS.md.cc-bridge-backup"        # original backup intact
+assert_contains "AGENTS.md.cc-bridge-backup" "previous backup"
+assert_file "AGENTS.md.cc-bridge-backup.1"      # second backup at .1
+assert_contains "AGENTS.md.cc-bridge-backup.1" "# New AGENTS"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T27  unbridge.sh — pure @AGENTS.md GEMINI.md removed
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T27: unbridge.sh — removes pure @AGENTS.md GEMINI.md"
+make_tmp
+mkdir -p .codex
+
+printf "@AGENTS.md\n" > GEMINI.md
+echo "# AGENTS" > AGENTS.md
+printf "@AGENTS.md\n" > CLAUDE.md
+printf "CC_BRIDGE_CREATED_CLAUDE=1\nCC_BRIDGE_CREATED_GEMINI=1\n" > .codex/.cc-bridge.provenance
+
+assert_exit0 bash "$SCRIPTS/unbridge.sh"
+
+assert_no_file "GEMINI.md"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T28  unbridge.sh — hybrid GEMINI.md left alone
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T28: unbridge.sh — leaves hybrid GEMINI.md alone"
+make_tmp
+mkdir -p .codex
+
+# Hybrid: @AGENTS.md + extra content — unbridge must NOT remove it
+printf "@AGENTS.md\n\n# Custom Gemini instructions\n" > GEMINI.md
+echo "# AGENTS" > AGENTS.md
+printf "@AGENTS.md\n" > CLAUDE.md
+printf "CC_BRIDGE_CREATED_CLAUDE=1\n" > .codex/.cc-bridge.provenance
+# Note: CC_BRIDGE_CREATED_GEMINI is NOT set — user added content manually
+
+assert_exit0 bash "$SCRIPTS/unbridge.sh"
+
+assert_file    "GEMINI.md"
+assert_contains "GEMINI.md" "# Custom Gemini instructions"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T29  unbridge.sh — cc-bridge hooks.json (with marker) removed
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T29: unbridge.sh — removes cc-bridge-generated hooks.json"
+make_tmp
+mkdir -p .codex
+
+echo "# AGENTS" > AGENTS.md
+printf "@AGENTS.md\n" > CLAUDE.md
+printf "CC_BRIDGE_CREATED_CLAUDE=1\n" > .codex/.cc-bridge.provenance
+
+cat > .codex/hooks.json <<'JSON'
+{"_cc_bridge_version": "1", "hooks": {"SessionStart": [], "PreToolUse": []}}
+JSON
+
+assert_exit0 bash "$SCRIPTS/unbridge.sh"
+
+assert_no_file ".codex/hooks.json"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T30  unbridge.sh — user hooks.json (no marker) left alone
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T30: unbridge.sh — leaves user hooks.json without _cc_bridge_version"
+make_tmp
+mkdir -p .codex
+
+echo "# AGENTS" > AGENTS.md
+printf "@AGENTS.md\n" > CLAUDE.md
+printf "CC_BRIDGE_CREATED_CLAUDE=1\n" > .codex/.cc-bridge.provenance
+
+cat > .codex/hooks.json <<'JSON'
+{"hooks": {"SessionStart": [], "PreToolUse": []}}
+JSON
+
+assert_exit0 bash "$SCRIPTS/unbridge.sh"
+
+assert_file ".codex/hooks.json"   # must survive
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T31  unbridge.sh — removes cc-bridge-mcp block, preserves other config.toml
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T31: unbridge.sh — removes sentinel block, preserves rest of config.toml"
+make_tmp
+mkdir -p .codex
+
+echo "# AGENTS" > AGENTS.md
+printf "@AGENTS.md\n" > CLAUDE.md
+printf "CC_BRIDGE_CREATED_CLAUDE=1\n" > .codex/.cc-bridge.provenance
+
+cat > .codex/config.toml <<'TOML'
+# My hand-written config
+[settings]
+timeout = 30
+
+# >>> cc-bridge-mcp >>>
+[mcp_servers.mirrored-srv]
+command = "cmd"
+# <<< cc-bridge-mcp <<<
+
+[other]
+key = "value"
+TOML
+
+assert_exit0 bash "$SCRIPTS/unbridge.sh"
+
+assert_file ".codex/config.toml"
+assert_contains     ".codex/config.toml" "[settings]"
+assert_contains     ".codex/config.toml" "[other]"
+assert_not_contains ".codex/config.toml" "# >>> cc-bridge-mcp >>>"
+assert_not_contains ".codex/config.toml" "[mcp_servers.mirrored-srv]"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T32  Full round-trip: init → bridge all → unbridge → back to original state
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T32: full round-trip — init + all bridges + unbridge restores state"
+make_tmp
+
+# Setup: realistic project
+printf "# My Real Project\n\nDo great things.\n" > CLAUDE.md
+mkdir -p .claude/commands .claude/skills
+
+cat > .claude/commands/lint.md <<'MD'
+---
+description: Run the linter.
+---
+Lint the code.
+MD
+cat > .claude/settings.json <<'JSON'
+{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "echo hi"}]}]}}
+JSON
+cat > .mcp.json <<'JSON'
+{"mcpServers": {"my-mcp": {"type": "stdio", "command": "npx", "args": ["-y", "my-mcp"]}}}
+JSON
+
+# init
+assert_exit0 bash "$SCRIPTS/init.sh"
+# bridge everything
+python3 "$SCRIPTS/bridge_hooks.py"  >/dev/null 2>&1
+bash    "$SCRIPTS/bridge_mcp.sh"    >/dev/null 2>&1
+bash    "$SCRIPTS/bridge_commands.sh" >/dev/null 2>&1
+
+# Verify bridged state
+assert_file_content "CLAUDE.md" "@AGENTS.md"
+assert_file         "AGENTS.md"
+assert_symlink      ".agents/skills"
+assert_file         ".codex/hooks.json"
+assert_contains     ".codex/config.toml" "[mcp_servers.my-mcp]"
+assert_file         ".claude/skills/cmd-lint/SKILL.md"
+
+# unbridge
+assert_exit0 bash "$SCRIPTS/unbridge.sh"
+
+# Verify restored state
+assert_no_file  "AGENTS.md"
+assert_file     "CLAUDE.md"
+assert_contains "CLAUDE.md" "# My Real Project"    # original content restored
+assert_contains "CLAUDE.md" "Do great things."
+assert_no_symlink ".agents/skills"
+# .mcp.json and .claude/ untouched
+assert_file ".mcp.json"
+assert_file ".claude/settings.json"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Summary
+# ═══════════════════════════════════════════════════════════════════════════════
+echo
+printf '%.0s═' {1..60}
+echo
+printf "${B}Results: ${G}%d passed${N}" "$PASS"
+if [ "$FAIL" -gt 0 ]; then
+  printf ", ${R}%d FAILED${N}\n" "$FAIL"
+  echo
+  printf "${R}Failed assertions:${N}\n"
+  for e in "${ERRORS[@]}"; do
+    printf "  ${R}✗${N} %s\n" "$e"
+  done
+  exit 1
+else
+  printf ", ${G}0 failed${N}\n"
+fi

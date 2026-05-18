@@ -15,7 +15,9 @@ skip() { printf '· %s\n' "$*"; }
 if [ -f .mcp.json ]; then
   # Use JSON parsing to check shape and key — avoids false positives from grep.
   # Exit codes: 0 = already registered, 1 = need merge, 2 = invalid shape.
-  python3 - "$CC_BRIDGE_CODEX_MCP_VERSION" <<'PY'
+  # Use || to capture exit code without triggering set -e on the expected code-1 path.
+  _rc=0
+  python3 - "$CC_BRIDGE_CODEX_MCP_VERSION" <<'PY' || _rc=$?
 import json, sys
 from pathlib import Path
 try:
@@ -34,7 +36,6 @@ if not isinstance(servers, dict):
     sys.exit(2)
 sys.exit(0 if "codex-cli" in servers else 1)
 PY
-  _rc=$?
   case "$_rc" in
     0) skip ".mcp.json already registers codex-cli"; exit 0 ;;
     2) exit 2 ;;
