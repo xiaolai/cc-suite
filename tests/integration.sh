@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/integration.sh — integration tests for cc-bridge scripts.
+# tests/integration.sh — integration tests for cc-suite scripts.
 # Run from any directory: bash tests/integration.sh
 # Or from repo root:     bash tests/integration.sh
 
@@ -107,11 +107,11 @@ assert_file ".codex/config.toml"
 assert_dir  ".gemini/skills"
 assert_dir  ".gemini/commands"
 assert_file ".gitignore"
-assert_contains ".gitignore" "# >>> cc-bridge >>>"
-assert_contains ".gitignore" "# <<< cc-bridge <<<"
-assert_file ".codex/.cc-bridge.provenance"
-assert_contains ".codex/.cc-bridge.provenance" "CC_BRIDGE_CREATED_CLAUDE=1"
-assert_contains ".codex/.cc-bridge.provenance" "CC_BRIDGE_CREATED_GEMINI=1"
+assert_contains ".gitignore" "# >>> cc-suite >>>"
+assert_contains ".gitignore" "# <<< cc-suite <<<"
+assert_file ".codex/.cc-suite.provenance"
+assert_contains ".codex/.cc-suite.provenance" "CC_SUITE_CREATED_CLAUDE=1"
+assert_contains ".codex/.cc-suite.provenance" "CC_SUITE_CREATED_GEMINI=1"
 
 cleanup
 
@@ -129,11 +129,11 @@ assert_contains "AGENTS.md" "# My Project"
 assert_contains "AGENTS.md" "Hello world."
 assert_file_content "CLAUDE.md" "@AGENTS.md"
 # Original saved verbatim for perfect restore
-assert_file ".codex/.cc-bridge-original-claude.md"
-assert_contains ".codex/.cc-bridge-original-claude.md" "# My Project"
-assert_contains ".codex/.cc-bridge.provenance" "CLAUDE_MIGRATED=1"
-# CLAUDE_MIGRATED migration means CC_BRIDGE_CREATED_CLAUDE should NOT be set
-assert_not_contains ".codex/.cc-bridge.provenance" "CC_BRIDGE_CREATED_CLAUDE=1"
+assert_file ".codex/.cc-suite-original-claude.md"
+assert_contains ".codex/.cc-suite-original-claude.md" "# My Project"
+assert_contains ".codex/.cc-suite.provenance" "CLAUDE_MIGRATED=1"
+# CLAUDE_MIGRATED migration means CC_SUITE_CREATED_CLAUDE should NOT be set
+assert_not_contains ".codex/.cc-suite.provenance" "CC_SUITE_CREATED_CLAUDE=1"
 
 cleanup
 
@@ -152,7 +152,7 @@ assert_not_contains "AGENTS.md" "Hello"   # no CLAUDE.md body leaked in
 # CLAUDE.md untouched
 assert_file_content "CLAUDE.md" "@AGENTS.md"
 # No migration flag
-assert_not_contains ".codex/.cc-bridge.provenance" "CLAUDE_MIGRATED=1"
+assert_not_contains ".codex/.cc-suite.provenance" "CLAUDE_MIGRATED=1"
 
 cleanup
 
@@ -169,7 +169,7 @@ assert_exit0 bash "$SCRIPTS/init.sh"
 assert_contains "CLAUDE.md" "# Extra content that must survive"
 assert_contains "CLAUDE.md" "@AGENTS.md"
 # No migration
-assert_not_contains ".codex/.cc-bridge.provenance" "CLAUDE_MIGRATED=1"
+assert_not_contains ".codex/.cc-suite.provenance" "CLAUDE_MIGRATED=1"
 
 cleanup
 
@@ -188,7 +188,7 @@ hash2="$(md5 -q AGENTS.md 2>/dev/null || md5sum AGENTS.md | awk '{print $1}')"
 if [ "$hash1" = "$hash2" ]; then ok_msg "AGENTS.md unchanged on re-run"
 else                              fail_msg "AGENTS.md changed on re-run"; fi
 
-assert_count "# >>> cc-bridge >>>" ".gitignore" 1
+assert_count "# >>> cc-suite >>>" ".gitignore" 1
 
 cleanup
 
@@ -200,7 +200,7 @@ make_tmp
 
 bash "$SCRIPTS/init.sh" --private >/dev/null 2>&1
 
-assert_contains ".gitignore" "cc-bridge: PRIVATE mode"
+assert_contains ".gitignore" "cc-suite: PRIVATE mode"
 assert_contains ".gitignore" "AGENTS.md"
 
 cleanup
@@ -212,11 +212,11 @@ section "T07: init.sh — switching --private mode replaces block"
 make_tmp
 
 assert_exit0 bash "$SCRIPTS/init.sh"           # public mode
-assert_not_contains ".gitignore" "cc-bridge: PRIVATE mode"
+assert_not_contains ".gitignore" "cc-suite: PRIVATE mode"
 
 bash "$SCRIPTS/init.sh" --private >/dev/null 2>&1 # switch to private
-assert_contains ".gitignore" "cc-bridge: PRIVATE mode"
-assert_count "# >>> cc-bridge >>>" ".gitignore" 1  # no duplicate blocks
+assert_contains ".gitignore" "cc-suite: PRIVATE mode"
+assert_count "# >>> cc-suite >>>" ".gitignore" 1  # no duplicate blocks
 
 cleanup
 
@@ -294,7 +294,7 @@ assert_not_contains ".codex/hooks.json" '"SessionEnd"'
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# T12  bridge_hooks.py — existing hooks.json → writes .cc-bridge.json instead
+# T12  bridge_hooks.py — existing hooks.json → writes .cc-suite.json instead
 # ═══════════════════════════════════════════════════════════════════════════════
 section "T12: bridge_hooks.py — doesn't overwrite existing hooks.json"
 make_tmp
@@ -308,10 +308,10 @@ JSON
 
 assert_exit0 python3 "$SCRIPTS/bridge_hooks.py"
 
-assert_file    ".codex/hooks.cc-bridge.json"
+assert_file    ".codex/hooks.cc-suite.json"
 assert_file_content ".codex/hooks.json" '{"user_hooks": true}'  # original unchanged
-assert_contains ".codex/hooks.cc-bridge.json" '"SessionStart"'
-assert_contains ".codex/hooks.cc-bridge.json" '"_cc_bridge_version"'
+assert_contains ".codex/hooks.cc-suite.json" '"SessionStart"'
+assert_contains ".codex/hooks.cc-suite.json" '"_cc_bridge_version"'
 
 cleanup
 
@@ -340,8 +340,8 @@ assert_contains     ".codex/config.toml" "command = \"npx\""
 assert_contains     ".codex/config.toml" "[mcp_servers.sse-server]"
 assert_contains     ".codex/config.toml" "url = \"https://example.com/sse\""
 assert_not_contains ".codex/config.toml" "[mcp_servers.codex-cli]"
-assert_contains     ".codex/config.toml" "# >>> cc-bridge-mcp >>>"
-assert_contains     ".codex/config.toml" "# <<< cc-bridge-mcp <<<"
+assert_contains     ".codex/config.toml" "# >>> cc-suite-mcp >>>"
+assert_contains     ".codex/config.toml" "# <<< cc-suite-mcp <<<"
 # Original config preserved outside the sentinel block
 assert_contains     ".codex/config.toml" "# existing config"
 
@@ -430,7 +430,7 @@ mkdir -p .codex
 
 # Simulate a botched previous run that left only the start marker
 cat > .codex/config.toml <<'TOML'
-# >>> cc-bridge-mcp >>>
+# >>> cc-suite-mcp >>>
 [mcp_servers.orphan]
 command = "cmd"
 TOML
@@ -559,20 +559,20 @@ else                              fail_msg ".mcp.json changed on re-run"; fi
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# T23  unbridge.sh — CC_BRIDGE_CREATED_CLAUDE: removes cc-bridge-created CLAUDE.md
+# T23  unbridge.sh — CC_SUITE_CREATED_CLAUDE: removes cc-suite-created CLAUDE.md
 # ═══════════════════════════════════════════════════════════════════════════════
-section "T23: unbridge.sh — removes cc-bridge-created CLAUDE.md"
+section "T23: unbridge.sh — removes cc-suite-created CLAUDE.md"
 make_tmp
 mkdir -p .codex
 
 echo "# AGENTS content" > AGENTS.md
 printf "@AGENTS.md\n" > CLAUDE.md
-printf "CC_BRIDGE_CREATED_CLAUDE=1\n" > .codex/.cc-bridge.provenance
+printf "CC_SUITE_CREATED_CLAUDE=1\n" > .codex/.cc-suite.provenance
 
 assert_exit0 bash "$SCRIPTS/unbridge.sh"
 
 assert_no_file "AGENTS.md"
-assert_no_file "CLAUDE.md"    # cc-bridge created it — remove on unbridge
+assert_no_file "CLAUDE.md"    # cc-suite created it — remove on unbridge
 
 cleanup
 
@@ -583,10 +583,10 @@ section "T24: unbridge.sh — restores original CLAUDE.md via provenance backup"
 make_tmp
 mkdir -p .codex
 
-printf "# My Original Project\n\nWith real content.\n" > .codex/.cc-bridge-original-claude.md
-echo "# AGENTS.md content + cc-bridge scaffolding" > AGENTS.md
+printf "# My Original Project\n\nWith real content.\n" > .codex/.cc-suite-original-claude.md
+echo "# AGENTS.md content + cc-suite scaffolding" > AGENTS.md
 printf "@AGENTS.md\n" > CLAUDE.md
-printf "CLAUDE_MIGRATED=1\n" > .codex/.cc-bridge.provenance
+printf "CLAUDE_MIGRATED=1\n" > .codex/.cc-suite.provenance
 
 assert_exit0 bash "$SCRIPTS/unbridge.sh"
 
@@ -595,7 +595,7 @@ assert_file     "CLAUDE.md"
 assert_contains "CLAUDE.md" "# My Original Project"
 assert_contains "CLAUDE.md" "With real content."
 # Provenance backup removed after consumption
-assert_no_file ".codex/.cc-bridge-original-claude.md"
+assert_no_file ".codex/.cc-suite-original-claude.md"
 
 cleanup
 
@@ -607,12 +607,12 @@ make_tmp
 
 printf "# Own content\nNot going anywhere.\n" > CLAUDE.md
 printf "# AGENTS content\n" > AGENTS.md
-# no .codex/.cc-bridge.provenance
+# no .codex/.cc-suite.provenance
 
 assert_exit0 bash "$SCRIPTS/unbridge.sh"
 
 assert_no_file "AGENTS.md"
-assert_file    "AGENTS.md.cc-bridge-backup"
+assert_file    "AGENTS.md.cc-suite-backup"
 assert_file    "CLAUDE.md"
 assert_contains "CLAUDE.md" "# Own content"   # untouched
 
@@ -625,17 +625,17 @@ section "T26: unbridge.sh — backup counter avoids overwriting existing backup"
 make_tmp
 
 # Pre-existing backup from a previous unbridge run
-echo "previous backup" > AGENTS.md.cc-bridge-backup
+echo "previous backup" > AGENTS.md.cc-suite-backup
 
 printf "# Own content\n" > CLAUDE.md
 printf "# New AGENTS\n" > AGENTS.md
 
 assert_exit0 bash "$SCRIPTS/unbridge.sh"
 
-assert_file "AGENTS.md.cc-bridge-backup"        # original backup intact
-assert_contains "AGENTS.md.cc-bridge-backup" "previous backup"
-assert_file "AGENTS.md.cc-bridge-backup.1"      # second backup at .1
-assert_contains "AGENTS.md.cc-bridge-backup.1" "# New AGENTS"
+assert_file "AGENTS.md.cc-suite-backup"        # original backup intact
+assert_contains "AGENTS.md.cc-suite-backup" "previous backup"
+assert_file "AGENTS.md.cc-suite-backup.1"      # second backup at .1
+assert_contains "AGENTS.md.cc-suite-backup.1" "# New AGENTS"
 
 cleanup
 
@@ -649,7 +649,7 @@ mkdir -p .codex
 printf "@AGENTS.md\n" > GEMINI.md
 echo "# AGENTS" > AGENTS.md
 printf "@AGENTS.md\n" > CLAUDE.md
-printf "CC_BRIDGE_CREATED_CLAUDE=1\nCC_BRIDGE_CREATED_GEMINI=1\n" > .codex/.cc-bridge.provenance
+printf "CC_SUITE_CREATED_CLAUDE=1\nCC_SUITE_CREATED_GEMINI=1\n" > .codex/.cc-suite.provenance
 
 assert_exit0 bash "$SCRIPTS/unbridge.sh"
 
@@ -668,8 +668,8 @@ mkdir -p .codex
 printf "@AGENTS.md\n\n# Custom Gemini instructions\n" > GEMINI.md
 echo "# AGENTS" > AGENTS.md
 printf "@AGENTS.md\n" > CLAUDE.md
-printf "CC_BRIDGE_CREATED_CLAUDE=1\n" > .codex/.cc-bridge.provenance
-# Note: CC_BRIDGE_CREATED_GEMINI is NOT set — user added content manually
+printf "CC_SUITE_CREATED_CLAUDE=1\n" > .codex/.cc-suite.provenance
+# Note: CC_SUITE_CREATED_GEMINI is NOT set — user added content manually
 
 assert_exit0 bash "$SCRIPTS/unbridge.sh"
 
@@ -679,15 +679,15 @@ assert_contains "GEMINI.md" "# Custom Gemini instructions"
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# T29  unbridge.sh — cc-bridge hooks.json (with marker) removed
+# T29  unbridge.sh — cc-suite hooks.json (with marker) removed
 # ═══════════════════════════════════════════════════════════════════════════════
-section "T29: unbridge.sh — removes cc-bridge-generated hooks.json"
+section "T29: unbridge.sh — removes cc-suite-generated hooks.json"
 make_tmp
 mkdir -p .codex
 
 echo "# AGENTS" > AGENTS.md
 printf "@AGENTS.md\n" > CLAUDE.md
-printf "CC_BRIDGE_CREATED_CLAUDE=1\n" > .codex/.cc-bridge.provenance
+printf "CC_SUITE_CREATED_CLAUDE=1\n" > .codex/.cc-suite.provenance
 
 cat > .codex/hooks.json <<'JSON'
 {"_cc_bridge_version": "1", "hooks": {"SessionStart": [], "PreToolUse": []}}
@@ -708,7 +708,7 @@ mkdir -p .codex
 
 echo "# AGENTS" > AGENTS.md
 printf "@AGENTS.md\n" > CLAUDE.md
-printf "CC_BRIDGE_CREATED_CLAUDE=1\n" > .codex/.cc-bridge.provenance
+printf "CC_SUITE_CREATED_CLAUDE=1\n" > .codex/.cc-suite.provenance
 
 cat > .codex/hooks.json <<'JSON'
 {"hooks": {"SessionStart": [], "PreToolUse": []}}
@@ -721,7 +721,7 @@ assert_file ".codex/hooks.json"   # must survive
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# T31  unbridge.sh — removes cc-bridge-mcp block, preserves other config.toml
+# T31  unbridge.sh — removes cc-suite-mcp block, preserves other config.toml
 # ═══════════════════════════════════════════════════════════════════════════════
 section "T31: unbridge.sh — removes sentinel block, preserves rest of config.toml"
 make_tmp
@@ -729,17 +729,17 @@ mkdir -p .codex
 
 echo "# AGENTS" > AGENTS.md
 printf "@AGENTS.md\n" > CLAUDE.md
-printf "CC_BRIDGE_CREATED_CLAUDE=1\n" > .codex/.cc-bridge.provenance
+printf "CC_SUITE_CREATED_CLAUDE=1\n" > .codex/.cc-suite.provenance
 
 cat > .codex/config.toml <<'TOML'
 # My hand-written config
 [settings]
 timeout = 30
 
-# >>> cc-bridge-mcp >>>
+# >>> cc-suite-mcp >>>
 [mcp_servers.mirrored-srv]
 command = "cmd"
-# <<< cc-bridge-mcp <<<
+# <<< cc-suite-mcp <<<
 
 [other]
 key = "value"
@@ -750,7 +750,7 @@ assert_exit0 bash "$SCRIPTS/unbridge.sh"
 assert_file ".codex/config.toml"
 assert_contains     ".codex/config.toml" "[settings]"
 assert_contains     ".codex/config.toml" "[other]"
-assert_not_contains ".codex/config.toml" "# >>> cc-bridge-mcp >>>"
+assert_not_contains ".codex/config.toml" "# >>> cc-suite-mcp >>>"
 assert_not_contains ".codex/config.toml" "[mcp_servers.mirrored-srv]"
 
 cleanup

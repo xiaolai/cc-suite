@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cc-bridge: tear down the bridge artifacts. Safe: never deletes .claude/ or its contents.
+# cc-suite: tear down the bridge artifacts. Safe: never deletes .claude/ or its contents.
 
 set -euo pipefail
 
@@ -18,47 +18,47 @@ sys.exit(0 if c == "@AGENTS.md" else 1)
 }
 
 # Read provenance written by init.sh.
-PROVENANCE=".codex/.cc-bridge.provenance"
+PROVENANCE=".codex/.cc-suite.provenance"
 CLAUDE_MIGRATED=0
-CC_BRIDGE_CREATED_CLAUDE=0
-CC_BRIDGE_CREATED_GEMINI=0
-CC_BRIDGE_CREATED_CODEX_CONFIG=0
+CC_SUITE_CREATED_CLAUDE=0
+CC_SUITE_CREATED_GEMINI=0
+CC_SUITE_CREATED_CODEX_CONFIG=0
 if [ -f "$PROVENANCE" ]; then
   # shellcheck disable=SC1090
   while IFS='=' read -r k v; do
     case "$k" in
       CLAUDE_MIGRATED)            CLAUDE_MIGRATED="$v" ;;
-      CC_BRIDGE_CREATED_CLAUDE)   CC_BRIDGE_CREATED_CLAUDE="$v" ;;
-      CC_BRIDGE_CREATED_GEMINI)   CC_BRIDGE_CREATED_GEMINI="$v" ;;
-      CC_BRIDGE_CREATED_CODEX_CONFIG) CC_BRIDGE_CREATED_CODEX_CONFIG="$v" ;;
+      CC_SUITE_CREATED_CLAUDE)   CC_SUITE_CREATED_CLAUDE="$v" ;;
+      CC_SUITE_CREATED_GEMINI)   CC_SUITE_CREATED_GEMINI="$v" ;;
+      CC_SUITE_CREATED_CODEX_CONFIG) CC_SUITE_CREATED_CODEX_CONFIG="$v" ;;
     esac
   done < "$PROVENANCE"
 fi
 
 # AGENTS.md — restore content to CLAUDE.md first, then delete.
 if [ -f AGENTS.md ]; then
-  if [ "$CC_BRIDGE_CREATED_CLAUDE" = "1" ]; then
+  if [ "$CC_SUITE_CREATED_CLAUDE" = "1" ]; then
     # init.sh created CLAUDE.md from scratch — there is nothing original to restore.
-    skip "CLAUDE.md was created by cc-bridge; will be removed (no content to restore)"
-  elif [ "$CLAUDE_MIGRATED" = "1" ] && [ -f .codex/.cc-bridge-original-claude.md ]; then
+    skip "CLAUDE.md was created by cc-suite; will be removed (no content to restore)"
+  elif [ "$CLAUDE_MIGRATED" = "1" ] && [ -f .codex/.cc-suite-original-claude.md ]; then
     # Restore the verbatim original CLAUDE.md, not the AGENTS.md scaffolding.
-    cp .codex/.cc-bridge-original-claude.md CLAUDE.md
-    rm .codex/.cc-bridge-original-claude.md
-    ok "restored original CLAUDE.md content from cc-bridge backup"
+    cp .codex/.cc-suite-original-claude.md CLAUDE.md
+    rm .codex/.cc-suite-original-claude.md
+    ok "restored original CLAUDE.md content from cc-suite backup"
   elif [ -f CLAUDE.md ] && is_pure_import CLAUDE.md; then
     # No provenance and CLAUDE.md is a bare @import — fall back to copying
     # AGENTS.md verbatim. May include scaffolding, but better than data loss.
     cp AGENTS.md CLAUDE.md
-    warn "no provenance found; restored CLAUDE.md from AGENTS.md verbatim (may include cc-bridge scaffolding)"
+    warn "no provenance found; restored CLAUDE.md from AGENTS.md verbatim (may include cc-suite scaffolding)"
   elif [ ! -f CLAUDE.md ]; then
     cp AGENTS.md CLAUDE.md
     warn "no provenance found; created CLAUDE.md from AGENTS.md"
   else
     # CLAUDE.md has its own content — back up AGENTS.md beside it.
-    _backup="AGENTS.md.cc-bridge-backup"
+    _backup="AGENTS.md.cc-suite-backup"
     _i=1
     while [ -f "$_backup" ]; do
-      _backup="AGENTS.md.cc-bridge-backup.$_i"
+      _backup="AGENTS.md.cc-suite-backup.$_i"
       _i=$((_i + 1))
     done
     cp AGENTS.md "$_backup"
@@ -70,11 +70,11 @@ else
   skip "AGENTS.md not present"
 fi
 
-# GEMINI.md — remove if it was cc-bridge-created or is a bare @import.
+# GEMINI.md — remove if it was cc-suite-created or is a bare @import.
 if [ -f GEMINI.md ]; then
-  if [ "$CC_BRIDGE_CREATED_GEMINI" = "1" ] || is_pure_import GEMINI.md; then
+  if [ "$CC_SUITE_CREATED_GEMINI" = "1" ] || is_pure_import GEMINI.md; then
     rm GEMINI.md
-    ok "removed GEMINI.md (cc-bridge created or @AGENTS.md import)"
+    ok "removed GEMINI.md (cc-suite created or @AGENTS.md import)"
   else
     skip "GEMINI.md has custom content — left alone"
   fi
@@ -85,9 +85,9 @@ fi
 # CLAUDE.md — if init.sh created it from scratch, remove it now (back to original state).
 # Else if it's a dangling @import after AGENTS.md was removed, clean it up.
 if [ -f CLAUDE.md ]; then
-  if [ "$CC_BRIDGE_CREATED_CLAUDE" = "1" ] && is_pure_import CLAUDE.md; then
+  if [ "$CC_SUITE_CREATED_CLAUDE" = "1" ] && is_pure_import CLAUDE.md; then
     rm CLAUDE.md
-    ok "removed CLAUDE.md (cc-bridge-created, no prior CLAUDE.md existed)"
+    ok "removed CLAUDE.md (cc-suite-created, no prior CLAUDE.md existed)"
   elif is_pure_import CLAUDE.md; then
     rm CLAUDE.md
     ok "removed CLAUDE.md (was dangling @AGENTS.md import)"
@@ -113,7 +113,7 @@ else
   skip ".codex/prompts/ non-empty or missing"
 fi
 
-# .codex/hooks.json — only if it appears cc-bridge-generated (contains only bridge events).
+# .codex/hooks.json — only if it appears cc-suite-generated (contains only bridge events).
 if [ -f .codex/hooks.json ]; then
   if python3 - <<'PY' 2>/dev/null; then
 import json, sys
@@ -127,23 +127,23 @@ try:
 except Exception:
     sys.exit(1)
 PY
-    rm .codex/hooks.json && ok "removed .codex/hooks.json (cc-bridge generated)"
+    rm .codex/hooks.json && ok "removed .codex/hooks.json (cc-suite generated)"
   else
     skip ".codex/hooks.json has non-bridge events or is non-standard — left alone"
   fi
 fi
-[ -f .codex/hooks.cc-bridge.json ] && { rm .codex/hooks.cc-bridge.json && ok "removed .codex/hooks.cc-bridge.json"; } || true
+[ -f .codex/hooks.cc-suite.json ] && { rm .codex/hooks.cc-suite.json && ok "removed .codex/hooks.cc-suite.json"; } || true
 
 # .codex/config.toml — strip the sentinel block; if init.sh created the
 # config file in the first place AND it has not been hand-edited since,
 # remove the whole file.
 if [ -f .codex/config.toml ]; then
-  CCBR_CFG_PROV="$CC_BRIDGE_CREATED_CODEX_CONFIG" python3 - <<'PY'
+  CCBR_CFG_PROV="$CC_SUITE_CREATED_CODEX_CONFIG" python3 - <<'PY'
 import os
 from pathlib import Path
-SENTINEL_START = "# >>> cc-bridge-mcp >>>"
-SENTINEL_END   = "# <<< cc-bridge-mcp <<<"
-INIT_MARKER    = "# cc-bridge: generated-by-init"
+SENTINEL_START = "# >>> cc-suite-mcp >>>"
+SENTINEL_END   = "# <<< cc-suite-mcp <<<"
+INIT_MARKER    = "# cc-suite: generated-by-init"
 p = Path(".codex/config.toml")
 text = p.read_text(encoding="utf-8")
 start = text.find(SENTINEL_START)
@@ -159,16 +159,16 @@ cleaned_strip = cleaned.strip()
 created_by_init = os.environ.get("CCBR_CFG_PROV") == "1" or INIT_MARKER in cleaned
 if created_by_init and INIT_MARKER in cleaned:
     p.unlink()
-    print("✓ removed .codex/config.toml (cc-bridge-generated)")
+    print("✓ removed .codex/config.toml (cc-suite-generated)")
 elif start != -1 and end != -1:
     if cleaned_strip:
         p.write_text(cleaned + "\n", encoding="utf-8")
-        print("✓ .codex/config.toml: removed cc-bridge-mcp sentinel block")
+        print("✓ .codex/config.toml: removed cc-suite-mcp sentinel block")
     else:
         p.unlink()
         print("✓ removed .codex/config.toml (only contained sentinel block)")
 else:
-    print("· .codex/config.toml has no cc-bridge markers — left alone")
+    print("· .codex/config.toml has no cc-suite markers — left alone")
 PY
 fi
 
@@ -181,20 +181,20 @@ done
 [ -d .gemini ] && rmdir .gemini 2>/dev/null && ok "removed empty .gemini/" || true
 
 # .gitignore sentinel block
-if [ -f .gitignore ] && grep -qF "# >>> cc-bridge >>>" .gitignore; then
+if [ -f .gitignore ] && grep -qF "# >>> cc-suite >>>" .gitignore; then
   python3 - <<'PY'
 from pathlib import Path
 text = Path(".gitignore").read_text()
-start = text.find("# >>> cc-bridge >>>")
-end   = text.find("# <<< cc-bridge <<<")
+start = text.find("# >>> cc-suite >>>")
+end   = text.find("# <<< cc-suite <<<")
 if start != -1 and end != -1:
     nl = text.find("\n", end)
     end_line = nl + 1 if nl != -1 else len(text)
     new = text[:start].rstrip() + "\n" + text[end_line:]
     Path(".gitignore").write_text(new.lstrip("\n"))
-    print("✓ removed cc-bridge block from .gitignore")
+    print("✓ removed cc-suite block from .gitignore")
 PY
 fi
 
 echo
-ok "cc-bridge unbridge complete. .mcp.json and .claude/ are left alone."
+ok "cc-suite unbridge complete. .mcp.json and .claude/ are left alone."

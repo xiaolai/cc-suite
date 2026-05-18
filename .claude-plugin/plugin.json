@@ -1,7 +1,7 @@
 {
-  "name": "cc-bridge",
-  "description": "Bridge a project's AI config across Claude Code, Codex CLI, and Gemini CLI: single-source AGENTS.md, shared skills via .agents/skills symlink, optional shared hooks, and Codex MCP wiring.",
-  "version": "0.1.0",
+  "name": "cc-suite",
+  "description": "One plugin to bridge and delegate across Claude Code, Codex CLI, and Gemini CLI — single-source AGENTS.md, shared skills, mirrored hooks and MCP servers, and full Claude↔Codex bidirectional delegation.",
+  "version": "0.2.0",
   "author": {
     "name": "xiaolai"
   },

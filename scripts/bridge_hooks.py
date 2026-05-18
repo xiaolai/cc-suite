@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-cc-bridge: mirror .claude/settings.json hooks → .codex/hooks.json.
+cc-suite: mirror .claude/settings.json hooks → .codex/hooks.json.
 
 Only events supported by both tools are copied:
   SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop
@@ -9,7 +9,7 @@ Claude-only events (Notification, SubagentStop, SessionEnd) are skipped with a n
 Idempotent: writes a `_cc_bridge_version` marker into .codex/hooks.json and,
 on re-run, updates that file in place if the marker is present. If a
 .codex/hooks.json without the marker exists, it is treated as user-owned
-and the new output is written to .codex/hooks.cc-bridge.json instead.
+and the new output is written to .codex/hooks.cc-suite.json instead.
 
 Atomic: writes to a temp file in the same directory, then os.replace()s,
 so a concurrent reader never sees a partial file.
@@ -176,7 +176,7 @@ def main() -> int:
     Path(".codex").mkdir(exist_ok=True)
     primary = Path(".codex/hooks.json")
     output_json = json.dumps({MARKER_KEY: MARKER_VALUE, "hooks": mirrored}, indent=2) + "\n"
-    fallback = Path(".codex/hooks.cc-bridge.json")
+    fallback = Path(".codex/hooks.cc-suite.json")
 
     if primary.exists():
         # Existing file: re-read, decide based on marker.
@@ -189,7 +189,7 @@ def main() -> int:
             _atomic_write(target, output_json)
         else:
             target = fallback
-            print(f"! .codex/hooks.json is user-owned (no cc-bridge marker) — wrote to {target} for review/merge")
+            print(f"! .codex/hooks.json is user-owned (no cc-suite marker) — wrote to {target} for review/merge")
             _atomic_write(target, output_json)
     else:
         # No existing primary: use O_EXCL create to win-or-lose atomically.

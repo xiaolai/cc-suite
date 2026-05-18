@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# cc-bridge: add the codex-cli MCP server to .mcp.json (idempotent merge).
+# cc-suite: add the codex-cli MCP server to .mcp.json (idempotent merge).
 #
 # The codex-mcp-server package is pinned to a known version below.
-# Bump CC_BRIDGE_CODEX_MCP_VERSION at the top of this script to upgrade.
+# Bump CC_SUITE_CODEX_MCP_VERSION at the top of this script to upgrade.
 
 set -euo pipefail
 
 # Default pinned version of the codex-mcp-server npm package. Bump deliberately.
-CC_BRIDGE_CODEX_MCP_VERSION="${CC_BRIDGE_CODEX_MCP_VERSION:-1.4.10}"
+CC_SUITE_CODEX_MCP_VERSION="${CC_SUITE_CODEX_MCP_VERSION:-1.4.10}"
 
 ok()   { printf '✓ %s\n' "$*"; }
 skip() { printf '· %s\n' "$*"; }
@@ -17,7 +17,7 @@ if [ -f .mcp.json ]; then
   # Exit codes: 0 = already registered, 1 = need merge, 2 = invalid shape.
   # Use || to capture exit code without triggering set -e on the expected code-1 path.
   _rc=0
-  python3 - "$CC_BRIDGE_CODEX_MCP_VERSION" <<'PY' || _rc=$?
+  python3 - "$CC_SUITE_CODEX_MCP_VERSION" <<'PY' || _rc=$?
 import json, sys
 from pathlib import Path
 try:
@@ -41,7 +41,7 @@ PY
     2) exit 2 ;;
   esac
   # Merge cleanly.
-  python3 - "$CC_BRIDGE_CODEX_MCP_VERSION" <<'PY'
+  python3 - "$CC_SUITE_CODEX_MCP_VERSION" <<'PY'
 import json, sys
 from pathlib import Path
 version = sys.argv[1]
@@ -74,10 +74,10 @@ else
     "codex-cli": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "codex-mcp-server@${CC_BRIDGE_CODEX_MCP_VERSION}"]
+      "args": ["-y", "codex-mcp-server@${CC_SUITE_CODEX_MCP_VERSION}"]
     }
   }
 }
 JSON
-  ok ".mcp.json created with codex-cli server (pinned @${CC_BRIDGE_CODEX_MCP_VERSION})"
+  ok ".mcp.json created with codex-cli server (pinned @${CC_SUITE_CODEX_MCP_VERSION})"
 fi

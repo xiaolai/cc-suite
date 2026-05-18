@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cc-bridge: expose .claude/commands/*.md as Claude skills under .claude/skills/cmd-<name>/.
+# cc-suite: expose .claude/commands/*.md as Claude skills under .claude/skills/cmd-<name>/.
 #
 # Skills are written to .claude/skills/ (Claude's native path), not .agents/skills/.
 # The .agents/skills → .claude/skills symlink created by bridge_skills.sh makes them

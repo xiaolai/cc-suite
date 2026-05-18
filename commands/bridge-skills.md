@@ -4,7 +4,7 @@ allowed-tools:
   - Bash
 ---
 
-# /cc-bridge:bridge-skills
+# /cc-suite:bridge-skills
 
 Create the skills bridge in the current working directory so that every skill under `.claude/skills/` is automatically available to Codex CLI (which scans `.agents/skills/`).
 

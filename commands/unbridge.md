@@ -1,11 +1,11 @@
 ---
-description: Tear down the cc-bridge artifacts in the current repo. Does not delete CLAUDE.md content or .claude/, only the bridge layer.
+description: Tear down the cc-suite artifacts in the current repo. Does not delete CLAUDE.md content or .claude/, only the bridge layer.
 allowed-tools:
   - Bash
   - AskUserQuestion
 ---
 
-# /cc-bridge:unbridge
+# /cc-suite:unbridge
 
 This is a destructive operation. Follow these steps in order.
 
@@ -16,21 +16,21 @@ Ask the user via AskUserQuestion before doing anything. List exactly what will b
 - `AGENTS.md` (content will be restored to `CLAUDE.md` automatically — no manual copy needed)
 - `GEMINI.md` — only if it contains nothing but `@AGENTS.md` (bare import); hybrid files are left alone
 - `.agents/skills` symlink (not the `.claude/skills/` target it points to)
-- `.codex/prompts/` (if empty), `.codex/hooks.json`, `.codex/hooks.cc-bridge.json`, `.codex/config.toml`
+- `.codex/prompts/` (if empty), `.codex/hooks.json`, `.codex/hooks.cc-suite.json`, `.codex/config.toml`
 - `.gemini/skills/`, `.gemini/commands/` (if empty)
-- the cc-bridge sentinel block in `.gitignore`
+- the cc-suite sentinel block in `.gitignore`
 
 AGENTS.md restore behavior:
 - `CLAUDE.md` is a bare `@AGENTS.md` import (nothing else) → content is restored to `CLAUDE.md` automatically
-- `CLAUDE.md` has its own content → `AGENTS.md` is backed up as `AGENTS.md.cc-bridge-backup` before removal; if that name already exists, a numbered suffix is added (`AGENTS.md.cc-bridge-backup.1`, `.2`, …)
+- `CLAUDE.md` has its own content → `AGENTS.md` is backed up as `AGENTS.md.cc-suite-backup` before removal; if that name already exists, a numbered suffix is added (`AGENTS.md.cc-suite-backup.1`, `.2`, …)
 - `CLAUDE.md` does not exist → `AGENTS.md` content is moved to a new `CLAUDE.md`
 
 What is **never** touched:
 - `.claude/`, `.mcp.json`
 
-What is removed **only if cc-bridge generated it**:
+What is removed **only if cc-suite generated it**:
 - `.codex/hooks.json` — only if it was written by `bridge_hooks.py` (carries a `_cc_bridge_version` marker) AND contains only the five shared events; otherwise left alone
-- `.codex/config.toml` — only the cc-bridge-mcp sentinel block is removed; other config is preserved
+- `.codex/config.toml` — only the cc-suite-mcp sentinel block is removed; other config is preserved
 
 If the user does not confirm, stop.
 
@@ -40,7 +40,7 @@ If the user does not confirm, stop.
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/unbridge.sh"
 ```
 
-The script handles AGENTS.md content safely based on CLAUDE.md state (see conflict cases above). `.codex/hooks.json` and `.codex/config.toml` are only modified if cc-bridge generated their content. If the script exits non-zero, report the error and stop.
+The script handles AGENTS.md content safely based on CLAUDE.md state (see conflict cases above). `.codex/hooks.json` and `.codex/config.toml` are only modified if cc-suite generated their content. If the script exits non-zero, report the error and stop.
 
 ## 3. Verify state
 

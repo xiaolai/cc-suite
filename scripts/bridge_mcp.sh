@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cc-bridge: mirror .mcp.json mcpServers → .codex/config.toml [mcp_servers.*].
+# cc-suite: mirror .mcp.json mcpServers → .codex/config.toml [mcp_servers.*].
 #
 # Codex reads MCP configuration from .codex/config.toml, not .mcp.json.
 # This script writes a sentinel-guarded block of [mcp_servers.*] entries so
@@ -15,8 +15,8 @@ from __future__ import annotations
 import json, re, sys
 from pathlib import Path
 
-SENTINEL_START = "# >>> cc-bridge-mcp >>>"
-SENTINEL_END   = "# <<< cc-bridge-mcp <<<"
+SENTINEL_START = "# >>> cc-suite-mcp >>>"
+SENTINEL_END   = "# <<< cc-suite-mcp <<<"
 # codex-cli is registered in .mcp.json so Claude can invoke Codex as a tool.
 # It must not be mirrored back into Codex's own config.
 SKIP_SERVERS = {"codex-cli"}
@@ -55,7 +55,7 @@ def main() -> int:
     # previous run; refuse to silently append a new block on top of it.
     if (s_start == -1) != (s_end == -1):
         print(
-            f"! .codex/config.toml has only one of the cc-bridge sentinel markers "
+            f"! .codex/config.toml has only one of the cc-suite sentinel markers "
             f"({'start' if s_start != -1 else 'end'} present). "
             "Manually repair before rerunning.",
             file=sys.stderr,

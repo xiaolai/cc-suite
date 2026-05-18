@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cc-bridge: print a status report of bridge artifacts and Codex runtime state.
+# cc-suite: print a status report of bridge artifacts and Codex runtime state.
 
 set -u
 
@@ -12,7 +12,7 @@ mark() {
   esac
 }
 
-echo "cc-bridge status — $(pwd)"
+echo "cc-suite status — $(pwd)"
 
 # ── bridge artifacts ──────────────────────────────────────────────────────────
 echo
@@ -36,7 +36,7 @@ if [ -f CLAUDE.md ]; then
   if grep -qE '^@AGENTS\.md\s*$' CLAUDE.md; then
     mark "CLAUDE.md" ok "@AGENTS.md import"
   else
-    mark "CLAUDE.md" warn "substantive content (not @import) — consider /cc-bridge:init"
+    mark "CLAUDE.md" warn "substantive content (not @import) — consider /cc-suite:init"
   fi
 else
   mark "CLAUDE.md" miss
@@ -70,7 +70,7 @@ elif [ -d .agents/skills ]; then
   mark ".agents/skills" warn "real directory (not symlink)"
 else
   if [ -d .claude/skills ]; then
-    mark ".agents/skills" miss "→ run /cc-bridge:bridge-skills"
+    mark ".agents/skills" miss "→ run /cc-suite:bridge-skills"
   else
     mark ".agents/skills" miss "(no .claude/skills/ to bridge)"
   fi
@@ -79,9 +79,9 @@ fi
 # .codex
 [ -d .codex/prompts ]    && mark ".codex/prompts/"    ok "" || mark ".codex/prompts/"    miss
 [ -f .codex/hooks.json ] && mark ".codex/hooks.json"  ok "$(wc -c < .codex/hooks.json | tr -d ' ') bytes" \
-                         || mark ".codex/hooks.json"  miss "(run /cc-bridge:bridge-hooks)"
+                         || mark ".codex/hooks.json"  miss "(run /cc-suite:bridge-hooks)"
 [ -f .codex/config.toml ] && mark ".codex/config.toml" ok "" \
-                           || mark ".codex/config.toml" miss "(run /cc-bridge:init)"
+                           || mark ".codex/config.toml" miss "(run /cc-suite:init)"
 
 # .gemini
 [ -d .gemini/skills ]   && mark ".gemini/skills/"   ok "" || mark ".gemini/skills/"   miss
@@ -101,17 +101,28 @@ sys.exit(0 if isinstance(s, dict) and "codex-cli" in s else 1)
 ' 2>/dev/null; then
     mark ".mcp.json → Claude" ok "codex-cli registered (Claude can invoke Codex as tool)"
   else
-    mark ".mcp.json → Claude" miss "codex-cli not registered (run /cc-bridge:init step 4)"
+    mark ".mcp.json → Claude" miss "codex-cli not registered (run /cc-suite:init step 7)"
   fi
 else
   mark ".mcp.json" miss
 fi
 
-# .gitignore sentinel
-if [ -f .gitignore ] && grep -qF "# >>> cc-bridge >>>" .gitignore; then
-  mark ".gitignore" ok "has cc-bridge block"
+# .codex/config.toml — claude-code (claude-octopus) registration
+if [ -f .codex/config.toml ]; then
+  if grep -qF ">>> cc-suite-claude-mcp >>>" .codex/config.toml; then
+    mark ".codex/config.toml → Codex" ok "claude-code registered (Codex can invoke Claude as tool)"
+  else
+    mark ".codex/config.toml → Codex" miss "claude-code not registered (run /cc-suite:init step 8)"
+  fi
 else
-  mark ".gitignore" miss "no cc-bridge block"
+  mark ".codex/config.toml → Codex" miss "(run /cc-suite:init)"
+fi
+
+# .gitignore sentinel
+if [ -f .gitignore ] && grep -qF "# >>> cc-suite >>>" .gitignore; then
+  mark ".gitignore" ok "has cc-suite block"
+else
+  mark ".gitignore" miss "no cc-suite block"
 fi
 
 # ── MCP parity (project servers visible to Codex) ────────────────────────────
@@ -157,7 +168,7 @@ if mirrored:
     print(f"  ✓ mirrored to .codex/config.toml   {mirrored}")
 if missing:
     print(f"  ! NOT mirrored to Codex config     {missing}")
-    print(f"    → run /cc-bridge:bridge-mcp to sync")
+    print(f"    → run /cc-suite:bridge-mcp to sync")
 PY
 fi
 

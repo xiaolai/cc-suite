@@ -1,118 +1,259 @@
 ---
-description: Initialize the Claude / Codex / Gemini bridge in the current repo — AGENTS.md as single source, symlinked skills, optional MCP and hooks.
-argument-hint: "[--private] [--description \"...\"]"
-allowed-tools:
-  - Bash
-  - Read
-  - Write
-  - Edit
-  - AskUserQuestion
+name: init
+description: Initialize cc-suite for the current project — sets up the AGENTS.md bridge, registers Codex and Claude MCP servers, and generates a .codex-toolkit.md config
 ---
 
-# /cc-bridge:init
+# CC-Suite Init
 
-You are setting up the cross-tool bridge between Claude Code, Codex CLI, and Gemini CLI in the **current working directory**. Treat the cwd as the project root.
+Set up cc-suite for the current project. This command runs four sub-routines in order:
 
-## 1. Gather inputs
+1. **Bridge init** — creates `AGENTS.md`, `CLAUDE.md` (`@AGENTS.md`), and `.codex/config.toml`
+2. **Codex MCP registration** — adds the `codex-cli` MCP server to `.mcp.json`
+3. **Claude MCP registration** — adds the `claude-code` MCP server to `.codex/config.toml`
+4. **Project config** — generates `.codex-toolkit.md` with your preferred audit settings
 
-Parse `$ARGUMENTS`:
+## Workflow
 
-- `--private` → privacy = private (AI config files gitignored).
-- `--description "..."` → use as the project's one-line description.
+### Step 1: Check for existing config
 
-If `--description` is not provided, read the project root for clues (`pyproject.toml` `description = ...`, `package.json` `"description"`, root README's first sentence). Synthesize one line. If nothing usable, ask the user via AskUserQuestion.
+Check if `.codex-toolkit.md` already exists in the current working directory.
 
-If `--private` is not present, default to public (recommended) but confirm with AskUserQuestion if you have any reason to doubt.
+If it exists, read it and ask:
 
-## 2. Inspect existing state
-
-Run:
-
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/status.sh"
+```
+AskUserQuestion:
+  question: "A .codex-toolkit.md already exists. What would you like to do?"
+  header: "Config"
+  options:
+    - label: "Show current config"
+      description: "Display the current settings"
+    - label: "Regenerate"
+      description: "Replace with a fresh config (asks questions again)"
+    - label: "Cancel"
+      description: "Keep the current config"
 ```
 
-Show the output. This tells the user what already exists so they know what will change.
+If "Show current config" → display the file contents and STOP.
+If "Cancel" → STOP.
 
-## 3. Apply the core bridge
+### Step 2: Gather project context
 
-Run the init script with the gathered inputs:
+Detect the project's technology stack automatically:
+
+1. Check for language/framework markers:
+   - `package.json` → Node.js/JavaScript/TypeScript
+   - `requirements.txt` / `pyproject.toml` / `setup.py` → Python
+   - `Gemfile` → Ruby
+   - `go.mod` → Go
+   - `Cargo.toml` → Rust
+   - `pom.xml` / `build.gradle` → Java
+   - `*.csproj` / `*.sln` → C#/.NET
+
+2. Check for test frameworks:
+   - `jest.config.*` / `vitest.config.*` → JS test runner
+   - `pytest.ini` / `conftest.py` → pytest
+   - `spec/` directory → RSpec
+   - `*_test.go` → Go tests
+
+3. Check for project structure:
+   - `src/` → source directory
+   - `lib/` → library directory
+   - `app/` → application directory (Rails, etc.)
+
+### Step 2b: Run preflight to discover models
+
+Run the preflight script to get the current model list:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/init.sh" \
-  --description "<one-line description>" \
-  $( [ "$privacy" = "private" ] && echo --private )
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/codex-preflight.sh"
 ```
 
-The script is idempotent and:
+Parse the JSON output. Extract the `models` array — the first entry is the most capable and will be used as the suggested default model in the generated config.
 
-- Migrates any existing root `CLAUDE.md` content to `AGENTS.md` if `AGENTS.md` does not yet exist (the original content is preserved). If both exist, leaves both alone and warns.
-- Writes `CLAUDE.md` and `GEMINI.md` as thin `@AGENTS.md` imports (only if their current content is missing or already an `@AGENTS.md` import — never clobbers substantive content silently).
-- Creates `.codex/prompts/`, `.gemini/skills/`, `.gemini/commands/` with `.gitkeep`.
-- Creates a minimal `.codex/config.toml` if one doesn't exist.
-- Symlinks `.agents/skills` → `.claude/skills` if `.claude/skills/` exists (Codex's skill scan path).
-- Writes a `.gitignore` block (idempotent — appended only if the cc-bridge sentinel is missing).
-- If `--private`, the .gitignore block additionally gitignores all bridge artifacts.
+If preflight fails (status "error"), skip model discovery and leave the default model line out of the generated config.
 
-If the script exits non-zero, report the error output and stop.
+### Step 3: Ask customization questions
 
-## 4. Register Codex as a tool for Claude (optional)
+Ask all questions at once:
 
-Ask the user via AskUserQuestion whether to register the Codex MCP server in `.mcp.json`, so Claude Code can invoke Codex as a tool. If yes:
+```
+AskUserQuestion:
+  question: "What is the primary focus of audits for this project?"
+  header: "Audit focus"
+  options:
+    - label: "Balanced (Recommended)"
+      description: "Equal weight across all dimensions"
+    - label: "Security-first"
+      description: "Prioritize security, auth, data handling, and injection risks"
+    - label: "Performance-first"
+      description: "Prioritize performance, scalability, and efficiency"
+    - label: "Quality-first"
+      description: "Prioritize code quality, maintainability, and test coverage"
+```
+
+```
+AskUserQuestion:
+  question: "Default audit depth?"
+  header: "Audit type"
+  options:
+    - label: "Mini (5 dimensions) (Recommended)"
+      description: "Fast — logic, duplication, dead code, refactoring, shortcuts"
+    - label: "Full (9 dimensions)"
+      description: "Thorough — adds security, performance, compliance, deps, docs"
+```
+
+```
+AskUserQuestion:
+  question: "Default reasoning effort?"
+  header: "Effort"
+  options:
+    - label: "high (Recommended)"
+      description: "Thorough analysis, catches subtle issues"
+    - label: "medium"
+      description: "Balanced speed and depth"
+    - label: "low"
+      description: "Fast, mechanical checks only"
+```
+
+### Step 4: Generate config file
+
+Write `.codex-toolkit.md` to the project root with the gathered information:
+
+```markdown
+# Codex Toolkit Configuration
+
+Project-specific settings for codex-toolkit commands.
+Generated by `/init`. Edit freely — all fields are optional.
+
+## Project
+
+- **Stack**: {detected stack, e.g. "TypeScript, React, Node.js"}
+- **Test command**: {detected test command, e.g. "npm test", "pytest", "bundle exec rspec"}
+- **Source directories**: {detected dirs, e.g. "src/, lib/"}
+
+## Defaults
+
+These override the built-in defaults for all commands in this project.
+Remove a line to fall back to the built-in default.
+
+- **Default model**: {first model from preflight, e.g. "gpt-5.4"}
+- **Default effort**: {chosen effort}
+- **Default audit type**: {chosen audit type, "mini" or "full"}
+- **Default sandbox**: workspace-write
+
+## Audit Focus
+
+{chosen focus, e.g. "balanced"}
+
+Additional instructions appended to every audit's developer-instructions:
+
+```text
+{focus-specific instructions, see below}
+```
+
+## Skip Patterns
+
+Files and directories to always skip during audits (glob patterns):
+
+```text
+node_modules/
+dist/
+build/
+coverage/
+*.min.js
+*.bundle.js
+*.lock
+vendor/
+.git/
+```
+
+## Project-Specific Instructions
+
+Custom instructions appended to Codex's developer-instructions for every command.
+Use this to tell Codex about your project's conventions, architecture, or constraints.
+
+```text
+{stack-specific defaults, e.g.:
+"This is a TypeScript project using React. Follow existing patterns in src/components/."}
+```
+```
+
+**Focus-specific instructions** (for the "Additional instructions" section):
+
+- **Balanced**: "Give equal attention to all audit dimensions."
+- **Security-first**: "Prioritize security findings. Flag any auth bypass, injection, data exposure, or cryptographic weakness as Critical regardless of other severity heuristics."
+- **Performance-first**: "Prioritize performance findings. Flag N+1 queries, O(n^2) algorithms, memory leaks, and blocking I/O as High regardless of other severity heuristics."
+- **Quality-first**: "Prioritize code quality findings. Flag untested critical paths, high cyclomatic complexity, and DRY violations as High regardless of other severity heuristics."
+
+### Step 5: Confirm codex config
+
+Display the generated `.codex-toolkit.md` settings.
+
+---
+
+### Step 6: Bridge init
+
+Run the bridge init script to create the single-source `AGENTS.md` and wire `CLAUDE.md` to import it:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/init.sh"
+```
+
+If the script exits non-zero, report the error and stop. A successful run will print lines starting with `✓` or `·` for each artifact it sets up.
+
+---
+
+### Step 7: Register Codex MCP server
+
+Add the `codex-cli` MCP server to `.mcp.json` so Claude can invoke Codex as an MCP tool:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_codex.sh"
 ```
 
-This adds (or merges) the `codex-cli` MCP server to the repo's `.mcp.json`.
-
-## 5. Mirror project MCP servers to Codex (optional)
-
-Ask the user via AskUserQuestion whether to mirror existing `.mcp.json` servers into `.codex/config.toml`, so Codex can see them. If yes:
+Then mirror the new server entry into `.codex/config.toml` so Codex itself can see any other project MCP servers:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_mcp.sh"
 ```
 
-This adds a sentinel-guarded `[mcp_servers.*]` block to `.codex/config.toml` for each server in `.mcp.json` not already declared there. Skips entries already present. Note: these entries are only active after the project is trusted in Codex (see `/cc-bridge:status`).
+---
 
-If the script exits non-zero, report the error and show which servers were skipped.
+### Step 8: Register Claude MCP server
 
-## 6. Mirror hooks to Codex (optional)
-
-If `.claude/settings.json` has a `hooks` section, ask the user via AskUserQuestion whether to mirror them to `.codex/hooks.json`. If yes:
+Add the `claude-code` MCP server (claude-octopus) to `.codex/config.toml` so Codex can invoke Claude as an MCP tool:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_hooks.py"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_claude.sh"
 ```
 
-Only events both tools support are mirrored (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`). Claude-only events (`Notification`, `SubagentStop`, `SessionEnd`) are skipped with a notice.
+---
 
-If the script exits non-zero, report the error and stop.
+### Step 9: Final summary
 
-## 7. Bridge commands as skills (optional)
+Display a combined status report:
 
-If `.claude/commands/` exists and has `.md` files, ask the user via AskUserQuestion whether to expose them as Codex skills. If yes:
+```markdown
+## cc-suite initialized
 
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_commands.sh"
+### Bridge artifacts
+
+{output of scripts/status.sh — show the Bridge artifacts section only}
+
+### MCP delegation
+
+- **Claude → Codex**: `.mcp.json` has `codex-cli` registered ✓
+- **Codex → Claude**: `.codex/config.toml` has `claude-code` registered ✓
+
+### Project config
+
+- `.codex-toolkit.md` created with {chosen settings}
+
+### Next steps
+
+- Run `/cc-suite:status` to see full bridge health
+- Edit `AGENTS.md` to add project-specific conventions
+- Run `/audit` to test Codex delegation
+- Have Codex call Claude with `$claude-review` or `$claude-plan`
+- Commit `AGENTS.md`, `.codex-toolkit.md`, `.mcp.json` to share with your team
 ```
-
-Codex has no project-scoped slash commands; this converts each command to a `.agents/skills/cmd-<name>/SKILL.md` with explicit-only invocation (`$cmd-<name>` in Codex).
-
-## 8. Report
-
-Run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/status.sh"` once more and show the full output.
-
-Then print a summary in this format:
-
-```
-Bridge initialized:
-  ✓ <item>   <what changed or was left alone>
-  · <item>   skipped — <reason>
-  ! <item>   warning — <detail>
-
-Edit `AGENTS.md` to update shared instructions for all three tools.
-```
-
-One line per bridge artifact touched. If any step had warnings, list them under a "Warnings:" section.

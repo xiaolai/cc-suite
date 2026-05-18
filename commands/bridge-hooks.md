@@ -5,7 +5,7 @@ allowed-tools:
   - Read
 ---
 
-# /cc-bridge:bridge-hooks
+# /cc-suite:bridge-hooks
 
 Translate the `hooks` section of `.claude/settings.json` into `.codex/hooks.json`. Only events that both tools support are mirrored:
 
@@ -19,7 +19,7 @@ Claude-only events (`Notification`, `SubagentStop`, `SessionEnd`) are skipped wi
 
 The handler shape (event → matcher → handler → `type: "command"`) is the same in both tools, so no command rewriting is needed; the same shell commands (typically invoking `.claude/hooks/*.py`) run from both tools.
 
-Existing `.codex/hooks.json` is **never silently overwritten** — if it exists, the script writes a `.codex/hooks.cc-bridge.json` alongside and tells the user to review/merge.
+Existing `.codex/hooks.json` is **never silently overwritten** — if it exists, the script writes a `.codex/hooks.cc-suite.json` alongside and tells the user to review/merge.
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_hooks.py"

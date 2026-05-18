@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cc-bridge: initialize the Claude / Codex / Gemini bridge in the current repo.
+# cc-suite: initialize the Claude / Codex / Gemini bridge in the current repo.
 # Idempotent. Safe to re-run.
 
 set -euo pipefail
@@ -52,9 +52,9 @@ else
       EXISTING_BODY="$(cat CLAUDE.md)"
       CLAUDE_MIGRATED=1
       # Save the original CLAUDE.md verbatim so unbridge.sh can restore it
-      # without the cc-bridge scaffolding that AGENTS.md adds around the body.
+      # without the cc-suite scaffolding that AGENTS.md adds around the body.
       mkdir -p .codex
-      cp CLAUDE.md .codex/.cc-bridge-original-claude.md
+      cp CLAUDE.md .codex/.cc-suite-original-claude.md
     fi
   fi
   {
@@ -108,7 +108,7 @@ if [ -f CLAUDE.md ]; then
   fi
 else
   echo "@AGENTS.md" > CLAUDE.md
-  CC_BRIDGE_CREATED_CLAUDE=1
+  CC_SUITE_CREATED_CLAUDE=1
   ok "CLAUDE.md created (@AGENTS.md import)"
 fi
 
@@ -122,18 +122,18 @@ if [ -f GEMINI.md ]; then
   fi
 else
   echo "@AGENTS.md" > GEMINI.md
-  CC_BRIDGE_CREATED_GEMINI=1
+  CC_SUITE_CREATED_GEMINI=1
   ok "GEMINI.md created (@AGENTS.md import)"
 fi
 
 # Record provenance so unbridge.sh can know whether to delete files it didn't create.
 mkdir -p .codex
-PROVENANCE=".codex/.cc-bridge.provenance"
+PROVENANCE=".codex/.cc-suite.provenance"
 {
-  echo "# cc-bridge provenance — used by unbridge.sh"
+  echo "# cc-suite provenance — used by unbridge.sh"
   [ -n "${CLAUDE_MIGRATED:-}" ]         && [ "$CLAUDE_MIGRATED" = "1" ]         && echo "CLAUDE_MIGRATED=1"
-  [ -n "${CC_BRIDGE_CREATED_CLAUDE:-}" ] && echo "CC_BRIDGE_CREATED_CLAUDE=1"
-  [ -n "${CC_BRIDGE_CREATED_GEMINI:-}" ] && echo "CC_BRIDGE_CREATED_GEMINI=1"
+  [ -n "${CC_SUITE_CREATED_CLAUDE:-}" ] && echo "CC_SUITE_CREATED_CLAUDE=1"
+  [ -n "${CC_SUITE_CREATED_GEMINI:-}" ] && echo "CC_SUITE_CREATED_GEMINI=1"
 } >> "$PROVENANCE"
 
 # --- 4. Codex / Gemini scaffolding -----------------------------------------
@@ -150,17 +150,17 @@ done
 # --- 5. .codex/config.toml -------------------------------------------------
 if [ ! -f .codex/config.toml ]; then
   cat > .codex/config.toml <<'CFG'
-# cc-bridge: generated-by-init  (this comment is consumed by unbridge)
+# cc-suite: generated-by-init  (this comment is consumed by unbridge)
 # Codex CLI configuration for this project.
 # See: https://developers.openai.com/codex/config-reference
 
 # Uncomment to also read CLAUDE.md as a fallback instruction source:
 # project_doc_fallback_filenames = ["CLAUDE.md"]
 
-# MCP servers mirrored from .mcp.json are added below by /cc-bridge:bridge-mcp.
+# MCP servers mirrored from .mcp.json are added below by /cc-suite:bridge-mcp.
 CFG
   ok ".codex/config.toml created"
-  echo "CC_BRIDGE_CREATED_CODEX_CONFIG=1" >> "$PROVENANCE"
+  echo "CC_SUITE_CREATED_CODEX_CONFIG=1" >> "$PROVENANCE"
 else
   skip ".codex/config.toml already exists"
 fi
@@ -169,23 +169,23 @@ fi
 bash "${SCRIPT_DIR}/bridge_skills.sh"
 
 # --- 7. .gitignore ----------------------------------------------------------
-SENTINEL_START="# >>> cc-bridge >>>"
-SENTINEL_END="# <<< cc-bridge <<<"
+SENTINEL_START="# >>> cc-suite >>>"
+SENTINEL_END="# <<< cc-suite <<<"
 GITIGNORE_FILE=".gitignore"
 [ -f "$GITIGNORE_FILE" ] || touch "$GITIGNORE_FILE"
 # Detect the privacy mode of an existing block so we can replace it if it changed.
 EXISTING_PRIVATE=0
 if grep -qF "$SENTINEL_START" "$GITIGNORE_FILE"; then
-  grep -qF "cc-bridge: PRIVATE mode" "$GITIGNORE_FILE" && EXISTING_PRIVATE=1 || EXISTING_PRIVATE=0
+  grep -qF "cc-suite: PRIVATE mode" "$GITIGNORE_FILE" && EXISTING_PRIVATE=1 || EXISTING_PRIVATE=0
   if [ "$PRIVATE" = "$EXISTING_PRIVATE" ]; then
-    skip ".gitignore already has cc-bridge block (mode unchanged)"
+    skip ".gitignore already has cc-suite block (mode unchanged)"
   else
     # Remove the old block so it can be rewritten with the new mode below.
     python3 - <<'PY'
 from pathlib import Path
 text = Path(".gitignore").read_text()
-start = text.find("# >>> cc-bridge >>>")
-end   = text.find("# <<< cc-bridge <<<")
+start = text.find("# >>> cc-suite >>>")
+end   = text.find("# <<< cc-suite <<<")
 if start != -1 and end != -1:
     nl = text.find("\n", end)
     tail = nl + 1 if nl != -1 else len(text)
@@ -209,7 +209,7 @@ CLAUDE.local.md
 !.codex/skills/
 !.codex/prompts/
 !.codex/hooks.json
-!.codex/hooks.cc-bridge.json
+!.codex/hooks.cc-suite.json
 !.codex/config.toml
 
 # Gemini CLI — local files, keep checked-in subdirs
@@ -220,7 +220,7 @@ GI
     if [ "$PRIVATE" = "1" ]; then
       cat <<'GI'
 
-# cc-bridge: PRIVATE mode — bridge artifacts not shared
+# cc-suite: PRIVATE mode — bridge artifacts not shared
 AGENTS.md
 CLAUDE.md
 GEMINI.md
@@ -233,8 +233,8 @@ GI
     fi
     echo "$SENTINEL_END"
   } >> "$GITIGNORE_FILE"
-  ok ".gitignore: cc-bridge block appended ($([ "$PRIVATE" = "1" ] && echo private || echo public) mode)"
+  ok ".gitignore: cc-suite block appended ($([ "$PRIVATE" = "1" ] && echo private || echo public) mode)"
 fi
 
 echo
-ok "cc-bridge init complete. Edit AGENTS.md for shared instructions."
+ok "cc-suite init complete. Edit AGENTS.md for shared instructions."

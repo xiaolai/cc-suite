@@ -1,0 +1,14 @@
+{
+  "name": "cc-suite",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "One plugin to bridge Claude Code, Codex CLI, and Gemini CLI \u2014 shared AGENTS.md, mirrored hooks and MCP servers, bidirectional delegation",
+  "license": "ISC",
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  }
+}
