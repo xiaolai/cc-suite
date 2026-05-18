@@ -27,7 +27,11 @@ if [ -L .claude/skills/cc-suite ]; then
     skip ".claude/skills/cc-suite already symlinked → ${PLUGIN_SKILLS}"
   else
     # Plugin was updated — repoint the symlink.
-    ln -sf "$PLUGIN_SKILLS" .claude/skills/cc-suite
+    # Use rm+ln instead of ln -sf: on macOS, ln -sf follows a symlink that
+    # resolves to a directory and creates the new link INSIDE it rather than
+    # replacing the outer symlink.
+    rm .claude/skills/cc-suite
+    ln -s "$PLUGIN_SKILLS" .claude/skills/cc-suite
     ok ".claude/skills/cc-suite repointed → ${PLUGIN_SKILLS}"
   fi
 elif [ -e .claude/skills/cc-suite ]; then
