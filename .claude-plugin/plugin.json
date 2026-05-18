@@ -1,0 +1,8 @@
+{
+  "name": "cc-bridge",
+  "description": "Bridge a project's AI config across Claude Code, Codex CLI, and Gemini CLI: single-source AGENTS.md, shared skills via .agents/skills symlink, optional shared hooks, and Codex MCP wiring.",
+  "version": "0.1.0",
+  "author": {
+    "name": "xiaolai"
+  }
+}

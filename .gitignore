@@ -1,0 +1,4 @@
+# nlpm generated artifacts
+.claude/nlpm-history.json
+**/__pycache__/
+*.pyc
