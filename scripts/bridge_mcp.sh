@@ -74,6 +74,10 @@ def main() -> int:
     skipped: list[str] = []
     warned: list[str] = []
     for name, cfg in servers.items():
+        if not isinstance(cfg, dict):
+            print(f"! {name}: server config must be an object, got {type(cfg).__name__} — skipped", file=sys.stderr)
+            warned.append(name)
+            continue
         if name in SKIP_SERVERS:
             skipped.append(f"{name} (not mirrored to Codex — it is the tool Codex runs as)")
             continue

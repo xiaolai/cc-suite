@@ -150,6 +150,7 @@ done
 # --- 5. .codex/config.toml -------------------------------------------------
 if [ ! -f .codex/config.toml ]; then
   cat > .codex/config.toml <<'CFG'
+# cc-bridge: generated-by-init  (this comment is consumed by unbridge)
 # Codex CLI configuration for this project.
 # See: https://developers.openai.com/codex/config-reference
 
@@ -159,6 +160,7 @@ if [ ! -f .codex/config.toml ]; then
 # MCP servers mirrored from .mcp.json are added below by /cc-bridge:bridge-mcp.
 CFG
   ok ".codex/config.toml created"
+  echo "CC_BRIDGE_CREATED_CODEX_CONFIG=1" >> "$PROVENANCE"
 else
   skip ".codex/config.toml already exists"
 fi

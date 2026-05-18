@@ -55,7 +55,7 @@ All scripts are idempotent and safe to re-run directly:
 | `scripts/bridge_skills.sh` | `.agents/skills` → `.claude/skills` symlink |
 | `scripts/bridge_hooks.py` | `.claude/settings.json` hooks → `.codex/hooks.json` (shared events only) |
 | `scripts/bridge_mcp.sh` | `.mcp.json` servers → `.codex/config.toml` `[mcp_servers.*]` blocks |
-| `scripts/bridge_commands.sh` | `.claude/commands/*.md` → `.agents/skills/cmd-*/SKILL.md` (explicit invocation) |
+| `scripts/bridge_commands.sh` | `.claude/commands/*.md` → `.claude/skills/cmd-*/SKILL.md` (Codex sees them via the `.agents/skills/` symlink; explicit `$cmd-<name>` invocation) |
 | `scripts/mcp_codex.sh` | Adds `codex-cli` server to `.mcp.json` (Claude can invoke Codex as tool) |
 | `scripts/status.sh` | Full status report including MCP parity and Codex runtime state |
 | `scripts/unbridge.sh` | Tears down bridge artifacts; restores `CLAUDE.md` content first |

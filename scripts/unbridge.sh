@@ -22,13 +22,15 @@ PROVENANCE=".codex/.cc-bridge.provenance"
 CLAUDE_MIGRATED=0
 CC_BRIDGE_CREATED_CLAUDE=0
 CC_BRIDGE_CREATED_GEMINI=0
+CC_BRIDGE_CREATED_CODEX_CONFIG=0
 if [ -f "$PROVENANCE" ]; then
   # shellcheck disable=SC1090
   while IFS='=' read -r k v; do
     case "$k" in
-      CLAUDE_MIGRATED)         CLAUDE_MIGRATED="$v" ;;
-      CC_BRIDGE_CREATED_CLAUDE) CC_BRIDGE_CREATED_CLAUDE="$v" ;;
-      CC_BRIDGE_CREATED_GEMINI) CC_BRIDGE_CREATED_GEMINI="$v" ;;
+      CLAUDE_MIGRATED)            CLAUDE_MIGRATED="$v" ;;
+      CC_BRIDGE_CREATED_CLAUDE)   CC_BRIDGE_CREATED_CLAUDE="$v" ;;
+      CC_BRIDGE_CREATED_GEMINI)   CC_BRIDGE_CREATED_GEMINI="$v" ;;
+      CC_BRIDGE_CREATED_CODEX_CONFIG) CC_BRIDGE_CREATED_CODEX_CONFIG="$v" ;;
     esac
   done < "$PROVENANCE"
 fi
@@ -132,12 +134,16 @@ PY
 fi
 [ -f .codex/hooks.cc-bridge.json ] && { rm .codex/hooks.cc-bridge.json && ok "removed .codex/hooks.cc-bridge.json"; } || true
 
-# .codex/config.toml — only remove the cc-bridge-mcp sentinel block; leave other config intact.
+# .codex/config.toml — strip the sentinel block; if init.sh created the
+# config file in the first place AND it has not been hand-edited since,
+# remove the whole file.
 if [ -f .codex/config.toml ]; then
-  python3 - <<'PY'
+  CCBR_CFG_PROV="$CC_BRIDGE_CREATED_CODEX_CONFIG" python3 - <<'PY'
+import os
 from pathlib import Path
 SENTINEL_START = "# >>> cc-bridge-mcp >>>"
 SENTINEL_END   = "# <<< cc-bridge-mcp <<<"
+INIT_MARKER    = "# cc-bridge: generated-by-init"
 p = Path(".codex/config.toml")
 text = p.read_text(encoding="utf-8")
 start = text.find(SENTINEL_START)
@@ -145,15 +151,24 @@ end   = text.find(SENTINEL_END)
 if start != -1 and end != -1:
     nl = text.find("\n", end)
     cleaned = text[:start].rstrip("\n") + ("\n" + text[nl + 1:] if nl != -1 else "")
-    cleaned = cleaned.strip()
-    if cleaned:
+else:
+    cleaned = text
+cleaned_strip = cleaned.strip()
+# If the file was created by init.sh and the only content left is the marker
+# comment + the init template, delete the file. Provenance-aware via env.
+created_by_init = os.environ.get("CCBR_CFG_PROV") == "1" or INIT_MARKER in cleaned
+if created_by_init and INIT_MARKER in cleaned:
+    p.unlink()
+    print("✓ removed .codex/config.toml (cc-bridge-generated)")
+elif start != -1 and end != -1:
+    if cleaned_strip:
         p.write_text(cleaned + "\n", encoding="utf-8")
         print("✓ .codex/config.toml: removed cc-bridge-mcp sentinel block")
     else:
         p.unlink()
-        print("✓ removed .codex/config.toml (was cc-bridge generated)")
+        print("✓ removed .codex/config.toml (only contained sentinel block)")
 else:
-    print("· .codex/config.toml has no cc-bridge-mcp block — left alone")
+    print("· .codex/config.toml has no cc-bridge markers — left alone")
 PY
 fi
 

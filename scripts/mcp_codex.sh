@@ -46,7 +46,18 @@ from pathlib import Path
 version = sys.argv[1]
 p = Path(".mcp.json")
 data = json.loads(p.read_text())
-servers = data.setdefault("mcpServers", {})
+# Re-validate shape (the type-check above already did this, but be defensive
+# against TOCTOU between the check and the merge).
+if not isinstance(data, dict):
+    print("! .mcp.json top level changed between check and merge — leaving alone", file=sys.stderr)
+    raise SystemExit(2)
+existing = data.get("mcpServers")
+if existing is None:
+    data["mcpServers"] = {}
+elif not isinstance(existing, dict):
+    print(f"! .mcp.json mcpServers must be an object, got {type(existing).__name__}", file=sys.stderr)
+    raise SystemExit(2)
+servers = data["mcpServers"]
 servers["codex-cli"] = {
     "type": "stdio",
     "command": "npx",
