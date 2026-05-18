@@ -89,7 +89,16 @@ fi
 
 # .mcp.json — show codex-cli registration separately from other servers
 if [ -f .mcp.json ]; then
-  if grep -q '"codex-cli"' .mcp.json 2>/dev/null; then
+  if python3 -c '
+import json, sys
+from pathlib import Path
+try:
+    d = json.loads(Path(".mcp.json").read_text())
+except Exception:
+    sys.exit(1)
+s = d.get("mcpServers") if isinstance(d, dict) else None
+sys.exit(0 if isinstance(s, dict) and "codex-cli" in s else 1)
+' 2>/dev/null; then
     mark ".mcp.json → Claude" ok "codex-cli registered (Claude can invoke Codex as tool)"
   else
     mark ".mcp.json → Claude" miss "codex-cli not registered (run /cc-bridge:init step 4)"
@@ -115,19 +124,34 @@ elif [ ! -f .codex/config.toml ]; then
   mark "MCP mirror" warn ".codex/config.toml missing — Codex cannot see any project MCP servers"
 else
   python3 - <<'PY'
-import json, sys
+import json, re, sys
 from pathlib import Path
 try:
     mcp = json.loads(Path(".mcp.json").read_text())
 except (json.JSONDecodeError, OSError) as e:
     print(f"  ! .mcp.json unreadable: {e}")
     raise SystemExit(1)
-servers = [k for k in (mcp.get("mcpServers") or {}) if k != "codex-cli"]
+if not isinstance(mcp, dict):
+    print(f"  ! .mcp.json top level is not an object")
+    raise SystemExit(1)
+_servers_obj = mcp.get("mcpServers")
+if not isinstance(_servers_obj, dict):
+    if _servers_obj is None:
+        print("  · no mcpServers in .mcp.json")
+        raise SystemExit(0)
+    print(f"  ! .mcp.json mcpServers must be an object")
+    raise SystemExit(1)
+servers = [k for k in _servers_obj if k != "codex-cli"]
 if not servers:
     print("  · no additional servers in .mcp.json to check")
     raise SystemExit(0)
-config   = Path(".codex/config.toml").read_text()
-mirrored = [s for s in servers if f"[mcp_servers.{s}]" in config]
+config = Path(".codex/config.toml").read_text()
+def _toml_key(name: str) -> str:
+    # Mirror bridge_mcp.sh's key-escaping policy.
+    if re.match(r'^[a-zA-Z0-9_-]+$', name):
+        return name
+    return '"' + name.replace('\\', '\\\\').replace('"', '\\"') + '"'
+mirrored = [s for s in servers if f"[mcp_servers.{_toml_key(s)}]" in config]
 missing  = [s for s in servers if s not in mirrored]
 if mirrored:
     print(f"  ✓ mirrored to .codex/config.toml   {mirrored}")

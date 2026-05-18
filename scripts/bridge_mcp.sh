@@ -33,10 +33,16 @@ def main() -> int:
         print(f"! .mcp.json is not valid JSON: {e}", file=sys.stderr)
         return 1
 
-    servers = mcp.get("mcpServers") or {}
-    if not servers:
+    if not isinstance(mcp, dict):
+        print(f"! .mcp.json top level must be an object (got {type(mcp).__name__})", file=sys.stderr)
+        return 2
+    servers = mcp.get("mcpServers")
+    if servers is None or servers == {}:
         print("· .mcp.json has no mcpServers — nothing to mirror")
         return 0
+    if not isinstance(servers, dict):
+        print(f"! .mcp.json mcpServers must be an object (got {type(servers).__name__})", file=sys.stderr)
+        return 2
 
     Path(".codex").mkdir(exist_ok=True)
     config_path = Path(".codex/config.toml")
@@ -45,10 +51,20 @@ def main() -> int:
     # Strip old sentinel block so it can be rewritten cleanly on re-runs.
     s_start = existing.find(SENTINEL_START)
     s_end   = existing.find(SENTINEL_END)
+    # A lone (partial) sentinel marker indicates manual editing / a botched
+    # previous run; refuse to silently append a new block on top of it.
+    if (s_start == -1) != (s_end == -1):
+        print(
+            f"! .codex/config.toml has only one of the cc-bridge sentinel markers "
+            f"({'start' if s_start != -1 else 'end'} present). "
+            "Manually repair before rerunning.",
+            file=sys.stderr,
+        )
+        return 2
     if s_start != -1 and s_end != -1:
-        tail = existing.find("\n", s_end)
+        nl = existing.find("\n", s_end)
         base = existing[:s_start].rstrip("\n") + (
-            "\n" + existing[tail + 1:] if tail != -1 else ""
+            "\n" + existing[nl + 1:] if nl != -1 else ""
         )
     else:
         base = existing

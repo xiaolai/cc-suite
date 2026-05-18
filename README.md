@@ -10,7 +10,7 @@ the same context, skills, hooks, and MCP servers without hand-editing.
 |---|---|
 | **Instructions** | Single `AGENTS.md` as source of truth. `CLAUDE.md` and `GEMINI.md` become thin `@AGENTS.md` imports. Codex reads `AGENTS.md` natively. |
 | **Skills** | `.agents/skills/` is a symlink to `.claude/skills/`. Codex and Gemini CLI both scan `.agents/skills/`; every Claude skill is automatically visible. |
-| **Commands → Skills** | `.claude/commands/*.md` are converted to `.agents/skills/cmd-<name>/` with explicit-only invocation (`$cmd-<name>` in Codex). Codex has no project-scoped slash commands; Skills are the portable equivalent. |
+| **Commands → Skills** | `.claude/commands/*.md` are converted to `.claude/skills/cmd-<name>/` (so Claude sees them too) and exposed to Codex via the `.agents/skills/ → .claude/skills/` symlink. Invoke explicitly with `$cmd-<name>` in Codex. Codex has no project-scoped slash commands; Skills are the portable equivalent. |
 | **Hooks** | Mirrors the five overlapping events from `.claude/settings.json` into `.codex/hooks.json`. The same `.claude/hooks/*.py` scripts run from both tools. |
 | **MCP (Claude → Codex tool)** | Adds the `codex-cli` MCP server to `.mcp.json` so Claude Code can invoke Codex as a tool. |
 | **MCP (project servers → Codex config)** | Mirrors `.mcp.json` server entries into `.codex/config.toml` `[mcp_servers.*]` blocks so Codex can use the same project MCP servers. |
@@ -80,12 +80,14 @@ The `bridge-hooks` command copies the five shared events; Claude-only events are
 
 ## How the commands bridge works
 
-Codex's custom prompts (its equivalent of slash commands) are user-scope only — they live in `~/.codex/prompts/` and are not repo-scoped. `bridge_commands.sh` converts each `.claude/commands/<name>.md` to a Skill:
+Codex's custom prompts (its equivalent of slash commands) are user-scope only — they live in `~/.codex/prompts/` and are not repo-scoped. `bridge_commands.sh` converts each `.claude/commands/<name>.md` to a Skill **under `.claude/skills/`** (so Claude sees them too) and reaches Codex via the `.agents/skills/ → .claude/skills/` symlink:
 
 ```
-.agents/skills/cmd-<name>/
-  SKILL.md               # adapted from .claude/commands/<name>.md
-  agents/openai.yaml     # allow_implicit_invocation: false
+.claude/skills/cmd-<name>/     # physical location (Claude reads here)
+  SKILL.md                     # adapted from .claude/commands/<name>.md
+  agents/openai.yaml           # allow_implicit_invocation: false
+
+.agents/skills/cmd-<name>/     # virtual view via symlink (what Codex reads)
 ```
 
 Users invoke with `$cmd-<name>` in Codex rather than `/cmd-name`. Skills are repo-scoped and survive clones.

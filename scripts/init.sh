@@ -39,13 +39,22 @@ if [ -f AGENTS.md ]; then
 else
   EXISTING_BODY=""
   if [ -f CLAUDE.md ]; then
-    # Migrate only if CLAUDE.md is entirely substantive content (no @AGENTS.md line at all).
-    # A file that is "@AGENTS.md + extra lines" is an unusual hybrid — leave it alone.
-    if grep -qE '^@AGENTS\.md\s*$' CLAUDE.md; then
-      skip "CLAUDE.md already has @AGENTS.md import — not migrating"
+    # A pure @AGENTS.md import is a one-line file. Anything else (including
+    # `@AGENTS.md\n# extra content`) is either substantive content or an
+    # unusual hybrid and should NOT be silently overwritten.
+    _claude_trim="$(tr -d '[:space:]' < CLAUDE.md)"
+    if [ "$_claude_trim" = "@AGENTS.md" ]; then
+      skip "CLAUDE.md is already a pure @AGENTS.md import — not migrating"
+    elif grep -qE '^@AGENTS\.md\s*$' CLAUDE.md; then
+      # Hybrid: @AGENTS.md line + other content. Refuse to touch it.
+      skip "CLAUDE.md has @AGENTS.md + other content (hybrid) — left alone; merge by hand"
     else
       EXISTING_BODY="$(cat CLAUDE.md)"
       CLAUDE_MIGRATED=1
+      # Save the original CLAUDE.md verbatim so unbridge.sh can restore it
+      # without the cc-bridge scaffolding that AGENTS.md adds around the body.
+      mkdir -p .codex
+      cp CLAUDE.md .codex/.cc-bridge-original-claude.md
     fi
   fi
   {
@@ -87,7 +96,8 @@ fi
 
 # --- 2. CLAUDE.md → @AGENTS.md import --------------------------------------
 if [ -f CLAUDE.md ]; then
-  if grep -qE '^@AGENTS\.md\s*$' CLAUDE.md; then
+  _claude_trim="$(tr -d '[:space:]' < CLAUDE.md)"
+  if [ "$_claude_trim" = "@AGENTS.md" ]; then
     skip "CLAUDE.md already imports @AGENTS.md"
   elif [ "$CLAUDE_MIGRATED" = "1" ]; then
     # Safe to replace: content was just written to AGENTS.md in this run.
@@ -98,20 +108,33 @@ if [ -f CLAUDE.md ]; then
   fi
 else
   echo "@AGENTS.md" > CLAUDE.md
+  CC_BRIDGE_CREATED_CLAUDE=1
   ok "CLAUDE.md created (@AGENTS.md import)"
 fi
 
 # --- 3. GEMINI.md → @AGENTS.md import --------------------------------------
 if [ -f GEMINI.md ]; then
-  if grep -qE '^@AGENTS\.md\s*$' GEMINI.md; then
+  _gemini_trim="$(tr -d '[:space:]' < GEMINI.md)"
+  if [ "$_gemini_trim" = "@AGENTS.md" ]; then
     skip "GEMINI.md already imports @AGENTS.md"
   else
     skip "GEMINI.md exists with custom content — left alone"
   fi
 else
   echo "@AGENTS.md" > GEMINI.md
+  CC_BRIDGE_CREATED_GEMINI=1
   ok "GEMINI.md created (@AGENTS.md import)"
 fi
+
+# Record provenance so unbridge.sh can know whether to delete files it didn't create.
+mkdir -p .codex
+PROVENANCE=".codex/.cc-bridge.provenance"
+{
+  echo "# cc-bridge provenance — used by unbridge.sh"
+  [ -n "${CLAUDE_MIGRATED:-}" ]         && [ "$CLAUDE_MIGRATED" = "1" ]         && echo "CLAUDE_MIGRATED=1"
+  [ -n "${CC_BRIDGE_CREATED_CLAUDE:-}" ] && echo "CC_BRIDGE_CREATED_CLAUDE=1"
+  [ -n "${CC_BRIDGE_CREATED_GEMINI:-}" ] && echo "CC_BRIDGE_CREATED_GEMINI=1"
+} >> "$PROVENANCE"
 
 # --- 4. Codex / Gemini scaffolding -----------------------------------------
 mkdir -p .codex/prompts .gemini/skills .gemini/commands
@@ -162,7 +185,8 @@ text = Path(".gitignore").read_text()
 start = text.find("# >>> cc-bridge >>>")
 end   = text.find("# <<< cc-bridge <<<")
 if start != -1 and end != -1:
-    tail = text.find("\n", end) + 1
+    nl = text.find("\n", end)
+    tail = nl + 1 if nl != -1 else len(text)
     Path(".gitignore").write_text(text[:start].rstrip() + "\n" + text[tail:])
 PY
   fi

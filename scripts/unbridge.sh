@@ -17,16 +17,40 @@ sys.exit(0 if c == "@AGENTS.md" else 1)
 ' "$1" 2>/dev/null
 }
 
+# Read provenance written by init.sh.
+PROVENANCE=".codex/.cc-bridge.provenance"
+CLAUDE_MIGRATED=0
+CC_BRIDGE_CREATED_CLAUDE=0
+CC_BRIDGE_CREATED_GEMINI=0
+if [ -f "$PROVENANCE" ]; then
+  # shellcheck disable=SC1090
+  while IFS='=' read -r k v; do
+    case "$k" in
+      CLAUDE_MIGRATED)         CLAUDE_MIGRATED="$v" ;;
+      CC_BRIDGE_CREATED_CLAUDE) CC_BRIDGE_CREATED_CLAUDE="$v" ;;
+      CC_BRIDGE_CREATED_GEMINI) CC_BRIDGE_CREATED_GEMINI="$v" ;;
+    esac
+  done < "$PROVENANCE"
+fi
+
 # AGENTS.md — restore content to CLAUDE.md first, then delete.
 if [ -f AGENTS.md ]; then
-  if [ -f CLAUDE.md ] && is_pure_import CLAUDE.md; then
-    # CLAUDE.md is a bare @import — restore AGENTS.md content into it.
+  if [ "$CC_BRIDGE_CREATED_CLAUDE" = "1" ]; then
+    # init.sh created CLAUDE.md from scratch — there is nothing original to restore.
+    skip "CLAUDE.md was created by cc-bridge; will be removed (no content to restore)"
+  elif [ "$CLAUDE_MIGRATED" = "1" ] && [ -f .codex/.cc-bridge-original-claude.md ]; then
+    # Restore the verbatim original CLAUDE.md, not the AGENTS.md scaffolding.
+    cp .codex/.cc-bridge-original-claude.md CLAUDE.md
+    rm .codex/.cc-bridge-original-claude.md
+    ok "restored original CLAUDE.md content from cc-bridge backup"
+  elif [ -f CLAUDE.md ] && is_pure_import CLAUDE.md; then
+    # No provenance and CLAUDE.md is a bare @import — fall back to copying
+    # AGENTS.md verbatim. May include scaffolding, but better than data loss.
     cp AGENTS.md CLAUDE.md
-    ok "restored CLAUDE.md content from AGENTS.md"
+    warn "no provenance found; restored CLAUDE.md from AGENTS.md verbatim (may include cc-bridge scaffolding)"
   elif [ ! -f CLAUDE.md ]; then
-    # No CLAUDE.md at all — move content there so nothing is lost.
     cp AGENTS.md CLAUDE.md
-    ok "created CLAUDE.md from AGENTS.md (no prior CLAUDE.md)"
+    warn "no provenance found; created CLAUDE.md from AGENTS.md"
   else
     # CLAUDE.md has its own content — back up AGENTS.md beside it.
     _backup="AGENTS.md.cc-bridge-backup"
@@ -44,11 +68,11 @@ else
   skip "AGENTS.md not present"
 fi
 
-# GEMINI.md — only remove a cc-bridge-generated bare @AGENTS.md import (no other content).
+# GEMINI.md — remove if it was cc-bridge-created or is a bare @import.
 if [ -f GEMINI.md ]; then
-  if is_pure_import GEMINI.md; then
+  if [ "$CC_BRIDGE_CREATED_GEMINI" = "1" ] || is_pure_import GEMINI.md; then
     rm GEMINI.md
-    ok "removed GEMINI.md (@AGENTS.md import)"
+    ok "removed GEMINI.md (cc-bridge created or @AGENTS.md import)"
   else
     skip "GEMINI.md has custom content — left alone"
   fi
@@ -56,11 +80,20 @@ else
   skip "GEMINI.md not present"
 fi
 
-# CLAUDE.md — if it's now a dangling @import after AGENTS.md was removed, clean it up.
-if [ -f CLAUDE.md ] && is_pure_import CLAUDE.md; then
-  rm CLAUDE.md
-  ok "removed CLAUDE.md (was dangling @AGENTS.md import)"
+# CLAUDE.md — if init.sh created it from scratch, remove it now (back to original state).
+# Else if it's a dangling @import after AGENTS.md was removed, clean it up.
+if [ -f CLAUDE.md ]; then
+  if [ "$CC_BRIDGE_CREATED_CLAUDE" = "1" ] && is_pure_import CLAUDE.md; then
+    rm CLAUDE.md
+    ok "removed CLAUDE.md (cc-bridge-created, no prior CLAUDE.md existed)"
+  elif is_pure_import CLAUDE.md; then
+    rm CLAUDE.md
+    ok "removed CLAUDE.md (was dangling @AGENTS.md import)"
+  fi
 fi
+
+# Provenance file — remove after we've consumed it.
+[ -f "$PROVENANCE" ] && rm "$PROVENANCE" || true
 
 # .agents/skills symlink only — never the .claude/skills/ target.
 if [ -L .agents/skills ]; then
@@ -110,8 +143,8 @@ text = p.read_text(encoding="utf-8")
 start = text.find(SENTINEL_START)
 end   = text.find(SENTINEL_END)
 if start != -1 and end != -1:
-    tail = text.find("\n", end)
-    cleaned = text[:start].rstrip("\n") + ("\n" + text[tail + 1:] if tail != -1 else "")
+    nl = text.find("\n", end)
+    cleaned = text[:start].rstrip("\n") + ("\n" + text[nl + 1:] if nl != -1 else "")
     cleaned = cleaned.strip()
     if cleaned:
         p.write_text(cleaned + "\n", encoding="utf-8")
@@ -140,7 +173,8 @@ text = Path(".gitignore").read_text()
 start = text.find("# >>> cc-bridge >>>")
 end   = text.find("# <<< cc-bridge <<<")
 if start != -1 and end != -1:
-    end_line = text.find("\n", end) + 1
+    nl = text.find("\n", end)
+    end_line = nl + 1 if nl != -1 else len(text)
     new = text[:start].rstrip() + "\n" + text[end_line:]
     Path(".gitignore").write_text(new.lstrip("\n"))
     print("✓ removed cc-bridge block from .gitignore")

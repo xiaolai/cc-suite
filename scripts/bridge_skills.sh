@@ -32,6 +32,14 @@ if [ -e .agents/skills ]; then
   exit 1
 fi
 
-ln -s ../.claude/skills .agents/skills
+if ! ln -s ../.claude/skills .agents/skills 2>/dev/null; then
+  # Concurrent run may have created the same symlink; accept that as success.
+  if [ -L .agents/skills ] && [ "$(readlink .agents/skills)" = "../.claude/skills" ]; then
+    skip ".agents/skills already symlinked (raced with concurrent run)"
+    exit 0
+  fi
+  warn "ln -s .agents/skills failed and the symlink is not in the expected state"
+  exit 1
+fi
 count="$(find .agents/skills/ -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
 ok ".agents/skills → ../.claude/skills (${count} skills visible to Codex)"
