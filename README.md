@@ -1,5 +1,7 @@
 # cc-suite
 
+[![Validated by NLPM](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/xiaolai/cc-suite/main/nlpm-badge.json)](https://github.com/xiaolai/cc-suite/blob/main/nlpm-badge.json)
+
 One Claude Code plugin to synchronize **Claude Code**, **Codex CLI**, and **Gemini CLI** on the same project — and let them delegate work to each other.
 
 ## Why
