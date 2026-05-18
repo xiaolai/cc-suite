@@ -112,3 +112,5 @@ Items that require manual action (flag, do not attempt to fix):
 After all auto-fixes, run `bash "$SKILL_PLUGIN_ROOT/scripts/status.sh"` again.
 
 Report: N issues fixed, N remaining (with manual steps for those that remain).
+
+If issues persist after auto-fix, close with: "Issues remain. Next step: run `$repair` for a full non-interactive re-run of all setup scripts. If that also fails, run `/cc-suite:init` in a Claude Code session for a complete interactive re-initialization."
