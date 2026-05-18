@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # cc-bridge: add the codex-cli MCP server to .mcp.json (idempotent merge).
+#
+# Security note: the npx command below uses an unpinned package version.
+# To pin to a specific version, change "codex-mcp-server" to
+# "codex-mcp-server@<version>" in the args array after running this script.
 
 set -euo pipefail
 
@@ -7,11 +11,17 @@ ok()   { printf '✓ %s\n' "$*"; }
 skip() { printf '· %s\n' "$*"; }
 
 if [ -f .mcp.json ]; then
-  if grep -q '"codex-cli"' .mcp.json; then
-    skip ".mcp.json already lists codex-cli"
+  # Use JSON parsing to check for the key — avoids false positives from grep.
+  if python3 -c '
+import json, sys
+from pathlib import Path
+data = json.loads(Path(".mcp.json").read_text())
+sys.exit(0 if "codex-cli" in data.get("mcpServers", {}) else 1)
+' 2>/dev/null; then
+    skip ".mcp.json already registers codex-cli"
     exit 0
   fi
-  # Use Python to merge cleanly.
+  # Merge cleanly with Python.
   python3 - <<'PY'
 import json
 from pathlib import Path

@@ -76,8 +76,9 @@ def main() -> int:
         target = Path(".codex/hooks.cc-bridge.json")
         print(f"! .codex/hooks.json already exists — wrote to {target} for review/merge")
 
+    output = {"_cc_bridge_version": "1", "hooks": mirrored}
     target.write_text(
-        json.dumps({"hooks": mirrored}, indent=2) + "\n",
+        json.dumps(output, indent=2) + "\n",
         encoding="utf-8",
     )
     print(f"✓ {target}: mirrored events {sorted(mirrored)}")

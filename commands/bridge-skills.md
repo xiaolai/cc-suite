@@ -1,5 +1,5 @@
 ---
-description: Symlink .claude/skills/ → .agents/skills/ so Codex CLI sees all Claude skills without duplication.
+description: Symlink .agents/skills/ → .claude/skills/ so Codex CLI sees all Claude skills without duplication.
 allowed-tools:
   - Bash
 ---

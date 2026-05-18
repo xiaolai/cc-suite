@@ -43,7 +43,7 @@ claude plugin install /path/to/cc-bridge --scope project
 | `/cc-bridge:bridge-skills` | Create the `.agents/skills` → `.claude/skills` symlink only. |
 | `/cc-bridge:bridge-hooks` | Mirror `.claude/settings.json` hooks → `.codex/hooks.json` (shared events only). |
 | `/cc-bridge:status` | Show bridge state, MCP parity, and Codex runtime checks (trust, plugin_hooks, AGENTS.md size). |
-| `/cc-bridge:unbridge` | Tear down bridge artifacts with confirmation. Automatically restores `CLAUDE.md` from `AGENTS.md` before removing it — no manual copy needed. |
+| `/cc-bridge:unbridge` | Tear down bridge artifacts with confirmation. AGENTS.md content is restored to CLAUDE.md automatically when CLAUDE.md is a bare `@import`; otherwise backed up as `AGENTS.md.cc-bridge-backup`. `.codex/hooks.json` and `.codex/config.toml` are only modified if cc-bridge generated their content. |
 
 ## Scripts
 
@@ -118,10 +118,11 @@ All operations are safe to re-run:
 
 - `AGENTS.md` is never overwritten if it already exists.
 - `CLAUDE.md` is only rewritten if its content was just migrated to `AGENTS.md` in the same run.
-- `.agents/skills` is only created if it doesn't exist as a real directory.
+- `.agents/skills` symlink is only created if the path doesn't exist as a real directory.
 - `.codex/hooks.json` is never silently overwritten; if present, the new mirror goes to `.codex/hooks.cc-bridge.json` for review.
 - `.codex/config.toml` MCP entries use a sentinel block; manual entries outside it are never touched.
-- `.gitignore` block is only added if the cc-bridge sentinel is absent.
+- `.gitignore` block is only added if the cc-bridge sentinel is absent; re-running with a different `--private` mode replaces the block cleanly.
+- On unbridge: `.codex/hooks.json` is only removed if it contains exclusively cc-bridge events. `.codex/config.toml` has only the cc-bridge-mcp block removed; other config is preserved.
 
 ## Layout (after running `/cc-bridge:init` with all optional steps)
 
@@ -132,12 +133,14 @@ your-repo/
 ├── GEMINI.md                    # @AGENTS.md
 ├── .mcp.json                    # codex-cli MCP server + project servers
 ├── .gitignore                   # includes cc-bridge block
-├── .claude/                     # Claude Code (unchanged)
+├── .claude/
+│   └── skills/
+│       ├── <your-skill>/        # existing Claude skills
+│       └── cmd-<name>/          # skills generated from .claude/commands/
+│           ├── SKILL.md
+│           └── agents/openai.yaml
 ├── .agents/
-│   ├── skills/                  # → symlink to .claude/skills/
-│   └── skills/cmd-<name>/       # skills generated from .claude/commands/
-│       ├── SKILL.md
-│       └── agents/openai.yaml
+│   └── skills -> ../.claude/skills/   # symlink — Codex + Gemini scan path
 ├── .codex/
 │   ├── config.toml              # Codex config + mirrored MCP servers
 │   ├── prompts/.gitkeep

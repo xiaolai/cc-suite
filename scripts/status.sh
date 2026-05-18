@@ -57,8 +57,12 @@ fi
 if [ -L .agents/skills ]; then
   _target="$(readlink .agents/skills)"
   if [ "$_target" = "../.claude/skills" ]; then
-    _count="$(find .agents/skills/ -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
-    mark ".agents/skills" ok "→ ../.claude/skills (${_count} skills)"
+    if [ -d .agents/skills ]; then
+      _count="$(find .agents/skills/ -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+      mark ".agents/skills" ok "→ ../.claude/skills (${_count} skills)"
+    else
+      mark ".agents/skills" warn "→ ../.claude/skills (TARGET MISSING — broken symlink)"
+    fi
   else
     mark ".agents/skills" warn "→ ${_target} (unexpected target)"
   fi
@@ -110,10 +114,14 @@ if [ ! -f .mcp.json ]; then
 elif [ ! -f .codex/config.toml ]; then
   mark "MCP mirror" warn ".codex/config.toml missing — Codex cannot see any project MCP servers"
 else
-  python3 - <<'PY' 2>/dev/null || true
-import json
+  python3 - <<'PY'
+import json, sys
 from pathlib import Path
-mcp     = json.loads(Path(".mcp.json").read_text())
+try:
+    mcp = json.loads(Path(".mcp.json").read_text())
+except (json.JSONDecodeError, OSError) as e:
+    print(f"  ! .mcp.json unreadable: {e}")
+    raise SystemExit(1)
 servers = [k for k in (mcp.get("mcpServers") or {}) if k != "codex-cli"]
 if not servers:
     print("  · no additional servers in .mcp.json to check")
@@ -141,15 +149,20 @@ if [ ! -f "$CODEX_CFG" ]; then
 else
   # Project trust — hooks, rules, and project config.toml are inert until trusted.
   _trust=$(python3 -c '
-import sys, pathlib
+import sys, re, pathlib
 config = pathlib.Path(sys.argv[1]).read_text()
-repo = sys.argv[2]
+repo   = sys.argv[2]
+# Match the section header that contains the exact repo path as a quoted TOML key.
 in_section = False
 for line in config.splitlines():
     s = line.strip()
     if s.startswith("["):
-        in_section = "projects" in s and repo in s
-    elif in_section and "trust_level" in s and "trusted" in s:
+        # Exact match: [projects."<path>"] or [projects.'<path>'] only.
+        in_section = bool(re.match(
+            r"^\[projects\s*\.\s*[\"'"'"']" + re.escape(repo) + r"[\"'"'"']\s*\]$",
+            s
+        ))
+    elif in_section and re.match(r"trust_level\s*=\s*[\"'"'"']trusted[\"'"'"']", s):
         print("trusted")
         raise SystemExit(0)
 print("untrusted")
@@ -164,7 +177,23 @@ print("untrusted")
   fi
 
   # plugin_hooks feature flag — required for plugin-bundled hooks to fire.
-  if grep -qE '^\s*plugin_hooks\s*=\s*true' "$CODEX_CFG" 2>/dev/null; then
+  # Must be under [features] section, not just anywhere in the file.
+  _plugin_hooks=$(python3 -c '
+import sys, pathlib
+text = pathlib.Path(sys.argv[1]).read_text()
+in_features = False
+for line in text.splitlines():
+    s = line.strip()
+    if s.startswith("["):
+        in_features = s == "[features]"
+    elif in_features and s.startswith("plugin_hooks"):
+        import re
+        if re.match(r"plugin_hooks\s*=\s*true", s):
+            print("enabled")
+            sys.exit(0)
+print("disabled")
+' "$CODEX_CFG" 2>/dev/null)
+  if [ "${_plugin_hooks:-disabled}" = "enabled" ]; then
     mark "plugin_hooks" ok "enabled in ~/.codex/config.toml"
   else
     mark "plugin_hooks" warn "not set — plugin-bundled hooks are inert"

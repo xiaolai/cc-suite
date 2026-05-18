@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# cc-bridge: expose .claude/commands/*.md as .agents/skills/cmd-<name>/SKILL.md.
+# cc-bridge: expose .claude/commands/*.md as Claude skills under .claude/skills/cmd-<name>/.
 #
-# Codex has no project-scoped slash commands. Skills are the portable equivalent:
-# each generated skill sets allow_implicit_invocation=false so users invoke
-# with $cmd-<name> rather than having it fire automatically.
+# Skills are written to .claude/skills/ (Claude's native path), not .agents/skills/.
+# The .agents/skills → .claude/skills symlink created by bridge_skills.sh makes them
+# visible to Codex and Gemini CLI automatically.
+#
+# Each generated skill sets allow_implicit_invocation=false so users invoke
+# with $cmd-<name> in Codex rather than having it fire automatically.
 #
 # Idempotent: skips any skill whose SKILL.md already exists.
 
@@ -42,21 +45,28 @@ def parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
     for line in fm_text.splitlines():
         m = re.match(r'^([\w-]+):\s*(.*)', line)
         if m:
-            # Store only scalar values; skip YAML list items (lines starting with -)
             val = m.group(2).strip().strip('"').strip("'")
             if val:
                 meta[m.group(1)] = val
     return meta, body
 
 
+def yaml_scalar(s: str) -> str:
+    """Return a safely quoted YAML scalar if the value contains special chars."""
+    if re.search(r'[:{}\[\],#&*!|>\'"%@`]', s) or s.startswith(' ') or s.endswith(' '):
+        return '"' + s.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    return s
+
+
 def main() -> None:
     files = sys.argv[1:]
-    Path(".agents/skills").mkdir(parents=True, exist_ok=True)
+    skills_base = Path(".claude/skills")
+    skills_base.mkdir(parents=True, exist_ok=True)
     count = 0
     for path_str in files:
         src = Path(path_str)
         name = src.stem
-        skill_dir = Path(".agents/skills") / f"cmd-{name}"
+        skill_dir = skills_base / f"cmd-{name}"
         skill_file = skill_dir / "SKILL.md"
 
         if skill_file.exists():
@@ -73,10 +83,11 @@ def main() -> None:
         skill_dir.mkdir(parents=True, exist_ok=True)
         (skill_dir / "agents").mkdir(exist_ok=True)
 
+        desc_yaml = yaml_scalar(f"{description} Invoke explicitly with $cmd-{name} in Codex.")
         skill_md = (
             f"---\n"
             f"name: cmd-{name}\n"
-            f"description: {description} Invoke explicitly with $cmd-{name} in Codex.\n"
+            f"description: {desc_yaml}\n"
             f"---\n\n"
             f"{body.rstrip()}\n"
         )
@@ -88,12 +99,13 @@ def main() -> None:
             encoding="utf-8",
         )
 
-        print(f"✓ cmd-{name}: .agents/skills/cmd-{name}/ (from .claude/commands/{name}.md)")
+        print(f"✓ cmd-{name}: .claude/skills/cmd-{name}/ (from .claude/commands/{name}.md)")
         count += 1
 
     if count > 0:
         last = Path(files[-1]).stem
-        print(f"\n  Invoke in Codex with $cmd-<name>  (e.g. $cmd-{last})")
+        print(f"\n  Skills written to .claude/skills/ and visible to Codex via .agents/skills symlink.")
+        print(f"  Invoke in Codex with $cmd-<name>  (e.g. $cmd-{last})")
 
 
 if __name__ == "__main__":

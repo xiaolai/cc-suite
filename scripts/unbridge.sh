@@ -5,16 +5,38 @@ set -euo pipefail
 
 ok()   { printf '✓ %s\n' "$*"; }
 skip() { printf '· %s\n' "$*"; }
+warn() { printf '! %s\n' "$*" >&2; }
 
-# AGENTS.md — restore CLAUDE.md from it first if CLAUDE.md is a pure @import,
-# so content is never lost when the only copy lived in AGENTS.md.
+# Returns 0 if the named file contains only "@AGENTS.md" (bare import, no other content).
+is_pure_import() {
+  python3 -c '
+import sys
+from pathlib import Path
+c = Path(sys.argv[1]).read_text().strip()
+sys.exit(0 if c == "@AGENTS.md" else 1)
+' "$1" 2>/dev/null
+}
+
+# AGENTS.md — restore content to CLAUDE.md first, then delete.
 if [ -f AGENTS.md ]; then
-  if [ -f CLAUDE.md ] && grep -qE '^@AGENTS\.md\s*$' CLAUDE.md; then
+  if [ -f CLAUDE.md ] && is_pure_import CLAUDE.md; then
+    # CLAUDE.md is a bare @import — restore AGENTS.md content into it.
     cp AGENTS.md CLAUDE.md
     ok "restored CLAUDE.md content from AGENTS.md"
   elif [ ! -f CLAUDE.md ]; then
+    # No CLAUDE.md at all — move content there so nothing is lost.
     cp AGENTS.md CLAUDE.md
     ok "created CLAUDE.md from AGENTS.md (no prior CLAUDE.md)"
+  else
+    # CLAUDE.md has its own content — back up AGENTS.md beside it.
+    _backup="AGENTS.md.cc-bridge-backup"
+    _i=1
+    while [ -f "$_backup" ]; do
+      _backup="AGENTS.md.cc-bridge-backup.$_i"
+      _i=$((_i + 1))
+    done
+    cp AGENTS.md "$_backup"
+    warn "CLAUDE.md has its own content; backed up AGENTS.md → $_backup"
   fi
   rm AGENTS.md
   ok "removed AGENTS.md"
@@ -22,18 +44,25 @@ else
   skip "AGENTS.md not present"
 fi
 
-# GEMINI.md — remove if present
-[ -f GEMINI.md ] && { rm GEMINI.md && ok "removed GEMINI.md"; } || skip "GEMINI.md not present"
+# GEMINI.md — only remove a cc-bridge-generated bare @AGENTS.md import (no other content).
+if [ -f GEMINI.md ]; then
+  if is_pure_import GEMINI.md; then
+    rm GEMINI.md
+    ok "removed GEMINI.md (@AGENTS.md import)"
+  else
+    skip "GEMINI.md has custom content — left alone"
+  fi
+else
+  skip "GEMINI.md not present"
+fi
 
-# CLAUDE.md — now that AGENTS.md is gone, if CLAUDE.md is still a bare @import
-# (e.g. the restore above overwrote it with AGENTS.md content that itself was "@AGENTS.md"),
-# clear it to avoid a dangling reference. Otherwise leave it alone.
-if [ -f CLAUDE.md ] && grep -qE '^@AGENTS\.md\s*$' CLAUDE.md; then
+# CLAUDE.md — if it's now a dangling @import after AGENTS.md was removed, clean it up.
+if [ -f CLAUDE.md ] && is_pure_import CLAUDE.md; then
   rm CLAUDE.md
   ok "removed CLAUDE.md (was dangling @AGENTS.md import)"
 fi
 
-# .agents/skills symlink only
+# .agents/skills symlink only — never the .claude/skills/ target.
 if [ -L .agents/skills ]; then
   rm .agents/skills
   ok "removed .agents/skills symlink"
@@ -42,16 +71,58 @@ else
   skip ".agents/skills not a symlink"
 fi
 
-# .codex/prompts and .codex/hooks.json
+# .codex/prompts — only if empty of real content.
 if [ -d .codex/prompts ] && [ -z "$(ls -A .codex/prompts 2>/dev/null | grep -v '^\.gitkeep$')" ]; then
   rm -rf .codex/prompts && ok "removed empty .codex/prompts/"
 else
   skip ".codex/prompts/ non-empty or missing"
 fi
-[ -f .codex/hooks.json ]            && { rm .codex/hooks.json            && ok "removed .codex/hooks.json"; }            || true
-[ -f .codex/hooks.cc-bridge.json ]  && { rm .codex/hooks.cc-bridge.json  && ok "removed .codex/hooks.cc-bridge.json"; }  || true
-[ -f .codex/config.toml ]           && { rm .codex/config.toml           && ok "removed .codex/config.toml"; }           || true
-[ -d .codex ] && rmdir .codex 2>/dev/null && ok "removed empty .codex/" || true
+
+# .codex/hooks.json — only if it appears cc-bridge-generated (contains only bridge events).
+if [ -f .codex/hooks.json ]; then
+  if python3 - <<'PY' 2>/dev/null; then
+import json, sys
+from pathlib import Path
+BRIDGE_EVENTS = {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"}
+try:
+    data = json.loads(Path(".codex/hooks.json").read_text())
+    events = set(data.get("hooks", {}).keys())
+    has_marker = "_cc_bridge_version" in data
+    sys.exit(0 if (has_marker and events <= BRIDGE_EVENTS) else 1)
+except Exception:
+    sys.exit(1)
+PY
+    rm .codex/hooks.json && ok "removed .codex/hooks.json (cc-bridge generated)"
+  else
+    skip ".codex/hooks.json has non-bridge events or is non-standard — left alone"
+  fi
+fi
+[ -f .codex/hooks.cc-bridge.json ] && { rm .codex/hooks.cc-bridge.json && ok "removed .codex/hooks.cc-bridge.json"; } || true
+
+# .codex/config.toml — only remove the cc-bridge-mcp sentinel block; leave other config intact.
+if [ -f .codex/config.toml ]; then
+  python3 - <<'PY'
+from pathlib import Path
+SENTINEL_START = "# >>> cc-bridge-mcp >>>"
+SENTINEL_END   = "# <<< cc-bridge-mcp <<<"
+p = Path(".codex/config.toml")
+text = p.read_text(encoding="utf-8")
+start = text.find(SENTINEL_START)
+end   = text.find(SENTINEL_END)
+if start != -1 and end != -1:
+    tail = text.find("\n", end)
+    cleaned = text[:start].rstrip("\n") + ("\n" + text[tail + 1:] if tail != -1 else "")
+    cleaned = cleaned.strip()
+    if cleaned:
+        p.write_text(cleaned + "\n", encoding="utf-8")
+        print("✓ .codex/config.toml: removed cc-bridge-mcp sentinel block")
+    else:
+        p.unlink()
+        print("✓ removed .codex/config.toml (was cc-bridge generated)")
+else:
+    print("· .codex/config.toml has no cc-bridge-mcp block — left alone")
+PY
+fi
 
 # .gemini empties
 for d in .gemini/skills .gemini/commands; do

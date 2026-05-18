@@ -11,7 +11,11 @@ PRIVATE=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --description) DESCRIPTION="$2"; shift 2 ;;
+    --description)
+      if [ $# -lt 2 ] || [[ "$2" == --* ]]; then
+        echo "--description requires a value" >&2; exit 2
+      fi
+      DESCRIPTION="$2"; shift 2 ;;
     --private)     PRIVATE=1; shift ;;
     --help|-h)     sed -n '2,4p' "$0"; exit 0 ;;
     *)             echo "unknown arg: $1" >&2; exit 2 ;;
@@ -34,9 +38,15 @@ if [ -f AGENTS.md ]; then
   skip "AGENTS.md already exists — leaving alone"
 else
   EXISTING_BODY=""
-  if [ -f CLAUDE.md ] && ! grep -qE '^@AGENTS\.md\s*$' CLAUDE.md; then
-    EXISTING_BODY="$(cat CLAUDE.md)"
-    CLAUDE_MIGRATED=1
+  if [ -f CLAUDE.md ]; then
+    # Migrate only if CLAUDE.md is entirely substantive content (no @AGENTS.md line at all).
+    # A file that is "@AGENTS.md + extra lines" is an unusual hybrid — leave it alone.
+    if grep -qE '^@AGENTS\.md\s*$' CLAUDE.md; then
+      skip "CLAUDE.md already has @AGENTS.md import — not migrating"
+    else
+      EXISTING_BODY="$(cat CLAUDE.md)"
+      CLAUDE_MIGRATED=1
+    fi
   fi
   {
     echo "# Project Instructions"
@@ -138,9 +148,26 @@ SENTINEL_START="# >>> cc-bridge >>>"
 SENTINEL_END="# <<< cc-bridge <<<"
 GITIGNORE_FILE=".gitignore"
 [ -f "$GITIGNORE_FILE" ] || touch "$GITIGNORE_FILE"
+# Detect the privacy mode of an existing block so we can replace it if it changed.
+EXISTING_PRIVATE=0
 if grep -qF "$SENTINEL_START" "$GITIGNORE_FILE"; then
-  skip ".gitignore already has cc-bridge block"
-else
+  grep -qF "cc-bridge: PRIVATE mode" "$GITIGNORE_FILE" && EXISTING_PRIVATE=1 || EXISTING_PRIVATE=0
+  if [ "$PRIVATE" = "$EXISTING_PRIVATE" ]; then
+    skip ".gitignore already has cc-bridge block (mode unchanged)"
+  else
+    # Remove the old block so it can be rewritten with the new mode below.
+    python3 - <<'PY'
+from pathlib import Path
+text = Path(".gitignore").read_text()
+start = text.find("# >>> cc-bridge >>>")
+end   = text.find("# <<< cc-bridge <<<")
+if start != -1 and end != -1:
+    tail = text.find("\n", end) + 1
+    Path(".gitignore").write_text(text[:start].rstrip() + "\n" + text[tail:])
+PY
+  fi
+fi
+if ! grep -qF "$SENTINEL_START" "$GITIGNORE_FILE"; then
   {
     echo
     echo "$SENTINEL_START"
