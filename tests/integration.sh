@@ -809,6 +809,65 @@ assert_file ".claude/settings.json"
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# T33  status.sh — clean output after full init+bridge (no bash quoting errors)
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T33: status.sh — no errors after full init+bridge"
+make_tmp
+
+printf "# Real Project\n\nDo great things.\n" > CLAUDE.md
+mkdir -p .claude/commands .claude/skills
+cat > .claude/commands/deploy.md <<'MD'
+---
+description: Deploy.
+---
+Deploy the project.
+MD
+cat > .claude/settings.json <<'JSON'
+{"hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": "echo check"}]}]}}
+JSON
+cat > .mcp.json <<'JSON'
+{"mcpServers": {"my-tool": {"type": "stdio", "command": "npx", "args": ["-y", "my-tool"]}}}
+JSON
+
+bash "$SCRIPTS/init.sh"           >/dev/null 2>&1
+python3 "$SCRIPTS/bridge_hooks.py" >/dev/null 2>&1
+bash "$SCRIPTS/bridge_mcp.sh"     >/dev/null 2>&1
+
+# status.sh must exit 0 and produce no output on stderr.
+_status_stderr="$(bash "$SCRIPTS/status.sh" 2>&1 1>/dev/null)"
+if [ -z "$_status_stderr" ]; then
+  ok_msg "status.sh: no stderr output"
+else
+  fail_msg "status.sh: unexpected stderr: $_status_stderr"
+fi
+assert_exit0 bash "$SCRIPTS/status.sh"
+
+# Spot-check key lines in stdout.
+_status_out="$(bash "$SCRIPTS/status.sh" 2>/dev/null)"
+if printf '%s' "$_status_out" | grep -q '✓ AGENTS.md'; then
+  ok_msg "status.sh: AGENTS.md shows ✓"
+else
+  fail_msg "status.sh: AGENTS.md missing ✓ in output"
+fi
+if printf '%s' "$_status_out" | grep -q '✓ CLAUDE.md'; then
+  ok_msg "status.sh: CLAUDE.md shows ✓"
+else
+  fail_msg "status.sh: CLAUDE.md missing ✓ in output"
+fi
+if printf '%s' "$_status_out" | grep -q '✓ .codex/hooks.json'; then
+  ok_msg "status.sh: .codex/hooks.json shows ✓"
+else
+  fail_msg "status.sh: .codex/hooks.json missing ✓ in output"
+fi
+if printf '%s' "$_status_out" | grep -q '✓ mirrored to .codex/config.toml'; then
+  ok_msg "status.sh: MCP mirrored shows ✓"
+else
+  fail_msg "status.sh: MCP mirrored missing ✓ in output"
+fi
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Summary
 # ═══════════════════════════════════════════════════════════════════════════════
 echo

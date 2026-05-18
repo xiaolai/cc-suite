@@ -181,7 +181,6 @@ in_section = False
 for line in config.splitlines():
     s = line.strip()
     if s.startswith("["):
-        # Exact match: [projects."<path>"] or [projects.'<path>'] only.
         in_section = bool(re.match(
             r"^\[projects\s*\.\s*[\"'"'"']" + re.escape(repo) + r"[\"'"'"']\s*\]$",
             s
