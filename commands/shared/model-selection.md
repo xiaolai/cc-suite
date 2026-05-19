@@ -11,7 +11,7 @@ Before starting, discover which Codex models are currently available and check f
 
 ### Step 0: Load project config (if exists)
 
-Check if `.codex-toolkit.md` exists in the current working directory. If it does, read it and extract these variables:
+Check if `.cc-suite.md` exists in the current working directory. If it does, read it and extract these variables:
 
 - `{config_default_model}` — Default model
 - `{config_default_effort}` — Default effort
@@ -21,11 +21,11 @@ Check if `.codex-toolkit.md` exists in the current working directory. If it does
 - `{config_skip_patterns}` — Skip patterns (glob list)
 - `{config_project_instructions}` — Project-Specific Instructions text
 
-If `.codex-toolkit.md` does not exist, leave all variables empty and use the calling command's built-in defaults. Do NOT ask the user to run `/init` — it's optional.
+If `.cc-suite.md` does not exist, leave all variables empty and use the calling command's built-in defaults. Do NOT ask the user to run `/init` — it's optional.
 
 **Priority order** (highest wins):
 1. User's explicit choice (from AskUserQuestion)
-2. Project config (`.codex-toolkit.md`)
+2. Project config (`.cc-suite.md`)
 3. Command's built-in defaults
 
 ### Step A: Run preflight discovery

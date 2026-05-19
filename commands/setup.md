@@ -92,7 +92,7 @@ AskUserQuestion:
     - label: "Run /preflight"
       description: "Discover available models and test connectivity"
     - label: "Run /init"
-      description: "Generate a .codex-toolkit.md config for this project"
+      description: "Generate a .cc-suite.md config for this project"
     - label: "Toggle review gate"
       description: "Enable or disable the stop-time adversarial review"
     - label: "Done"

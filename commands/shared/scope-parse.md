@@ -22,11 +22,11 @@ user-invocable: false
 
 ### Skip Pattern Enforcement
 
-If `{config_skip_patterns}` is set (from `.codex-toolkit.md`), filter the file list:
+If `{config_skip_patterns}` is set (from `.cc-suite.md`), filter the file list:
 
 1. For each file in scope, check against every skip pattern (glob matching)
 2. Remove any file that matches a skip pattern
-3. If ALL files are filtered out, respond: "All files in scope are excluded by skip patterns in `.codex-toolkit.md`. Nothing to audit." and STOP.
+3. If ALL files are filtered out, respond: "All files in scope are excluded by skip patterns in `.cc-suite.md`. Nothing to audit." and STOP.
 
 ### Trivial Scope Check
 

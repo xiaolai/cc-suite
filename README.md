@@ -145,7 +145,7 @@ your-repo/
 ├── AGENTS.md                         ← edit this; all tools pick it up
 ├── CLAUDE.md                         → @AGENTS.md
 ├── GEMINI.md                         → @AGENTS.md
-├── .codex-toolkit.md                 ← audit/implement settings
+├── .cc-suite.md                 ← audit/implement settings
 ├── .mcp.json                         ← codex-cli MCP server + project servers
 ├── .gitignore                        ← includes cc-suite sentinel block
 ├── .claude/
