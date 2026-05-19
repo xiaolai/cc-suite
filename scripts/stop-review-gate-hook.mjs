@@ -77,6 +77,7 @@ function runStopReview(cwd, input = {}) {
       env: childEnv,
       encoding: "utf8",
       timeout: STOP_REVIEW_TIMEOUT_MS,
+      stdio: ["ignore", "pipe", "pipe"],
     }
   );
 

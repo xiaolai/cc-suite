@@ -70,6 +70,7 @@ function runCodexSync(cwd, args) {
     cwd,
     encoding: "utf8",
     timeout: 30 * 60 * 1000, // 30 minute timeout
+    stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
       CODEX_REASONING_EFFORT: args.effort,
