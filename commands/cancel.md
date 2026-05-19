@@ -33,9 +33,9 @@ Multiple jobs are active. Specify which one to cancel:
 
 | Job | Kind | Status | Elapsed | Summary |
 | --- | --- | --- | --- | --- |
-{list of active jobs}
+| {job-id} | {kind} | running | {elapsed} | {summary} |
 
-Usage: /codex-toolkit:cancel <job-id>
+Usage: /cc-suite:cancel <job-id>
 ```
 And STOP.
 
@@ -50,6 +50,12 @@ And STOP.
 kill -- -{pid} 2>/dev/null || kill {pid} 2>/dev/null || true
 ```
 
+Verify the process terminated:
+
+```bash
+sleep 0.5 && kill -0 {pid} 2>/dev/null && echo "warning: process still running" || echo "terminated"
+```
+
 ### Step 3: Report
 
 ```markdown
@@ -61,5 +67,5 @@ Cancelled {job-id}.
 - Summary: {summary}
 - Was running for: {elapsed}
 
-Check `/codex-toolkit:status` for the updated queue.
+Check `/cc-suite:status` for the updated queue.
 ```

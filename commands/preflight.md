@@ -33,15 +33,13 @@ Present the results in a clear, readable format:
 
 | Model | Status |
 |-------|--------|
-| {model} | Available |
-| ... | ... |
+| {model-name} | Available |
 
 ### Unavailable Models
 
 | Model | Status |
 |-------|--------|
-| {model} | Unavailable |
-| ... | ... |
+| {model-name} | Unavailable |
 
 ### Options
 

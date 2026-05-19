@@ -46,7 +46,7 @@ Identify scope using symptoms and keywords:
 
 1. **Search for related code**:
    - Use Grep to find keywords from bug description
-   - Use Glob to find relevant file patterns
+   - Use Glob to find file patterns matching the bug description
    - Identify entry points and data flow paths
 
 2. **Map the affected area**:
@@ -66,7 +66,7 @@ Follow `commands/shared/codex-call.md` for availability test, call pattern, and 
 - **Sandbox**: `read-only`
 - **Approval-policy**: `never`
 
-For each relevant file (files matching Grep results, files in the call chain, up to 10 files max):
+For each affected file (files matching Grep results, files in the call chain, up to 10 files max):
 
 ```
 prompt: "Analyze {filename} for potential causes of this bug:
@@ -107,7 +107,7 @@ Report findings as:
 
 ### Step 4: Root Cause Identification
 
-After analyzing all relevant files:
+After analyzing all affected files:
 
 1. **Correlate findings** — which issues appear across multiple files?
 2. **Trace causality** — what triggers the chain of events?
@@ -163,7 +163,7 @@ Report each as:
 
 ## Data/Logic Flow
 
-{step-by-step flow showing where things go wrong}
+(Trace the data/execution flow step-by-step from the triggering input to the point of failure)
 
 ## Related Bugs Found
 
@@ -177,7 +177,7 @@ Report each as:
 1. {specific action at file:line}
 
 ### Proper Fix (if different)
-{More thorough solution if band-aid vs proper fix differ}
+(Describe the fuller fix when the immediate fix is a patch — what should be refactored and why)
 
 ### Test Cases to Add
 1. {test case description}

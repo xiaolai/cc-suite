@@ -89,7 +89,7 @@ Follow `commands/shared/codex-call.md` for availability test, call pattern, and 
 
 **Batching**: If scope contains more than 20 code files, batch them into groups of 10 and process each batch sequentially. Display progress between batches: "Auditing batch {N}/{total}..."
 
-For each code file, send the appropriate dimension prompt:
+For each code file, send the dimension prompt matching the chosen audit type:
 
 #### Mini Audit (5 dimensions)
 
@@ -250,36 +250,44 @@ Report each issue as: file:line | severity(Critical/High/Medium/Low) | dimension
 | ... | ... | ... | ... |
 
 ### Dimension 2: Security & Risk Management
-{findings table}
+| File:Line | Severity | Issue | Fix |
+|-----------|----------|-------|-----|
 
 ### Dimension 3: Code Correctness & Reliability
-{findings table}
+| File:Line | Severity | Issue | Fix |
+|-----------|----------|-------|-----|
 
 ### Dimension 4: Compliance & Standards
-{findings table}
+| File:Line | Severity | Issue | Fix |
+|-----------|----------|-------|-----|
 
 ### Dimension 5: Maintainability & Readability
-{findings table}
+| File:Line | Severity | Issue | Fix |
+|-----------|----------|-------|-----|
 
 ### Dimension 6: Performance & Efficiency
-{findings table}
+| File:Line | Severity | Issue | Fix |
+|-----------|----------|-------|-----|
 
 ### Dimension 7: Testing & Validation
-{findings table}
+| File:Line | Severity | Issue | Fix |
+|-----------|----------|-------|-----|
 
 ### Dimension 8: Dependency & Environment Safety
-{findings table}
+| File:Line | Severity | Issue | Fix |
+|-----------|----------|-------|-----|
 
 ### Dimension 9: Documentation & Knowledge Transfer
-{findings table}
+| File:Line | Severity | Issue | Fix |
+|-----------|----------|-------|-----|
 
 ## Top Priority Actions
 
 1. **[Critical]** {action} - {file:line}
-2. ...
+2. **[High]** {action} - {file:line}
 
 ## Positive Observations
-- {good practice found}
+- (note any well-structured code patterns or commendable practices found)
 ```
 
 ### Step 5: Fallback

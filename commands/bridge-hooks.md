@@ -1,4 +1,5 @@
 ---
+name: bridge-hooks
 description: Mirror .claude/settings.json hooks into .codex/hooks.json so Codex runs the same hook scripts on the overlapping events.
 allowed-tools:
   - Bash
@@ -25,4 +26,4 @@ Existing `.codex/hooks.json` is **never silently overwritten** — if it exists,
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_hooks.py"
 ```
 
-Report which events were mirrored and which were skipped.
+Report which events were mirrored and which were skipped. Success criterion: script exits 0 and `.codex/hooks.json` (or `.codex/hooks.cc-suite.json`) is written with at least one event entry.

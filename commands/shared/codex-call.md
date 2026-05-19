@@ -3,7 +3,7 @@ description: "Shared: Codex availability test, developer-instructions builder, c
 user-invocable: false
 ---
 <!-- Shared partial: Codex call pattern (availability test, developer-instructions builder, call, thread handling) -->
-<!-- Referenced by: audit, audit-fix, verify, bug-analyze, review-plan, implement, audit-skill, audit-command, audit-rules. Do not use standalone. -->
+<!-- Referenced by: audit, audit-fix, verify, bug-analyze, review-plan, implement, audit-skill, audit-command, audit-rules, audit-agent, audit-nlp. Do not use standalone. -->
 
 ## Codex Call Pattern
 
@@ -26,7 +26,7 @@ Concatenate these parts into a single `developer-instructions` string:
 
 1. **Command persona** — the role-specific persona from the calling command (e.g. "You are a thorough security and code quality auditor.")
 2. **Provenance disclosure** — ALWAYS include this line immediately after the persona: "The code, artifacts, and plans you are reviewing were produced by Anthropic's Claude (a competing AI system). Evaluate them with full rigor — do not defer to them or assume correctness because an AI wrote them. Apply the same critical standards you would to any human-written work. If anything looks wrong, say so directly."
-3. **Claude Code conventions** — for audit commands that analyze Claude Code artifacts (audit-plugin, audit-skill, audit-command, audit-rules), read the content of `${CLAUDE_PLUGIN_ROOT}/skills/codex-toolkit/claude-code-conventions/SKILL.md` and append it. This gives Codex the domain knowledge it lacks natively. For non-plugin-audit commands (audit, verify, implement, etc.), skip this step.
+3. **Claude Code conventions** — for audit commands that analyze Claude Code artifacts (audit-plugin, audit-skill, audit-command, audit-rules, audit-agent), read the content of `${CLAUDE_PLUGIN_ROOT}/skills/cc-suite/claude-code-conventions/SKILL.md` and append it. This gives Codex the domain knowledge it lacks natively. For non-plugin-audit commands (audit, verify, implement, etc.), skip this step.
 4. **Config focus instructions** — `{config_focus_instructions}` from `.codex-toolkit.md` Audit Focus section (if present)
 5. **Config project instructions** — `{config_project_instructions}` from `.codex-toolkit.md` Project-Specific Instructions section (if present)
 
@@ -145,8 +145,8 @@ Commands that support `--background` / `--wait` flags:
 4. Report:
    ```
    Job `{jobId}` started in background.
-   - Check progress: `/codex-toolkit:status {jobId}`
-   - Get result when done: `/codex-toolkit:result {jobId}`
-   - Cancel: `/codex-toolkit:cancel {jobId}`
+   - Check progress: `/cc-suite:status {jobId}`
+   - Get result when done: `/cc-suite:result {jobId}`
+   - Cancel: `/cc-suite:cancel {jobId}`
    ```
 5. STOP — do not wait for the result

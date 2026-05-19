@@ -131,7 +131,7 @@ prompt: |
   - **Output format**: Does the agent define what its response looks like?
   - **Scope boundaries**: Does it say what it should NOT do?
   - **Context requirements**: Does it specify what input it needs from the dispatcher?
-  - **Ambiguous language**: Flag "appropriate", "relevant", "as needed" without criteria
+  - **Ambiguous language**: Flag `appropriate`, `relevant`, `as needed` without concrete criteria
 
   Severity: High (no mission, no output format), Medium (vague instructions, ambiguous language), Low (minor clarity issues)
 
@@ -219,7 +219,10 @@ Display Codex's audit report. Add your own assessment if you disagree or notice 
 
 ## Findings
 
-{findings tables per pillar}
+(Per-pillar tables using the format defined in the Step 3 prompt)
+
+| # | Severity | Finding | Location | Recommendation |
+|---|----------|---------|----------|----------------|
 
 ## Model Tier Assessment
 
@@ -228,11 +231,11 @@ Display Codex's audit report. Add your own assessment if you disagree or notice 
 
 ## Top Issues
 
-1. ...
+1. **[Severity]** {issue description} — `{file_path}`
 
 ## Strengths
 
-- ...
+- {positive quality observed in the agent definitions}
 
 ## Action Items
 

@@ -77,7 +77,7 @@ For each command and agent `.md` body, check:
 - **Clear description**: Frontmatter `description` is specific and actionable, not vague (e.g., "Does stuff" is bad)
 - **Output format specified**: The artifact defines what its output looks like (report template, structured response, etc.)
 - **Constraints stated**: The artifact specifies what it should NOT do, or boundaries of its behavior
-- **Ambiguous quantifiers**: Flag uses of "some", "few", "several", "various", "appropriate", "relevant", "necessary", "properly", "correctly" without concrete criteria
+- **Ambiguous quantifiers**: Flag uses of `some`, `few`, `several`, `various`, `appropriate`, `relevant`, `necessary`, `properly`, `correctly` without concrete criteria
 - **Example blocks**: Check for `<example>` blocks in agent descriptions — agents without examples are harder for Claude to follow
 - **Incomplete instructions**: Steps that say "etc.", "and so on", "as needed" without specifics
 
@@ -269,6 +269,5 @@ Check for long-term maintenance concerns:
 
 ## Positive Observations
 
-- {good practice found}
-- {well-structured artifact}
+- (note any well-structured artifacts or exemplary patterns found)
 ```

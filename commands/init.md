@@ -148,7 +148,7 @@ Remove a line to fall back to the built-in default.
 Additional instructions appended to every audit's developer-instructions:
 
 ```text
-{focus-specific instructions, see below}
+(Insert the focus-specific instructions listed in the "Focus-specific instructions" section below)
 ```
 
 ## Skip Patterns
@@ -173,8 +173,7 @@ Custom instructions appended to Codex's developer-instructions for every command
 Use this to tell Codex about your project's conventions, architecture, or constraints.
 
 ```text
-{stack-specific defaults, e.g.:
-"This is a TypeScript project using React. Follow existing patterns in src/components/."}
+"This is a TypeScript project using React. Follow existing patterns in src/components/."
 ```
 ```
 

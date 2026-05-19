@@ -100,9 +100,14 @@ After Codex finishes:
 **Model**: {chosen_model} | **Effort**: {chosen_effort} | **Sandbox**: {chosen_sandbox}
 **Thread ID**: `{threadId}` _(use `/continue {threadId}` to iterate)_
 
-**Files created**: {list}
-**Files modified**: {list}
-**Commands run**: {list}
+**Files created**:
+- {file path (or "none")}
+
+**Files modified**:
+- {file path (or "none")}
+
+**Commands run**:
+- {command (or "none")}
 
 ### Verification
 - Tests: PASS / FAIL / N/A

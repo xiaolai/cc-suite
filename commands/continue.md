@@ -14,7 +14,7 @@ $ARGUMENTS
 
 Uses the `mcp__codex__codex-reply` MCP tool to continue a previous Codex session. The thread preserves full context from the original command, so you can:
 
-> **Note**: Codex threads are **in-memory only** — they are lost when the MCP server restarts (e.g. after restarting Claude Code or the Codex MCP process). If a thread is no longer available, start a fresh session with the appropriate command instead.
+> **Note**: Codex threads are **in-memory only** — they are lost when the MCP server restarts (e.g. after restarting Claude Code or the Codex MCP process). If a thread is no longer available, start a fresh session with /audit, /implement, or another command instead.
 
 - Iterate on audit findings: "Now fix the 3 Critical issues you found"
 - Follow up on implementation: "Run the tests and fix any failures"
@@ -103,7 +103,15 @@ _Thread ID: `{threadId}` — run `/continue {threadId}` to continue this convers
 
 ### Step 4: Offer to continue
 
-Ask the user what to do next:
-- Continue the conversation (another `/continue`)
-- Start a fresh command
-- Done
+```
+AskUserQuestion:
+  question: "What would you like to do next?"
+  header: "Next step"
+  options:
+    - label: "Continue this conversation"
+      description: "Send another follow-up to the same thread with /continue {threadId}"
+    - label: "Start a new command"
+      description: "Run /audit, /implement, /bug-analyze, or another command in a fresh session"
+    - label: "Done"
+      description: "No further action needed"
+```

@@ -142,7 +142,7 @@ prompt: |
   - **Dead rules**: Rules about deprecated features, removed code, or past one-off incidents
   - **Verbosity**: Can the rule be expressed in fewer words without losing meaning?
 
-  Per-rule budget check: flag individual rules over 100 words (usually needs splitting)
+  Per-rule budget check: flag individual rules over 100 words (split into two narrower rules)
 
   Severity: High (>500 total lines, major redundancy), Medium (redundancy with training/tooling), Low (minor verbosity)
 
@@ -236,33 +236,35 @@ Display Codex's audit report. Add your own assessment if you disagree or notice 
 
 ## Budget
 
-{lines}/500 lines used ({pct}%)
-{bar visualization}
+**{lines}** / 500 lines used ({pct}%)
 
 ## Findings
 
-{findings tables per pillar}
+(Per-pillar tables using the format defined in the Step 3 prompt — one table per applicable pillar)
+
+| # | Severity | Finding | File:Line | Recommendation |
+|---|----------|---------|-----------|----------------|
 
 ## Candidates for Removal
 
 | File | Lines | Reason |
 |------|-------|--------|
-| ... | ... | Duplicates linter / stale / redundant with training |
+| `{file}` | {N} | Duplicates linter / stale / redundant with training |
 
 Potential savings: {N} lines ({pct}% of budget)
 
 ## Conflicts Detected
 
-{conflict details if any}
+(Describe each conflict: which rules contradict, their locations, and the resolution — or "None detected")
 
 ## Top Issues
 
-1. ...
-2. ...
+1. **[Severity]** {issue description} — `{file_path}:{line}`
+2. **[Severity]** {issue description} — `{file_path}:{line}`
 
 ## Strengths
 
-- ...
+- {positive quality observed in the rule set}
 
 ## Action Items
 

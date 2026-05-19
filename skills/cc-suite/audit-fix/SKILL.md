@@ -103,7 +103,7 @@ mcp__claude-code__claude_code_reply:
 #### 3c: Evaluate
 
 - **All FIXED** → proceed to Step 4
-- **Some remain** and `round < {--rounds}`:
+- **Issues remain** and `round < {--rounds}`:
   - Increment `round`
   - Show remaining issues
   - Ask: "N issues remain after round {round-1}. Fix again? (yes / stop)"

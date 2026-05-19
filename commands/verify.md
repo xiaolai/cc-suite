@@ -67,7 +67,7 @@ prompt: "Your ONLY job is to confirm fixes from a previous audit.
    - Read the file at the exact location
    - Check if the issue still exists
    - Mark status:
-     - FIXED — Issue resolved properly
+     - FIXED — Issue resolved, no new problems introduced
      - NOT FIXED — Issue still present
      - PARTIAL — Partially addressed
      - MOVED — Code relocated, verify new location

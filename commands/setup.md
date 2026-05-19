@@ -82,7 +82,19 @@ Checks:
 
 ### Step 5: Offer configuration
 
-If all checks pass, offer:
-- Run `/preflight` for detailed model discovery
-- Run `/init` to generate project-specific config
-- Enable/disable review gate (if not already set via flag)
+If all checks pass, use AskUserQuestion:
+
+```
+AskUserQuestion:
+  question: "Codex is ready. What would you like to configure?"
+  header: "Next step"
+  options:
+    - label: "Run /preflight"
+      description: "Discover available models and test connectivity"
+    - label: "Run /init"
+      description: "Generate a .codex-toolkit.md config for this project"
+    - label: "Toggle review gate"
+      description: "Enable or disable the stop-time adversarial review"
+    - label: "Done"
+      description: "Nothing to configure"
+```

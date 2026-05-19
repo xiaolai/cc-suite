@@ -6,12 +6,12 @@ version: 0.2.3
 
 # Verify
 
-Ask Claude Code to check whether previously reported audit findings have been resolved. Claude re-reads the relevant files and renders a verdict per issue. Codex provides the issue list; Claude provides the verdict.
+Ask Claude Code to check whether previously reported audit findings have been resolved. Claude re-reads the files at the reported locations and renders a verdict per issue. Codex provides the issue list; Claude provides the verdict.
 
 ## When to Use
 
 - After Codex has applied fixes from a `$audit` run
-- To confirm a manual fix landed correctly
+- To confirm a manual fix was applied at the correct location
 - As the final step of a `$audit-fix` cycle
 
 ## Arguments
@@ -37,7 +37,7 @@ mcp__claude-code__claude_code_reply:
     {paste findings in "file:line | severity | issue description" format}
 
     For each issue report one of:
-    - FIXED — issue resolved correctly, no new problems introduced
+    - FIXED — issue resolved fully, no new problems introduced
     - NOT FIXED — issue still present at the reported location (explain why)
     - PARTIAL — partially addressed; describe what remains
     - REGRESSED — fix introduced a new problem (describe it)

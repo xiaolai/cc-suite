@@ -1,4 +1,5 @@
 ---
+name: bridge-skills
 description: Symlink .agents/skills/ → .claude/skills/ so Codex CLI sees all Claude skills without duplication.
 allowed-tools:
   - Bash
@@ -14,4 +15,4 @@ Idempotent. Skips if the symlink already points to the right target. Errors if `
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_skills.sh"
 ```
 
-Report what changed.
+Report what changed. Success criterion: script exits 0 and `.agents/skills/` is a symlink pointing to `.claude/skills/`.

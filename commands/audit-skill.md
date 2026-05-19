@@ -153,7 +153,7 @@ prompt: |
 
   How well does this skill integrate with the broader system:
   - **Referenced files exist**: If the skill mentions `references/`, `examples/`, or `scripts/` files, do they exist?
-  - **Skill references valid**: If it references other skills by name, do those skills exist?
+  - **Skill references valid**: If this skill references other skills by name, do those referenced skills exist?
   - **Consistent naming**: Does the skill name in frontmatter match the directory structure?
   - **Plugin integration**: If part of a plugin, is the skill registered in any agent's `skills:` frontmatter?
 
@@ -198,16 +198,19 @@ Display Codex's audit report. Add your own assessment if you disagree or notice 
 
 ## Findings
 
-{findings tables per pillar}
+(Per-pillar tables using the format defined in the Step 3 prompt)
+
+| # | Severity | Finding | Location | Recommendation |
+|---|----------|---------|----------|----------------|
 
 ## Top Issues
 
-1. ...
-2. ...
+1. **[Severity]** {issue description} — `{file_path}:{line}`
+2. **[Severity]** {issue description} — `{file_path}:{line}`
 
 ## Strengths
 
-- ...
+- {positive quality observed in the skill definitions}
 
 ## Action Items
 

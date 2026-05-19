@@ -11,7 +11,7 @@ Run a full cc-suite health check and offer to auto-fix every issue found. This i
 ## When to Use
 
 - At the start of a session when bridge artifacts may be missing or stale
-- After updating cc-suite to confirm the new version is wired correctly
+- After updating cc-suite to confirm the new version is wired as expected
 - When `$audit`, `$audit-fix`, or `$claude-*` skills behave unexpectedly
 
 ## Workflow

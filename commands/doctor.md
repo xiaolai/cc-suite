@@ -175,6 +175,6 @@ Items that **cannot** be auto-fixed (flag and explain):
 
 After applying all auto-fixes, re-run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/status.sh"` and show the updated output.
 
-Report how many issues were fixed and list any that remain. If issues persist after auto-fix, close with:
+Report the count of issues fixed (N fixed, M remain). If all issues are resolved, report success: "cc-suite is healthy." If issues persist after auto-fix, close with:
 
 "Issues remain. Next step: run `/cc-suite:repair` for a full non-interactive re-run of all setup scripts. If that also fails, run `/cc-suite:init` for a complete interactive re-initialization."

@@ -44,7 +44,7 @@ Follow `commands/shared/scope-parse.md` for remaining argument parsing, skip pat
 
 Follow `commands/shared/codex-call.md` for availability test and call pattern.
 
-If Codex does not respond, fall back to manual audit and STOP (no fix loop without Codex).
+If Codex does not respond, fall back to a manual Claude audit per `commands/shared/fallback.md` and report the findings — but do not attempt the fix loop. The fix loop requires Codex to apply edits autonomously; without it, report what was found and ask the user to fix manually.
 
 - **Command persona**: "You are a thorough code auditor. Report every issue with exact file:line locations."
 - **Sandbox**: `read-only`
@@ -118,7 +118,7 @@ Store as `{chosen_fixer}`.
 ##### If `{chosen_fixer}` is **Claude**:
 
 1. For each issue in the filtered findings:
-   - Read the file, understand context, apply minimal correct fix via Edit
+   - Read the file, understand context, apply the smallest targeted fix via Edit
    - Fix all related locations if needed
 2. Do NOT refactor surrounding code — only fix reported issues
 3. Do NOT delete code unless the issue calls for removal (dead code, unused imports)
@@ -132,7 +132,7 @@ Store as `{chosen_fixer}`.
 ```
 mcp__codex__codex-reply with:
   threadId: {audit_threadId}
-  prompt: "Fix the following issues from your audit. For each issue, make the minimal correct fix at the exact file:line location.
+  prompt: "Fix the following issues from your audit. For each issue, make the smallest targeted fix at the exact file:line location.
 
 ISSUES TO FIX:
 {filtered findings in file:line | severity | issue | fix format}
@@ -141,8 +141,8 @@ RULES:
 - Fix each issue at the exact location reported
 - Make minimal, targeted changes — do not refactor surrounding code
 - Do not delete code unless the issue specifically calls for removal
-- After fixing, run any available tests
-- Report: what you fixed, what you couldn't fix, and any test results"
+- After fixing, run the project test suite (npm test, pytest, go test ./..., cargo test — whichever is detected)
+- Report: what you fixed, what you couldn't fix, and the test results"
 ```
 
 **Fallback**: If `codex-reply` fails (thread expired), use a fresh `mcp__codex__codex` call following `commands/shared/codex-call.md`:
@@ -166,7 +166,7 @@ ORIGINAL ISSUES:
 {the issues sent for fixing}
 
 For each issue report:
-- FIXED — issue resolved properly
+- FIXED — issue resolved, no new problems introduced
 - NOT FIXED — issue still present (explain why)
 - PARTIAL — partially addressed (explain what remains)
 - REGRESSED — fix introduced a new problem (describe it)"
@@ -181,7 +181,7 @@ For each issue report:
 #### 3d: Evaluate results
 
 - **All FIXED** → proceed to Step 4
-- **Some NOT FIXED / PARTIAL / REGRESSED** and `iteration < 3`:
+- **Issues remain (NOT FIXED / PARTIAL / REGRESSED)** and `iteration < 3`:
   - Increment `iteration`, show remaining issues, ask:
     ```
     AskUserQuestion:
@@ -244,7 +244,7 @@ For each issue report:
 ## Next Steps
 
 - Review changes: `git diff`
-- Run tests: {project-appropriate test command}
+- Run tests: {project test command — npm test, pytest, go test ./..., cargo test}
 - Commit: if satisfied with the fixes
 - Revert: `git checkout .` to undo all changes
 - Continue: `/continue {audit_threadId}` to address remaining issues
@@ -253,5 +253,5 @@ For each issue report:
 ### Verdicts
 
 - **ACCEPTED** — all issues fixed, verification passed
-- **PARTIAL** — some issues fixed, some remain
+- **PARTIAL** — 1+ issues fixed, 1+ issues remain
 - **UNCHANGED** — user chose to stop before fixing, or Codex couldn't fix anything

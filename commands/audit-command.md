@@ -114,7 +114,7 @@ prompt: |
   Commands must give Claude clear, unambiguous step-by-step instructions:
   - **Numbered steps**: Are steps clearly numbered and sequential?
   - **Decision points**: At branches (if/else), is the logic explicit with all paths covered?
-  - **Ambiguous instructions**: Flag "as needed", "appropriately", "etc." without specifics
+  - **Ambiguous instructions**: Flag `as needed`, `appropriately`, `etc.` without specifics
   - **Missing steps**: Are there gaps where Claude would need to guess what to do?
   - **Step granularity**: Steps too large ("implement the feature") or too small ("type the letter A")
   - **Context assumptions**: Does the command assume knowledge it doesn't provide?
@@ -206,16 +206,19 @@ Display Codex's audit report. Add your own assessment if you disagree or notice 
 
 ## Findings
 
-{findings tables per pillar}
+(Per-pillar tables using the format defined in the Step 3 prompt)
+
+| # | Severity | Finding | Location | Recommendation |
+|---|----------|---------|----------|----------------|
 
 ## Top Issues
 
-1. ...
-2. ...
+1. **[Severity]** {issue description} — `{file_path}:{line}`
+2. **[Severity]** {issue description} — `{file_path}:{line}`
 
 ## Strengths
 
-- ...
+- {positive quality observed in the command definitions}
 
 ## Action Items
 

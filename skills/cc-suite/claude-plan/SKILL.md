@@ -11,7 +11,7 @@ Ask Claude Code to reason through a task and return a concrete implementation pl
 ## When to Use
 
 - Before implementing a non-trivial feature
-- When the task touches many files and the right approach is unclear
+- When the task touches multiple interconnected files and the right approach is unclear
 - When asked to "get Claude to plan this" or "have Claude figure out the design"
 
 ## Call Pattern
@@ -66,4 +66,4 @@ Present Claude's plan verbatim, then ask the user whether to proceed with implem
 
 - `permissionMode: plan` prevents accidental file writes — planning only
 - `effort: high` is strongly recommended for accurate plans; shallow effort produces vague steps
-- Include relevant file contents or directory listings in the prompt for better accuracy
+- Include the files and directory listings most closely related to the task in the prompt for better accuracy

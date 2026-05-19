@@ -12,7 +12,7 @@ $ARGUMENTS
 
 ## What This Does
 
-The codex-toolkit audits Claude Code artifacts using Codex (an OpenAI model with zero native Claude Code knowledge). All domain knowledge is stored in `skills/codex-toolkit/claude-code-conventions/SKILL.md`. This command refreshes that knowledge from official documentation.
+cc-suite audits Claude Code artifacts using Codex (an OpenAI model with zero native Claude Code knowledge). All domain knowledge is stored in `skills/cc-suite/claude-code-conventions/SKILL.md`. This command refreshes that knowledge from official documentation.
 
 ## Workflow
 
@@ -54,7 +54,7 @@ Query context7 for current Claude Code plugin documentation. Use these libraries
 
 ### Step 3: Read Current Skill
 
-Read `${CLAUDE_PLUGIN_ROOT}/skills/codex-toolkit/claude-code-conventions/SKILL.md`
+Read `${CLAUDE_PLUGIN_ROOT}/skills/cc-suite/claude-code-conventions/SKILL.md`
 
 ### Step 4: Compare and Report Drift
 
@@ -90,11 +90,15 @@ Compare the fetched documentation against the current skill content. Check for:
 
 ## New Items Found
 
-{list of items in docs but not in skill}
+| Area | Item | Details |
+|------|------|---------|
+| (e.g., Hook events) | (e.g., `PostToolUseFailure`) | (description from docs) |
 
 ## Deprecated Items
 
-{list of items in skill but not in docs}
+| Area | Item | Details |
+|------|------|---------|
+| (e.g., plugin.json) | (e.g., `marketplace` field) | (no longer in docs) |
 
 ## Recommendation
 
@@ -126,11 +130,11 @@ If `--update`:
 | plugin.json | Added field: `outputStyles` |
 | ... | ... |
 
-Run `/codex-toolkit:audit-plugin --mini` on this plugin to verify the update didn't break anything.
+Run `/cc-suite:audit-plugin --mini` on this plugin to verify the update didn't break anything.
 ```
 
 ### Step 7: Remind about downstream updates
 
 After updating, remind:
 
-> The SKILL.md is updated, but the audit commands (audit-plugin, audit-skill, audit-command, audit-rules) still have inline knowledge in their prompts. For critical schema changes (new required fields, removed events), also update the relevant command files. The SKILL.md is the reference; commands should defer to it for schema details rather than duplicating them.
+> The SKILL.md is updated, but the audit commands (audit-plugin, audit-skill, audit-command, audit-rules) still have inline knowledge in their prompts. For critical schema changes (new required fields, removed events), also update the affected command files. The SKILL.md is the reference; commands should defer to it for schema details rather than duplicating them.

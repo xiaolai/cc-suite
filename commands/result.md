@@ -23,7 +23,7 @@ Parse `$ARGUMENTS` to find the job:
 
 If the job is still running:
 ```
-Job {id} is still running. Check /codex-toolkit:status and try again when it finishes.
+Job {id} is still running. Check /cc-suite:status and try again when it finishes.
 ```
 And STOP.
 
@@ -35,7 +35,7 @@ And STOP.
 
 ### Step 2: Read the stored result
 
-Read the job's result file from the state directory. The result file contains the raw Codex output and metadata.
+Read the job's result file from the state directory (`{cwd}/.codex-jobs/{job-id}/result.json`). The result file contains the raw Codex output and metadata.
 
 ### Step 3: Display the result
 

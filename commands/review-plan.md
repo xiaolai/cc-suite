@@ -10,6 +10,14 @@ argument-hint: "[plan-file] [--background | --wait]"
 $ARGUMENTS
 ```
 
+## When to Use
+
+Use `/review-plan` when:
+- A plan will drive more than 2 hours of implementation work
+- The plan touches multiple subsystems or shared interfaces
+- You want an independent read on feasibility before delegating to Codex
+- A prior implementation attempt failed and you suspect the plan was at fault
+
 ## What This Does
 
 Sends a plan document to Codex running in an isolated context for independent review. Codex reads the plan (and optional context files), then evaluates it across 5 dimensions that matter for plans — not code quality, but **buildability**.
@@ -54,7 +62,7 @@ Follow `commands/shared/codex-call.md` for availability test, call pattern, and 
 
 - **Command persona**: "You are an architecture reviewer evaluating plan feasibility."
 - **Sandbox**: `read-only`
-- **Approval-policy**: `on-failure`
+- **Approval-policy**: `on-failure` (intentional divergence from `never` — plan review benefits from a human gate when Codex signals a problem, since a bad plan causes downstream rework)
 
 Send a SINGLE Codex call with the full plan (no per-file splitting):
 
@@ -65,7 +73,8 @@ prompt: |
 
   Files to read:
   - {plan_file}
-  - {context_files...}
+  - {additional context file 1 (if provided)}
+  - {additional context file 2 (if provided)}
 
   ## Dimension 1: Internal Consistency
   Do decisions contradict each other? (conflicting requirements, data model mismatches, dependency inversions)
@@ -132,7 +141,7 @@ Display Codex's review. Add your own assessment if you disagree or notice someth
 - ...
 
 ## Additional Notes
-{Any additional observations}
+(Note any observations not captured in the dimension tables — e.g., assumptions the reviewer found implicit but not stated, external dependencies not in scope, or tensions between stated requirements)
 ```
 
 ### Step 4: Fallback

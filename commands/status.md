@@ -57,7 +57,7 @@ Review gate: {enabled / disabled}
   Duration: {duration}
   Thread ID: {threadId}
   Continue: /continue {threadId}
-  Result: /codex-toolkit:result {id}
+  Result: /cc-suite:result {id}
 
 ## Recent Jobs
 
@@ -68,7 +68,24 @@ If no jobs exist: "No jobs recorded yet. Run /audit, /implement, or /bug-analyze
 
 #### Single job view (job-id provided)
 
-Show detailed info for the specific job including progress preview lines if running.
+```markdown
+# Codex Job Details
+
+**Job ID**: {id}
+**Kind**: {audit | implement | bug-analyze | review-plan | verify}
+**Status**: {running | completed | failed | cancelled}
+**Started**: {ISO timestamp}
+**Elapsed**: {hh:mm:ss}
+**Thread ID**: `{threadId}` _(use `/continue {threadId}` to follow up)_
+
+## Summary
+
+{one-line summary from job state}
+
+## Recent Output
+
+{last 20 lines of progress if running, or full output if completed/failed}
+```
 
 ### Step 3: Review gate status
 
@@ -77,5 +94,5 @@ If the stop-time review gate is enabled, append:
 ```
 The stop-time review gate is enabled.
 Ending the session will trigger a Codex adversarial review and block if it finds issues.
-Disable with: /codex-toolkit:setup --disable-review-gate
+Disable with: /cc-suite:setup --disable-review-gate
 ```

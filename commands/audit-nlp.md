@@ -187,7 +187,7 @@ prompt: |
   - Specific output format requested?
   - Constraints and boundaries stated?
   - Example inputs/outputs provided?
-  - Ambiguous language flagged ("appropriate", "relevant", "as needed")?
+  - Ambiguous language flagged (`appropriate`, `relevant`, `as needed`)?
 
   ### C2: Prompt Safety
   - Injection-resistant? (does it handle untrusted input safely?)
@@ -284,24 +284,37 @@ After auditing each category, check for contradictions BETWEEN categories:
 ## Findings by Category
 
 ### Category A: Plugin Artifacts
-{findings table}
+| # | Severity | Check | Finding | File(s) | Recommendation |
+|---|----------|-------|---------|---------|----------------|
 
 ### Category B: Project Config
-{findings table}
+| # | Severity | Check | Finding | File(s) | Recommendation |
+|---|----------|-------|---------|---------|----------------|
 
-...
+### Category C: AI Prompts
+| # | Severity | Check | Finding | File(s) | Recommendation |
+|---|----------|-------|---------|---------|----------------|
+
+### Category D: Agent Frameworks
+| # | Severity | Check | Finding | File(s) | Recommendation |
+|---|----------|-------|---------|---------|----------------|
+
+### Category E: Design Docs
+| # | Severity | Check | Finding | File(s) | Recommendation |
+|---|----------|-------|---------|---------|----------------|
 
 ## Cross-Category Contradictions
 
-{contradictions between categories}
+| # | Severity | Finding | Files involved | Recommendation |
+|---|----------|---------|----------------|----------------|
 
 ## Verdict: {CLEAN | NEEDS ATTENTION | NEEDS WORK}
 
 ## Top Issues
-1. ...
+1. **[Severity]** {issue description} — `{file_path}`
 
 ## Strengths
-- ...
+- {positive pattern or well-structured artifact}
 
 ## Action Items
 1. **[Severity]** {action} — `{file_path}`

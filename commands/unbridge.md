@@ -1,4 +1,5 @@
 ---
+name: unbridge
 description: Tear down the cc-suite artifacts in the current repo. Does not delete CLAUDE.md content or .claude/, only the bridge layer.
 allowed-tools:
   - Bash

@@ -12,7 +12,7 @@ Delegate an implementation task to Claude Code — Claude will read files, write
 
 - When asked to "have Claude implement this"
 - For tasks that require understanding a large existing codebase before writing new code
-- When the implementation involves many interdependent files that Claude Code handles better autonomously
+- When the implementation involves multiple interdependent files that Claude Code handles better autonomously
 
 ## Call Pattern
 

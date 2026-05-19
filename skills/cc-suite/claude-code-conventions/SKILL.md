@@ -1,6 +1,6 @@
 ---
 name: claude-code-conventions
-description: "Canonical reference for Claude Code plugin artifact schemas, hook events, frontmatter fields, and naming conventions. Used to inject domain knowledge into Codex audit prompts. Run /codex-toolkit:refresh-knowledge to update from latest docs."
+description: "Canonical reference for Claude Code plugin artifact schemas, hook events, frontmatter fields, and naming conventions. Used to inject domain knowledge into Codex audit prompts. Run /cc-suite:refresh-knowledge to update from latest docs."
 version: 0.2.0
 ---
 
@@ -8,7 +8,16 @@ version: 0.2.0
 
 > **Purpose**: This skill is the single source of truth for Claude Code artifact conventions. Audit commands inject this content into Codex's `developer-instructions` so Codex can accurately validate Claude Code artifacts despite having no native knowledge of the platform.
 >
-> **Freshness**: Last updated 2026-03-25 from context7 (`/websites/code_claude_en_plugins-reference`, `/websites/code_claude_en_plugins`). Run `/codex-toolkit:refresh-knowledge` to refresh.
+> **Freshness**: Last updated 2026-03-25 from context7 (`/websites/code_claude_en_plugins-reference`, `/websites/code_claude_en_plugins`). Run `/cc-suite:refresh-knowledge` to refresh.
+
+## When to Use
+
+Load this skill when:
+- Auditing Claude Code plugin artifacts (commands, agents, skills, hooks, plugin.json)
+- Validating frontmatter fields against the official schema
+- Checking hook event names, types, and output formats
+- Authoring new plugin artifacts and need the canonical field reference
+- Running `/cc-suite:audit-plugin`, `/cc-suite:audit-command`, `/cc-suite:audit-agent`, or `/cc-suite:audit-skill`
 
 ## plugin.json Schema
 
@@ -71,7 +80,7 @@ Official documented fields:
 - `name` (string): agent identifier
 - `description` (string): what the agent does and when to invoke it
 
-Widely-used convention fields (not in official docs but used by all xiaolai plugins and many community plugins):
+Widely-used convention fields (not in official docs but used by all xiaolai plugins and numerous community plugins):
 - `model` (string): `haiku`, `sonnet`, `opus`
 - `color` (string): UI color hint — `cyan`, `blue`, `magenta`, `yellow`, `green`, `red`
 - `tools` (string[] or comma-separated): tools available to the agent

@@ -36,7 +36,7 @@ mcp__claude-code__claude_code:
     WHAT I TRIED: {optional — what you already ruled out}
 
     Instructions:
-    1. Read the relevant source files to understand the code flow
+    1. Read the source files involved in the reported code flow
     2. Identify the root cause (not just where it crashes — why)
     3. Apply a minimal, correct fix
     4. Run the failing test/command to confirm the fix works

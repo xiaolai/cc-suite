@@ -118,7 +118,7 @@ vendor/
 Custom instructions appended to Codex's developer-instructions for every command.
 
 ```text
-{stack-appropriate default, e.g. "This is a Node.js project. Follow existing patterns in src/."}
+{stack-specific default, e.g. "This is a Node.js project. Follow existing patterns in src/."}
 ```
 ```
 
