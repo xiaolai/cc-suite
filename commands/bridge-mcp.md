@@ -16,3 +16,5 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_mcp.sh"
 ```
 
 Report which servers were mirrored and which were already present. Success criterion: script exits 0 and all servers from `.mcp.json` (except `codex-cli`) appear under `[mcp_servers.*]` in `.codex/config.toml`.
+
+If the script exits non-zero, report the error output and stop. If `.mcp.json` does not exist, report: "No `.mcp.json` found — nothing to mirror." and stop.

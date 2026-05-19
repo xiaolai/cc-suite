@@ -210,11 +210,15 @@ Add the `codex-cli` MCP server to `.mcp.json` so Claude can invoke Codex as an M
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_codex.sh"
 ```
 
+If the script exits non-zero, report the error and stop.
+
 Then mirror the new server entry into `.codex/config.toml` so Codex itself can see any other project MCP servers:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_mcp.sh"
 ```
+
+If the script exits non-zero, report the error and stop.
 
 ---
 
@@ -225,6 +229,8 @@ Add the `claude-code` MCP server (claude-octopus) to `.codex/config.toml` so Cod
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_claude.sh"
 ```
+
+If the script exits non-zero, report the error and stop.
 
 ---
 

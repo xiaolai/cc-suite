@@ -76,3 +76,9 @@ Report to the user:
 - `effort: high` is important for non-obvious bugs; shallow effort stops at symptoms
 - If Claude can't reproduce the bug, ask it to add diagnostic logging first, then re-run
 - `permissionMode` defaults to `default` (allows writes) — Claude will apply the fix directly
+
+## Related Skills
+
+- `claude-plan` — use before debugging to sketch a diagnosis strategy for complex, multi-file issues
+- `claude-implement` — use after root cause is identified to apply a larger fix or refactor
+- `$audit-fix` — use when the bug is a pattern across many files and needs a full audit→fix cycle

@@ -21,7 +21,7 @@ Delegate an implementation task to Claude Code — Claude will read files, write
 ```
 mcp__claude-code__claude_code:
   prompt: |
-    Implement the following task completely. Make all necessary file changes.
+    Implement the following task completely. Make all required file changes.
 
     TASK: {clear description of what to implement}
 

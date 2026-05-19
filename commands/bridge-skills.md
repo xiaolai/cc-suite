@@ -16,3 +16,5 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_skills.sh"
 ```
 
 Report what changed. Success criterion: script exits 0 and `.agents/skills/` is a symlink pointing to `.claude/skills/`.
+
+If the script exits non-zero, report the error output and stop. If `.claude/skills/` does not exist, report: "No `.claude/skills/` directory found — run `/cc-suite:init` first." and stop.

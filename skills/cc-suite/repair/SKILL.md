@@ -24,7 +24,7 @@ If repair still leaves issues, the next step is `/cc-suite:init` in a Claude Cod
 bash "$SKILL_PLUGIN_ROOT/scripts/init.sh"
 ```
 
-Creates `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.codex/config.toml`, scaffold directories, and the `.gitignore` block. Skips each artifact if it already exists correctly.
+Creates `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.codex/config.toml`, scaffold directories, and the `.gitignore` block. Skips each artifact if it is already in place.
 
 ### Step 2: Expose skills
 

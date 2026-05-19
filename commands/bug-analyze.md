@@ -48,6 +48,7 @@ Identify scope using symptoms and keywords:
    - Use Grep to find keywords from bug description
    - Use Glob to find file patterns matching the bug description
    - Identify entry points and data flow paths
+   - If Grep and Glob return no results, report "No matching code found for the given keywords" and ask the user to refine the description or specify file paths directly before continuing.
 
 2. **Map the affected area**:
    - Which files/functions are involved?

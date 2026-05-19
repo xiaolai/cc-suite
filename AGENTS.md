@@ -9,6 +9,22 @@ description: "Project instructions for cc-suite — the Claude Code plugin that 
 
 ## Guidelines
 
+- Bump the version in `.claude-plugin/plugin.json` for every release (patch/minor/major per semver).
+- New commands go in `commands/`; new skills go in `skills/cc-suite/<name>/SKILL.md`.
+- All scripts in `scripts/` must be idempotent — running twice must produce the same result.
+- Write new project-level instructions into `AGENTS.md` only; never edit `CLAUDE.md` or `GEMINI.md` directly.
+
+## Prerequisites
+
+- **Claude Code** (≥ 2.0) — primary host for all commands and skills
+- **Codex CLI** (optional) — required for the `codex-cli` MCP delegation lane and `bridge_hooks.py`
+- **Python 3** — required by `scripts/bridge_hooks.py`
+- **Bash** — required by all `scripts/*.sh` files
+
+## Smoke Test
+
+After any setup change, run `/cc-suite:status` and confirm every bridge artifact shows `✓`.
+
 ## Shared Memory
 
 **Always write new instructions, rules, and memory to `AGENTS.md` only.**

@@ -75,3 +75,9 @@ Follow with a summary count by severity and a recommended action (fix now vs fix
 - Set `effort: high` for thorough analysis; use `medium` for quick spot-checks
 - Pass `cwd` to anchor relative file paths in findings
 - If the project has a test suite, mention it in the prompt so Claude can assess coverage gaps
+
+## Related Skills
+
+- `claude-debug` — use when findings point to a specific bug that needs root-cause tracing
+- `claude-implement` — use after review to have Claude apply the suggested fixes autonomously
+- `$audit-fix` — use when review reveals a recurring pattern that needs a systematic fix cycle

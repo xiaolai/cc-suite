@@ -105,7 +105,7 @@ prompt: |
 
   Check:
   - Missing `description` → Critical
-  - `description` has no `<example>` blocks → High (agents without examples rarely trigger correctly)
+  - `description` has no `<example>` blocks → High (agents without examples frequently miss their intended triggers)
   - `model` missing → Medium (falls back to session model, may be too expensive or weak)
   - `tools` missing → Medium (agent gets all tools, violates least privilege)
   - Invalid `color` value → Low
@@ -154,7 +154,7 @@ prompt: |
   - **Delegation clarity**: If this agent dispatches sub-agents, are the boundaries clear?
   - **Input validation**: Does the agent check its inputs before acting?
   - **Escalation path**: When the agent can't handle something, does it say what to do?
-  - **Model appropriateness**: Is the model (haiku/sonnet/opus) appropriate for the task complexity?
+  - **Model tier fit**: Does the model (haiku/sonnet/opus) match the task's complexity tier?
     - haiku: mechanical, deterministic tasks (parsing, formatting, simple checks)
     - sonnet: reasoning, analysis, moderate judgment
     - opus: complex judgment, orchestration, nuanced evaluation

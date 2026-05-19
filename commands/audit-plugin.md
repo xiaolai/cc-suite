@@ -128,7 +128,7 @@ Check for graceful handling of edge conditions:
 - **Missing dependencies**: Does the command assume tools/MCP servers are available without checking?
 - **Error paths**: Are there fallback behaviors when things fail?
 - **Agent failure**: If an agent is used in a workflow, what happens if it returns empty or errors?
-- **Large input**: Does the command handle very large codebases or many files? Is there pagination or batching?
+- **Large input**: Does the command handle large codebases with hundreds of files? Is there pagination or batching?
 
 **Severity**: High (no empty input handling, missing dependency checks), Medium (no fallback paths), Low (no large input consideration)
 

@@ -59,6 +59,8 @@ Mirrors `.claude/settings.json` hooks into `.codex/hooks.json`. Skips gracefully
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_hooks.py"
 ```
 
+If any script in Steps 1–6 exits non-zero, report the error output and the step that failed, then continue running the remaining steps. Collect all failures and surface them together in the final status below.
+
 ### Step 7: Final status
 
 Run the full status check and display the output:

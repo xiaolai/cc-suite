@@ -52,7 +52,7 @@ Parse `$ARGUMENTS` to find the plan:
 | `path/to/plan.md` | Use that file |
 | `path/to/plan.md +context1.md +context2.md` | Plan file + additional context files |
 
-Read the plan file. If it references other documents (design docs, specs, AGENTS.md), read those too — they become context.
+Read the plan file. If the specified file does not exist, report "Plan file not found: {path}" and stop. If it references other documents (design docs, specs, AGENTS.md), read those too — they become context.
 
 ### Step 2: Send Plan for Review
 

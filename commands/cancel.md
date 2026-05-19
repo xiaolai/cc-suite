@@ -41,7 +41,7 @@ And STOP.
 
 ### Step 2: Kill the job process
 
-1. Read the job's PID from the state file
+1. Read the job's PID from the state file. If the state file does not exist or is unreadable, report "Job {job-id} not found or already complete." and stop.
 2. Send SIGTERM to the process group (kills the job and any child processes)
 3. Update the job status to `cancelled` in the state file
 4. Log the cancellation
@@ -55,6 +55,8 @@ Verify the process terminated:
 ```bash
 sleep 0.5 && kill -0 {pid} 2>/dev/null && echo "warning: process still running" || echo "terminated"
 ```
+
+If the process was already gone before SIGTERM (stale PID), mark the job as `cancelled` in the state file and report success — the job was already terminated.
 
 ### Step 3: Report
 

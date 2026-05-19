@@ -133,7 +133,7 @@ prompt: |
   - **Total budget**: All rule files combined should be under 500 lines. Flag if over.
   - **Redundancy with training data**: Rules that state things Claude already knows
     Bad: "Use descriptive variable names" (obvious)
-    Bad: "Handle errors properly" (vague + obvious)
+    Bad: `Handle errors properly` (vague + obvious)
     Good: "In this codebase, use `Result<T, AppError>` not `unwrap()`" (project-specific)
   - **Redundancy with tooling**: Rules that duplicate what linters/formatters already enforce
     Bad: "Use 2-space indentation" (prettier handles this)
@@ -192,7 +192,7 @@ prompt: |
   - **Outdated technology**: Rule references deprecated APIs or old library versions
   - **One-off incident rules**: Rules created for a specific past bug that's been fixed and won't recur
   - **Version-specific rules**: Rules tied to a specific dependency version that's been upgraded
-  - **Orphaned context**: Rule references a decision or discussion that's no longer relevant
+  - **Orphaned context**: Rule references a decision or discussion that no longer applies
 
   Check: If the rule file mentions specific file paths, verify at least one path still exists in the codebase.
 

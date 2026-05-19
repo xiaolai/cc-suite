@@ -36,6 +36,8 @@ Determine the plan content from `$ARGUMENTS`:
 | Inline text | Use the text directly as the plan |
 | (empty) | Look for `PLAN.md` in cwd, then ask the user |
 
+If a file path was given but the file does not exist, report "Plan file not found: {path}" and stop.
+
 Read the plan content and display a brief summary to the user.
 
 **Large plans**: If the plan exceeds 200 lines, warn the user that very large plans may exceed Codex's context window and suggest breaking it into phases.
