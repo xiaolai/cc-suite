@@ -1,9 +1,23 @@
 {
   "name": "cc-suite",
-  "description": "One plugin to bridge and delegate across Claude Code, Codex CLI, and Gemini CLI — single-source AGENTS.md, shared skills, mirrored hooks and MCP servers, and full Claude↔Codex bidirectional delegation.",
   "version": "0.2.12",
+  "description": "One plugin to bridge and delegate across Claude Code, Codex CLI, and Gemini CLI — single-source AGENTS.md, shared skills, mirrored hooks and MCP servers, and full Claude↔Codex bidirectional delegation.",
   "author": {
     "name": "xiaolai"
   },
-  "license": "ISC"
+  "license": "ISC",
+  "homepage": "https://github.com/xiaolai/cc-suite",
+  "repository": "https://github.com/xiaolai/cc-suite",
+  "category": "developer-tools",
+  "keywords": [
+    "codex",
+    "gemini",
+    "agents-md",
+    "mcp",
+    "bridge",
+    "delegation",
+    "multi-tool",
+    "audit",
+    "code-review"
+  ]
 }
