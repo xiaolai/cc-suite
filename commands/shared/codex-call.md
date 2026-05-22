@@ -12,7 +12,7 @@ user-invocable: false
 Before the real Codex call, send a short ping:
 
 ```
-mcp__codex__codex with:
+mcp__codex-cli__codex with:
   prompt: "Respond with 'ok' if you can read this."
   model: {chosen_model}
   config: {"model_reasoning_effort": "{chosen_effort}"}
@@ -32,10 +32,10 @@ Concatenate these parts into a single `developer-instructions` string:
 
 If parts 3, 4, or 5 are empty, omit them. Parts 1 and 2 are always present. Separate non-empty parts with a single space.
 
-### Canonical mcp__codex__codex call
+### Canonical mcp__codex-cli__codex call
 
 ```
-mcp__codex__codex with:
+mcp__codex-cli__codex with:
   model: {chosen_model}
   config: {"model_reasoning_effort": "{chosen_effort}"}
   sandbox: {chosen_sandbox or command default}
@@ -65,8 +65,8 @@ This ensures users NEVER wait indefinitely. A Codex failure is handled in second
 ### Thread Handling
 
 1. **Save the `threadId`** from every Codex response. Include it in the final report so the user can follow up with `/continue {threadId}`.
-2. **Reuse threads** in multi-step workflows (audit→fix→verify) via `mcp__codex__codex-reply` to give Codex cumulative context.
-3. **Fallback**: If `codex-reply` fails (thread expired, MCP server restarted), fall back to a fresh `mcp__codex__codex` call with the same parameters. Update `{threadId}` to the new value.
+2. **Reuse threads** in multi-step workflows (audit→fix→verify) via `mcp__codex-cli__codex-reply` to give Codex cumulative context.
+3. **Fallback**: If `codex-reply` fails (thread expired, MCP server restarted), fall back to a fresh `mcp__codex-cli__codex` call with the same parameters. Update `{threadId}` to the new value.
 4. Codex threads are **in-memory only** — lost on MCP server restart.
 
 ### Sequential Execution
@@ -133,7 +133,7 @@ Commands that support `--background` / `--wait` flags:
 **When `--background` is detected**:
 
 1. Parse scope and build the prompt as usual
-2. Instead of calling `mcp__codex__codex`, run:
+2. Instead of calling `mcp__codex-cli__codex`, run:
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-runner.mjs" \
      --kind {kind} --model {chosen_model} --effort {chosen_effort} \

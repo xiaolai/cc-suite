@@ -102,7 +102,7 @@ Mark `{config_default_sandbox}` as "(Recommended)" if set, otherwise use the cal
 
 ### Step D: Apply project config to Codex calls
 
-After the user makes their choices, when building the `mcp__codex__codex` call, you MUST apply config values as follows:
+After the user makes their choices, when building the `mcp__codex-cli__codex` call, you MUST apply config values as follows:
 
 1. **developer-instructions**: Start with the command's role persona, then MUST append:
    - `{config_focus_instructions}` (if non-empty)

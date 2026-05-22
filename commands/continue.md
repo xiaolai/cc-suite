@@ -12,7 +12,7 @@ $ARGUMENTS
 
 ## What This Does
 
-Uses the `mcp__codex__codex-reply` MCP tool to continue a previous Codex session. The thread preserves full context from the original command, so you can:
+Uses the `mcp__codex-cli__codex-reply` MCP tool to continue a previous Codex session. The thread preserves full context from the original command, so you can:
 
 > **Note**: Codex threads are **in-memory only** — they are lost when the MCP server restarts (e.g. after restarting Claude Code or the Codex MCP process). If a thread is no longer available, start a fresh session with /audit, /implement, or another command instead.
 
@@ -68,7 +68,7 @@ AskUserQuestion:
 ### Step 2: Send follow-up to Codex
 
 ```
-mcp__codex__codex-reply with:
+mcp__codex-cli__codex-reply with:
   threadId: {threadId}
   prompt: "{follow_up_prompt}"
 ```

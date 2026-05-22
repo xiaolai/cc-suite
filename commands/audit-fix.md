@@ -130,7 +130,7 @@ Store as `{chosen_fixer}`.
 **Reuse the audit thread** via `codex-reply`:
 
 ```
-mcp__codex__codex-reply with:
+mcp__codex-cli__codex-reply with:
   threadId: {audit_threadId}
   prompt: "Fix the following issues from your audit. For each issue, make the smallest targeted fix at the exact file:line location.
 
@@ -145,7 +145,7 @@ RULES:
 - Report: what you fixed, what you couldn't fix, and the test results"
 ```
 
-**Fallback**: If `codex-reply` fails (thread expired), use a fresh `mcp__codex__codex` call following `commands/shared/codex-call.md`:
+**Fallback**: If `codex-reply` fails (thread expired), use a fresh `mcp__codex-cli__codex` call following `commands/shared/codex-call.md`:
 - **Command persona**: "You are an autonomous code fixer. Fix every issue precisely at the reported location. Do not introduce new issues."
 - **Sandbox**: `{chosen_sandbox}`
 
@@ -158,7 +158,7 @@ Display summary: `git diff --stat` + Codex's fix report.
 **If `{chosen_fixer}` was Codex** — continue the same thread:
 
 ```
-mcp__codex__codex-reply with:
+mcp__codex-cli__codex-reply with:
   threadId: {audit_threadId}
   prompt: "Verify whether the following issues have been fixed. Check each file at the exact location.
 

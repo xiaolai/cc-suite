@@ -102,7 +102,7 @@ Claude Code ──── codex-cli MCP ────►  Codex CLI
                                    implement, debug)
 ```
 
-Both paths use `npx -y` for delivery — no separate installs. Both use the same shared credential store.
+The Codex→Claude path delivers `claude-octopus` via `npx -y` at runtime — no pre-install. The Claude→Codex path uses the Codex CLI's own built-in MCP server (`codex mcp-server`), so it needs the `codex` binary on PATH. Each side reuses its host CLI's existing login — no separate credentials.
 
 ## Bridge table
 

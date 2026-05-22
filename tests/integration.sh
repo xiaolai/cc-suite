@@ -326,7 +326,7 @@ echo "# existing config" > .codex/config.toml
 cat > .mcp.json <<'JSON'
 {
   "mcpServers": {
-    "codex-cli":  {"type": "stdio", "command": "npx", "args": ["-y", "codex-mcp-server"]},
+    "codex-cli":  {"type": "stdio", "command": "codex", "args": ["mcp-server"]},
     "my-server":  {"type": "stdio", "command": "npx", "args": ["-y", "my-pkg"]},
     "sse-server": {"type": "sse",   "url": "https://example.com/sse"}
   }
@@ -546,7 +546,7 @@ section "T22: mcp_codex.sh — idempotent"
 make_tmp
 
 cat > .mcp.json <<'JSON'
-{"mcpServers": {"codex-cli": {"type": "stdio", "command": "npx", "args": ["-y", "codex-mcp-server"]}}}
+{"mcpServers": {"codex-cli": {"type": "stdio", "command": "codex", "args": ["mcp-server"]}}}
 JSON
 hash1="$(md5 -q .mcp.json 2>/dev/null || md5sum .mcp.json | awk '{print $1}')"
 
@@ -555,6 +555,24 @@ hash2="$(md5 -q .mcp.json 2>/dev/null || md5sum .mcp.json | awk '{print $1}')"
 
 if [ "$hash1" = "$hash2" ]; then ok_msg ".mcp.json unchanged on re-run"
 else                              fail_msg ".mcp.json changed on re-run"; fi
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T22b mcp_codex.sh — migrates a stale codex-cli entry to the canonical definition
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T22b: mcp_codex.sh — migrates stale codex-cli entry"
+make_tmp
+
+cat > .mcp.json <<'JSON'
+{"mcpServers": {"codex-cli": {"type": "stdio", "command": "npx", "args": ["-y", "codex-mcp-server@1.4.10"]}, "keep": {"type": "stdio", "command": "cmd"}}}
+JSON
+
+assert_exit0 bash "$SCRIPTS/mcp_codex.sh"
+
+assert_contains     ".mcp.json" '"mcp-server"'      # migrated to the built-in server
+assert_not_contains ".mcp.json" 'codex-mcp-server'  # stale npm reference removed
+assert_contains     ".mcp.json" '"keep"'            # other servers preserved
 
 cleanup
 
