@@ -10,7 +10,7 @@ Re-run every cc-suite setup script in sequence without prompts. All scripts are 
 
 ## When to Use
 
-- `$doctor` found issues and its auto-fix did not resolve them
+- `/cc-suite:doctor` found issues and its auto-fix did not resolve them
 - The cc-suite layer is in an inconsistent state (e.g. after a manual edit gone wrong)
 - After reinstalling cc-suite to a project, to restore all artifacts at once
 

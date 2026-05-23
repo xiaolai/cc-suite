@@ -12,7 +12,7 @@ Run a full cc-suite health check and offer to auto-fix every issue found. Skill 
 
 - At the start of a session when bridge artifacts may be missing or stale
 - After updating cc-suite to confirm the new version is wired as expected
-- When `$audit`, `$audit-fix`, or `$claude-*` skills behave unexpectedly
+- When `/cc-suite:audit`, `/cc-suite:audit-fix`, or any `/cc-suite:claude-*` skill behaves unexpectedly
 
 ## Workflow
 
@@ -113,4 +113,4 @@ After all auto-fixes, run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/status.sh"` again
 
 Report: N issues fixed, N remaining (with manual steps for those that remain).
 
-If issues persist after auto-fix, close with: "Issues remain. Next step: run `$repair` for a full non-interactive re-run of all setup scripts. If that also fails, run `/cc-suite:init` in a Claude Code session for a complete interactive re-initialization."
+If issues persist after auto-fix, close with: "Issues remain. Next step: run `/cc-suite:repair` for a full non-interactive re-run of all setup scripts. If that also fails, run `/cc-suite:init` for a complete interactive re-initialization."
