@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import path from "node:path";
 import process from "node:process";
+import { spawnSync } from "node:child_process";
 
 import { terminateProcessTree } from "./lib/process.mjs";
 import { loadState, resolveStateFile, saveState } from "./lib/state.mjs";
@@ -57,9 +59,56 @@ function cleanupSessionJobs(cwd, sessionId) {
   });
 }
 
+function isLegacyNpmCodexRegistration(entry) {
+  return (
+    entry &&
+    typeof entry === "object" &&
+    entry.command === "npx" &&
+    Array.isArray(entry.args) &&
+    entry.args.some(
+      (arg) => typeof arg === "string" && arg.includes("codex-mcp-server")
+    )
+  );
+}
+
+// Detect a stale codex-cli registration written by an older cc-suite (≤0.2.12)
+// and migrate it via mcp_codex.sh. The migration takes effect on the next
+// session — surface a stderr notice so the user knows to restart.
+function migrateStaleCodexCliRegistration(cwd) {
+  if (!cwd) return;
+  const mcpPath = path.join(cwd, ".mcp.json");
+  if (!fs.existsSync(mcpPath)) return;
+
+  let data;
+  try {
+    data = JSON.parse(fs.readFileSync(mcpPath, "utf8"));
+  } catch {
+    return; // invalid JSON — leave it alone
+  }
+  const entry = data?.mcpServers?.["codex-cli"];
+  if (!isLegacyNpmCodexRegistration(entry)) return;
+
+  const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
+  if (!pluginRoot) return;
+  const scriptPath = path.join(pluginRoot, "scripts", "mcp_codex.sh");
+  if (!fs.existsSync(scriptPath)) return;
+
+  const result = spawnSync("bash", [scriptPath], {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (result.status === 0) {
+    process.stderr.write(
+      "cc-suite: migrated stale Codex MCP registration in .mcp.json — restart Claude Code to load the new server.\n"
+    );
+  }
+}
+
 function handleSessionStart(input) {
   appendEnvVar(SESSION_ID_ENV, input.session_id);
   appendEnvVar(PLUGIN_DATA_ENV, process.env[PLUGIN_DATA_ENV]);
+  migrateStaleCodexCliRegistration(input.cwd || process.cwd());
 }
 
 function handleSessionEnd(input) {

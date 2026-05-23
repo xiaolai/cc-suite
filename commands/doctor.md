@@ -78,6 +78,7 @@ Group all findings into three buckets:
 | 7 | stale nested symlink | present | Duplicate skills visible in Codex | `rm {path}` then `/cc-suite:bridge-skills` |
 | 8 | cache stale | version mismatch | Skills symlink points to old cache | Run `claude plugin update cc-suite@xiaolai` then `/cc-suite:bridge-skills` |
 | 9 | Codex CLI | not found | `$audit`, `$audit-fix`, `$claude-*` skills require Codex CLI | Install from https://github.com/openai/codex |
+| 10 | `.mcp.json → codex-cli` | stale | Project still has the legacy npm registration — Codex MCP server loads with the wrong API and every Codex call falls back | `/cc-suite:repair` |
 
 Use the actual item names and details from the status output — the table above is a reference mapping, not a literal template.
 
@@ -129,11 +130,12 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_hooks.py"
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_mcp.sh"
 ```
 
-**`/cc-suite:init` step 7 (codex-cli MCP)** — run:
+**`/cc-suite:init` step 7 (codex-cli MCP) — fixes both missing and stale registrations** — run:
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_codex.sh"
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_mcp.sh"
 ```
+After this runs, **restart Claude Code** so the MCP loader picks up the new server definition.
 
 **`/cc-suite:init` step 8 (claude-code MCP)** — run:
 ```bash

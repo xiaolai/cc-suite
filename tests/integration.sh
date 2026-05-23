@@ -577,6 +577,30 @@ assert_contains     ".mcp.json" '"keep"'            # other servers preserved
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# T22c status.sh — flags a stale codex-cli entry with !
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T22c: status.sh — flags stale codex-cli entry"
+make_tmp
+
+cat > .mcp.json <<'JSON'
+{"mcpServers": {"codex-cli": {"type": "stdio", "command": "npx", "args": ["-y", "codex-mcp-server@1.4.10"]}}}
+JSON
+
+_stale_out="$(bash "$SCRIPTS/status.sh" 2>&1)"
+if printf '%s' "$_stale_out" | grep -q '! \.mcp\.json → Claude'; then
+  ok_msg "status.sh: stale codex-cli flagged with !"
+else
+  fail_msg "status.sh: stale codex-cli not flagged with !"
+fi
+if printf '%s' "$_stale_out" | grep -q '/cc-suite:repair'; then
+  ok_msg "status.sh: directs user to /cc-suite:repair"
+else
+  fail_msg "status.sh: missing /cc-suite:repair hint"
+fi
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # T23  unbridge.sh — CC_SUITE_CREATED_CLAUDE: removes cc-suite-created CLAUDE.md
 # ═══════════════════════════════════════════════════════════════════════════════
 section "T23: unbridge.sh — removes cc-suite-created CLAUDE.md"

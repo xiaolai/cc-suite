@@ -22,3 +22,36 @@ user-invocable: false
 - Do NOT skip dimensions or criteria — cover everything the calling command requires
 - Do NOT reduce quality — manual analysis should match the same standard as a Codex-powered analysis
 - If the fallback was triggered by a ping failure, note "Codex unavailable — manual analysis" in the report header
+
+### Diagnostic header (when Codex was unavailable, not just empty)
+
+When the fallback was triggered because Codex couldn't be reached (ping failed, MCP tool missing, tool errored) — as opposed to Codex responding with no findings — the user needs to know **why** so they can restore Codex mode. Before producing the fallback output, run two quick checks and put the diagnostic block at the top of the report.
+
+Checks:
+
+```bash
+which codex 2>/dev/null || true
+[ -f .mcp.json ] && python3 -c '
+import json
+try:
+    d=json.load(open(".mcp.json"))
+    e=d.get("mcpServers",{}).get("codex-cli")
+    if e is None: print("missing")
+    elif e=={"type":"stdio","command":"codex","args":["mcp-server"]}: print("canonical")
+    else: print("stale")
+except Exception:
+    print("invalid")
+'
+```
+
+Required block at the top of the fallback report:
+
+```
+**Codex unavailable — manual analysis.** To restore Codex mode:
+- codex-cli registration: {canonical / stale / missing / invalid}
+- codex binary on PATH: {yes — <path> / no}
+- Suggested fix: {/cc-suite:repair if stale, /cc-suite:init if missing, install codex from https://github.com/openai/codex if not found, or `codex login` if auth-expired}
+- Full diagnostic: `/cc-suite:doctor`
+```
+
+Without this block, users see degraded output and don't know it's degraded or how to fix it.

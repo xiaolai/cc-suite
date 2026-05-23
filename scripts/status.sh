@@ -97,22 +97,29 @@ fi
 [ -d .gemini/skills ]   && mark ".gemini/skills/"   ok "" || mark ".gemini/skills/"   miss
 [ -d .gemini/commands ] && mark ".gemini/commands/" ok "" || mark ".gemini/commands/" miss
 
-# .mcp.json — show codex-cli registration separately from other servers
+# .mcp.json — distinguish canonical, stale (legacy npm), missing, or invalid
 if [ -f .mcp.json ]; then
-  if python3 -c '
+  _codex_cli_rc=0
+  python3 - <<'PY' 2>/dev/null || _codex_cli_rc=$?
 import json, sys
 from pathlib import Path
+
+CANONICAL = {"type": "stdio", "command": "codex", "args": ["mcp-server"]}
 try:
     d = json.loads(Path(".mcp.json").read_text())
 except Exception:
-    sys.exit(1)
+    sys.exit(3)
 s = d.get("mcpServers") if isinstance(d, dict) else None
-sys.exit(0 if isinstance(s, dict) and "codex-cli" in s else 1)
-' 2>/dev/null; then
-    mark ".mcp.json → Claude" ok "codex-cli registered (Claude can invoke Codex as tool)"
-  else
-    mark ".mcp.json → Claude" miss "codex-cli not registered (run /cc-suite:init step 7)"
-  fi
+if not isinstance(s, dict) or "codex-cli" not in s:
+    sys.exit(2)
+sys.exit(0 if s["codex-cli"] == CANONICAL else 1)
+PY
+  case "$_codex_cli_rc" in
+    0) mark ".mcp.json → Claude" ok   "codex-cli registered (codex mcp-server)" ;;
+    1) mark ".mcp.json → Claude" warn "codex-cli stale (legacy npm registration) — run /cc-suite:repair" ;;
+    2) mark ".mcp.json → Claude" miss "codex-cli not registered (run /cc-suite:init step 7)" ;;
+    *) mark ".mcp.json → Claude" warn ".mcp.json unreadable" ;;
+  esac
 else
   mark ".mcp.json" miss
 fi
