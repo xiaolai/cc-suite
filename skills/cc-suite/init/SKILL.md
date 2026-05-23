@@ -1,18 +1,18 @@
 ---
 name: init
-description: "Initialize cc-suite for the current project from inside a Codex session — sets up the AGENTS.md bridge, registers Codex and Claude MCP servers, and generates a .cc-suite.md config. Full counterpart to /cc-suite:init."
+description: "Initialize cc-suite for the current project — sets up the AGENTS.md bridge, registers Codex and Claude MCP servers, and generates a .cc-suite.md config. Skill counterpart to /cc-suite:init."
 version: 0.2.8
 ---
 
 # Init
 
-Bootstrap cc-suite in the current project without leaving a Codex session.
+Bootstrap cc-suite in the current project.
 
 ## When to Use
 
-- Setting up a project for the first time and Claude Code is not open
+- Setting up a project for the first time
 - Re-initializing after cloning a repo that already has `AGENTS.md`
-- Faster than switching to Claude Code just to run `/cc-suite:init`
+- Walks through the same setup flow as `/cc-suite:init` — useful when the agent should drive the steps in conversation rather than via a slash command
 
 ## Workflow
 
@@ -131,7 +131,7 @@ Focus-specific instructions:
 ### Step 5: Bridge init
 
 ```bash
-bash "$SKILL_PLUGIN_ROOT/scripts/init.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/init.sh"
 ```
 
 Creates `AGENTS.md`, `CLAUDE.md` (`@AGENTS.md`), `GEMINI.md`, `.codex/config.toml`, scaffold directories, and the `.gitignore` block. Skips each artifact if already correct.
@@ -139,26 +139,26 @@ Creates `AGENTS.md`, `CLAUDE.md` (`@AGENTS.md`), `GEMINI.md`, `.codex/config.tom
 ### Step 6: Expose skills
 
 ```bash
-bash "$SKILL_PLUGIN_ROOT/scripts/bridge_skills.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_skills.sh"
 ```
 
 ### Step 7: Register codex-cli MCP server
 
 ```bash
-bash "$SKILL_PLUGIN_ROOT/scripts/mcp_codex.sh"
-bash "$SKILL_PLUGIN_ROOT/scripts/bridge_mcp.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_codex.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_mcp.sh"
 ```
 
 ### Step 8: Register claude-code MCP server
 
 ```bash
-bash "$SKILL_PLUGIN_ROOT/scripts/mcp_claude.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_claude.sh"
 ```
 
 ### Step 9: Final status
 
 ```bash
-bash "$SKILL_PLUGIN_ROOT/scripts/status.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/status.sh"
 ```
 
 Report:

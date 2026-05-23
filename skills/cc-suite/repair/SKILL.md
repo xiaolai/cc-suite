@@ -1,6 +1,6 @@
 ---
 name: repair
-description: "Non-interactive re-run of all cc-suite bridge and registration scripts from inside a Codex session. No questions asked — idempotent escalation step after $doctor finds issues it could not fix."
+description: "Non-interactive re-run of all cc-suite bridge and registration scripts. No questions asked — idempotent escalation step after the doctor skill finds issues it could not fix. Skill counterpart to /cc-suite:repair."
 version: 0.2.7
 ---
 
@@ -21,7 +21,7 @@ If repair still leaves issues, the next step is `/cc-suite:init` in a Claude Cod
 ### Step 1: Bridge init
 
 ```bash
-bash "$SKILL_PLUGIN_ROOT/scripts/init.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/init.sh"
 ```
 
 Creates `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.codex/config.toml`, scaffold directories, and the `.gitignore` block. Skips each artifact if it is already in place.
@@ -29,7 +29,7 @@ Creates `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.codex/config.toml`, scaffold di
 ### Step 2: Expose skills
 
 ```bash
-bash "$SKILL_PLUGIN_ROOT/scripts/bridge_skills.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_skills.sh"
 ```
 
 Links plugin skills into `.claude/skills/cc-suite/` and ensures `.agents/skills → ../.claude/skills`.
@@ -37,7 +37,7 @@ Links plugin skills into `.claude/skills/cc-suite/` and ensures `.agents/skills 
 ### Step 3: Register codex-cli MCP server
 
 ```bash
-bash "$SKILL_PLUGIN_ROOT/scripts/mcp_codex.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_codex.sh"
 ```
 
 Adds `codex-cli` to `.mcp.json` so Claude can invoke Codex as a tool.
@@ -45,7 +45,7 @@ Adds `codex-cli` to `.mcp.json` so Claude can invoke Codex as a tool.
 ### Step 4: Register claude-code MCP server
 
 ```bash
-bash "$SKILL_PLUGIN_ROOT/scripts/mcp_claude.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_claude.sh"
 ```
 
 Adds `claude-code` (claude-octopus) to `.codex/config.toml` so Codex can invoke Claude as a tool.
@@ -53,7 +53,7 @@ Adds `claude-code` (claude-octopus) to `.codex/config.toml` so Codex can invoke 
 ### Step 5: Mirror MCP servers
 
 ```bash
-bash "$SKILL_PLUGIN_ROOT/scripts/bridge_mcp.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_mcp.sh"
 ```
 
 Copies additional MCP servers from `.mcp.json` into `.codex/config.toml`.
@@ -61,7 +61,7 @@ Copies additional MCP servers from `.mcp.json` into `.codex/config.toml`.
 ### Step 6: Bridge hooks
 
 ```bash
-python3 "$SKILL_PLUGIN_ROOT/scripts/bridge_hooks.py"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_hooks.py"
 ```
 
 Mirrors `.claude/settings.json` hooks into `.codex/hooks.json`. Skips gracefully if nothing to bridge.
@@ -69,7 +69,7 @@ Mirrors `.claude/settings.json` hooks into `.codex/hooks.json`. Skips gracefully
 ### Step 7: Status check
 
 ```bash
-bash "$SKILL_PLUGIN_ROOT/scripts/status.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/status.sh"
 ```
 
 Show the full status output. Then report:
