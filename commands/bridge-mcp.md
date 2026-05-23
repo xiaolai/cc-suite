@@ -11,10 +11,28 @@ Copy every MCP server registered in `.mcp.json` (except `codex-cli` itself) into
 
 Idempotent. Skips servers already present in `.codex/config.toml`. Wraps server names containing special characters in TOML quoted keys.
 
+## Workflow
+
+### Step 1: Run the bridge script
+
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_mcp.sh"
 ```
 
-Report which servers were mirrored and which were already present. Success criterion: script exits 0 and all servers from `.mcp.json` (except `codex-cli`) appear under `[mcp_servers.*]` in `.codex/config.toml`.
-
 If the script exits non-zero, report the error output and stop. If `.mcp.json` does not exist, report: "No `.mcp.json` found — nothing to mirror." and stop.
+
+### Step 2: Report results
+
+Use this template:
+
+```markdown
+**bridge-mcp**: MCP servers mirrored from `.mcp.json` to `.codex/config.toml`
+
+| Server | Action |
+|--------|--------|
+| {server-name} | mirrored |
+| {server-name} | already present (skipped) |
+| codex-cli | skipped (Codex cannot call itself) |
+```
+
+Success criterion: script exits 0 and every server from `.mcp.json` (except `codex-cli`) appears under `[mcp_servers.*]` in `.codex/config.toml`.

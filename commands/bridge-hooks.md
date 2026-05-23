@@ -22,8 +22,31 @@ The handler shape (event → matcher → handler → `type: "command"`) is the s
 
 Existing `.codex/hooks.json` is **never silently overwritten** — if it exists, the script writes a `.codex/hooks.cc-suite.json` alongside and tells the user to review/merge.
 
+## Workflow
+
+### Step 1: Run the bridge script
+
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_hooks.py"
 ```
 
-Report which events were mirrored and which were skipped. Success criterion: script exits 0 and `.codex/hooks.json` (or `.codex/hooks.cc-suite.json`) is written with at least one event entry.
+If the script exits non-zero, report the error output and stop. If `.claude/settings.json` is missing or has no `hooks` section, the script reports "nothing to bridge" and exits 0 — pass that message through and stop.
+
+### Step 2: Report results
+
+Use this template:
+
+```markdown
+**bridge-hooks**: hooks mirrored to `.codex/hooks.json` (or `.codex/hooks.cc-suite.json` for side-by-side review)
+
+| Event | Handlers | Status |
+|-------|----------|--------|
+| {event} | {count} | mirrored |
+| {event} | {count} | mirrored |
+
+**Skipped (Claude-only)**: {comma-separated list of `Notification` / `SubagentStop` / `SessionEnd` events present in the source}
+
+**Output file**: `.codex/hooks.json` (new) — or `.codex/hooks.cc-suite.json` (side-by-side; review and merge into your existing Codex hooks)
+```
+
+Success criterion: script exits 0 and `.codex/hooks.json` (or `.codex/hooks.cc-suite.json`) is written with at least one event entry.

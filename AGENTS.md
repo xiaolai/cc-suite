@@ -25,6 +25,31 @@ description: "Project instructions for cc-suite — the Claude Code plugin that 
 
 After any setup change, run `/cc-suite:status` and confirm every bridge artifact shows `✓`.
 
+## Build / Run
+
+cc-suite is a Claude Code plugin — there is no compilation step. During development, exercise it as follows:
+
+```bash
+# Install for the current project (one-time)
+claude plugin install cc-suite@xiaolai --scope project
+
+# Refresh the bridge layer in a target project after editing any script
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/init.sh"
+
+# Run cc-suite commands from the project root
+# e.g. /cc-suite:status, /cc-suite:doctor, /cc-suite:repair, /cc-suite:audit-fix
+```
+
+## Tests
+
+Run the integration suite (33+ test sections, 167+ assertions):
+
+```bash
+bash tests/integration.sh
+```
+
+Tests cover every `scripts/*.sh`, the `mcp_codex.sh` migration path, and `status.sh` output. Add a new `T<N>` section for any new behavior; the suite uses `make_tmp` / `cleanup` / `assert_*` helpers and tallies pass/fail counts in its summary.
+
 ## Shared Memory
 
 **Always write new instructions, rules, and memory to `AGENTS.md` only.**
