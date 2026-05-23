@@ -73,7 +73,8 @@ function isLegacyNpmCodexRegistration(entry) {
 
 // Detect a stale codex-cli registration written by an older cc-suite (≤0.2.12)
 // and migrate it via mcp_codex.sh. The migration takes effect on the next
-// session — surface a stderr notice so the user knows to restart.
+// session — surface a one-line systemMessage via JSON stdout (the documented
+// SessionStart channel) so the user knows to restart.
 function migrateStaleCodexCliRegistration(cwd) {
   if (!cwd) return;
   const mcpPath = path.join(cwd, ".mcp.json");
@@ -99,8 +100,13 @@ function migrateStaleCodexCliRegistration(cwd) {
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (result.status === 0) {
-    process.stderr.write(
-      "cc-suite: migrated stale Codex MCP registration in .mcp.json — restart Claude Code to load the new server.\n"
+    // SessionStart JSON output schema: `systemMessage` surfaces in the
+    // Claude Code transcript. See https://code.claude.com/docs/en/hooks.md
+    process.stdout.write(
+      JSON.stringify({
+        systemMessage:
+          "cc-suite: migrated stale Codex MCP registration in .mcp.json — restart Claude Code to load the new server.",
+      }) + "\n"
     );
   }
 }
