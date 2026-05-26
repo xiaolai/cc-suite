@@ -1,12 +1,12 @@
 ---
-name: doctor
-description: "Diagnose the cc-suite setup in the current project. Runs the full health check, explains every issue, and fixes what can be fixed automatically. Skill counterpart to /cc-suite:doctor."
-version: 0.2.5
+name: diagnose
+description: "Diagnose the cc-suite setup in the current project. Runs the full health check, explains every issue, and fixes what can be fixed automatically. Skill counterpart to /cc-suite:diagnose."
+version: 0.2.6
 ---
 
-# Doctor
+# Diagnose
 
-Run a full cc-suite health check and offer to auto-fix every issue found. Skill counterpart to `/cc-suite:doctor`.
+Run a full cc-suite health check and offer to auto-fix every issue found. Skill counterpart to `/cc-suite:diagnose`.
 
 ## When to Use
 
@@ -63,7 +63,7 @@ Exclude `.codex/hooks.json` from issues if the project has no `hooks` section in
 Display the diagnosis:
 
 ```
-cc-suite doctor — {cwd}
+cc-suite diagnose — {cwd}
 
 Healthy: N items ✓
 

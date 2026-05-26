@@ -1,13 +1,13 @@
 ---
 name: repair
-description: Non-interactive re-run of all cc-suite bridge and registration scripts. No questions asked — idempotent, safe to re-run at any time. Use when /cc-suite:doctor finds issues it could not auto-fix, or when the setup is in an inconsistent state.
+description: Non-interactive re-run of all cc-suite bridge and registration scripts. No questions asked — idempotent, safe to re-run at any time. Use when /cc-suite:diagnose finds issues it could not auto-fix, or when the setup is in an inconsistent state.
 ---
 
 # CC-Suite Repair
 
 Re-run every cc-suite setup script in sequence, non-interactively. All scripts are idempotent — existing correct artifacts are left alone; missing or broken ones are (re)created.
 
-Use this as the escalation step after `/cc-suite:doctor` has tried targeted fixes and issues remain. If repair also fails, the next step is `/cc-suite:init` (full interactive re-initialization).
+Use this as the escalation step after `/cc-suite:diagnose` has tried targeted fixes and issues remain. If repair also fails, the next step is `/cc-suite:init` (full interactive re-initialization).
 
 ## Workflow
 

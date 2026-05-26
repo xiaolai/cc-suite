@@ -79,4 +79,4 @@ Report the result. If status shows all `✓`, end with:
 cc-suite updated and verified. The pinned claude-octopus@<version> boots and responds to MCP.
 ```
 
-If status shows any `·` or `!` lines, summarize what's still off and suggest `/cc-suite:repair` (for missing artifacts) or `/cc-suite:doctor` (for diagnosis with auto-fix).
+If status shows any `·` or `!` lines, summarize what's still off and suggest `/cc-suite:repair` (for missing artifacts) or `/cc-suite:diagnose` (for diagnosis with auto-fix).

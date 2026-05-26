@@ -1,9 +1,9 @@
 ---
-name: doctor
+name: diagnose
 description: Diagnose the cc-suite setup in the current project. Runs a full health check, explains every issue found, and offers to fix everything that can be fixed automatically.
 ---
 
-# CC-Suite Doctor
+# CC-Suite Diagnose
 
 Inspect every cc-suite artifact and configuration in the current project, explain what is wrong or missing, and offer to auto-fix what is fixable.
 

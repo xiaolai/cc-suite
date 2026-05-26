@@ -174,6 +174,6 @@ Project config:  .cc-suite.md written ({focus}, {depth}, effort={effort})
 Next steps:
   Edit AGENTS.md to add project-specific conventions
   Run /cc-suite:audit-fix to test the full cycle
-  Run /cc-suite:doctor to verify health at any time
+  Run /cc-suite:diagnose to verify health at any time
   Commit AGENTS.md, .cc-suite.md, .mcp.json to share with your team
 ```

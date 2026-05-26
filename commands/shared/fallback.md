@@ -51,7 +51,7 @@ Required block at the top of the fallback report:
 - codex-cli registration: {canonical / stale / missing / invalid}
 - codex binary on PATH: {yes — <path> / no}
 - Suggested fix: {/cc-suite:repair if stale, /cc-suite:init if missing, install codex from https://github.com/openai/codex if not found, or `codex login` if auth-expired}
-- Full diagnostic: `/cc-suite:doctor`
+- Full diagnostic: `/cc-suite:diagnose`
 ```
 
 Without this block, users see degraded output and don't know it's degraded or how to fix it.

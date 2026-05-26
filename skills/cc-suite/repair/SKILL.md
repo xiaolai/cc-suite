@@ -1,6 +1,6 @@
 ---
 name: repair
-description: "Non-interactive re-run of all cc-suite bridge and registration scripts. No questions asked — idempotent escalation step after the doctor skill finds issues it could not fix. Skill counterpart to /cc-suite:repair."
+description: "Non-interactive re-run of all cc-suite bridge and registration scripts. No questions asked — idempotent escalation step after the diagnose skill finds issues it could not fix. Skill counterpart to /cc-suite:repair."
 version: 0.2.7
 ---
 
@@ -10,7 +10,7 @@ Re-run every cc-suite setup script in sequence without prompts. All scripts are 
 
 ## When to Use
 
-- `/cc-suite:doctor` found issues and its auto-fix did not resolve them
+- `/cc-suite:diagnose` found issues and its auto-fix did not resolve them
 - The cc-suite layer is in an inconsistent state (e.g. after a manual edit gone wrong)
 - After reinstalling cc-suite to a project, to restore all artifacts at once
 

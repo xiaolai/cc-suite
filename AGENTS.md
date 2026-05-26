@@ -48,7 +48,7 @@ claude plugin install cc-suite@xiaolai --scope project
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/init.sh"
 
 # Run cc-suite commands from the project root
-# e.g. /cc-suite:status, /cc-suite:doctor, /cc-suite:repair, /cc-suite:audit-fix
+# e.g. /cc-suite:status, /cc-suite:diagnose, /cc-suite:repair, /cc-suite:audit-fix
 ```
 
 ## Tests
