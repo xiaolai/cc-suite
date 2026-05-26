@@ -72,7 +72,7 @@ If no skills found → "No SKILL.md files found. Provide a path or run from a di
 
 ### Step 3: Send Skill Files for Audit
 
-Follow `commands/shared/codex-call.md` for availability test and call pattern.
+Follow `commands/shared/codex-call.md` for the call pattern (CLI runner).
 
 - **Command persona**: "You are a Claude Code skill quality auditor. You evaluate SKILL.md files for triggering reliability, teaching effectiveness, and context efficiency."
 - **Sandbox**: `read-only`

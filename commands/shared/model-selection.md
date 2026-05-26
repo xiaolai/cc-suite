@@ -102,13 +102,13 @@ Mark `{config_default_sandbox}` as "(Recommended)" if set, otherwise use the cal
 
 ### Step D: Apply project config to Codex calls
 
-After the user makes their choices, when building the `mcp__codex-cli__codex` call, you MUST apply config values as follows:
+After the user makes their choices, when building the Codex runner call (see `commands/shared/codex-call.md`), you MUST apply config values as follows:
 
-1. **developer-instructions**: Start with the command's role persona, then MUST append:
+1. **Prompt preamble**: Start with the command's role persona, then MUST append:
    - `{config_focus_instructions}` (if non-empty)
    - `{config_project_instructions}` (if non-empty)
 
-   These are NOT optional — if the config provides them, they MUST be included in every Codex call's developer-instructions.
+   These are NOT optional — if the config provides them, they MUST be folded into the prompt preamble on every Codex call (there is no separate developer-instructions channel in `codex exec`).
 
 2. **Skip patterns**: Before sending files to Codex, you MUST filter out any files matching `{config_skip_patterns}`. If all files are filtered out, report that and stop.
 

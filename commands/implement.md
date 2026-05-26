@@ -62,13 +62,13 @@ Show the final configuration:
 
 If `--background` mode was selected, follow the **Background Execution** section in `commands/shared/codex-call.md`. Build the prompt as described below, then hand off to the background runner with `--kind implement`.
 
-Follow `commands/shared/codex-call.md` for availability test, call pattern, and **Job Tracking**.
+Follow `commands/shared/codex-call.md` for the call pattern (CLI runner) and **Job Tracking**.
 
 - **Command persona**: "You are an autonomous implementation agent. Execute plans completely."
 - **Sandbox**: `{chosen_sandbox}`
-- **Approval-policy**: `never`
+- **Deadline**: `--timeout-ms 900000` (15 min)
 
-> **Warning**: If the user selected `danger-full-access` sandbox, display a confirmation before proceeding: "You chose `danger-full-access` with `approval-policy: never` — Codex will have unrestricted read/write/execute access with no approval prompts. Continue?" Use `AskUserQuestion` with "Continue" and "Switch to workspace-write" options.
+> **Warning**: If the user selected `danger-full-access` sandbox, display a confirmation before proceeding: "You chose `danger-full-access` — Codex will have unrestricted read/write/execute access with no sandbox. Continue?" Use `AskUserQuestion` with "Continue" and "Switch to workspace-write" options.
 
 ```
 prompt: "Execute the following plan completely from start to finish in the current working directory.
@@ -130,7 +130,7 @@ Ask the user what to do next:
 
 ### Fallback
 
-If Codex is unavailable (availability test fails):
+If Codex is unavailable (the runner returns failed/stalled):
 
 1. Inform the user: "Codex is not available."
 2. Offer alternatives via `AskUserQuestion`:

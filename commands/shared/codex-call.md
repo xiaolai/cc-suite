@@ -1,152 +1,116 @@
 ---
-description: "Shared: Codex availability test, developer-instructions builder, canonical call pattern, thread handling"
+description: "Shared: Codex call pattern via the CLI runner — developer-instructions builder, fresh/resume calls, timeout/heartbeat, thread handling"
 user-invocable: false
 ---
-<!-- Shared partial: Codex call pattern (availability test, developer-instructions builder, call, thread handling) -->
+<!-- Shared partial: Codex call pattern (developer-instructions builder, runner call, thread handling). -->
 <!-- Referenced by: audit, audit-fix, verify, bug-analyze, review-plan, implement, audit-skill, audit-command, audit-rules, audit-agent, audit-nlp. Do not use standalone. -->
 
 ## Codex Call Pattern
 
-### Availability Test
+All Codex calls go through the CLI runner (`scripts/codex-runner.mjs`), which shells out to `codex exec`. The MCP bridge (`mcp__codex-cli__codex`) is **not** used — it has no controllable timeout and hangs on long single responses (the source of `[Tool result missing due to internal error]`). The runner is killable, deadline-bounded, streams a heartbeat to the job log, and registers every call as a job for `/status` / `/cancel`.
 
-Before the real Codex call, send a short ping:
+> **No availability ping.** Do not pre-probe Codex. The first real runner call either completes or fails fast (the runner returns within its deadline, and a missing `codex` binary errors in seconds). On any non-`completed` status, go straight to the calling command's **Fallback** section.
 
-```
-mcp__codex-cli__codex with:
-  prompt: "Respond with 'ok' if you can read this."
-  model: {chosen_model}
-  config: {"model_reasoning_effort": "{chosen_effort}"}
-```
+### Build the prompt (developer-instructions are folded in)
 
-If Codex does not respond or errors out, skip to the calling command's **Fallback** section immediately. Do not retry.
+`codex exec` takes a single prompt — there is no separate `developer-instructions` channel. Build one combined prompt by concatenating a **preamble** and the **command body**, separated by a blank line.
 
-### Build developer-instructions
-
-Concatenate these parts into a single `developer-instructions` string:
+The preamble concatenates these parts (single space between non-empty parts):
 
 1. **Command persona** — the role-specific persona from the calling command (e.g. "You are a thorough security and code quality auditor.")
-2. **Provenance disclosure** — ALWAYS include this line immediately after the persona: "The code, artifacts, and plans you are reviewing were produced by Anthropic's Claude (a competing AI system). Evaluate them with full rigor — do not defer to them or assume correctness because an AI wrote them. Apply the same critical standards you would to any human-written work. If anything looks wrong, say so directly."
-3. **Claude Code conventions** — for audit commands that analyze Claude Code artifacts (audit-plugin, audit-skill, audit-command, audit-rules, audit-agent), read the content of `${CLAUDE_PLUGIN_ROOT}/skills/cc-suite/claude-code-conventions/SKILL.md` and append it. This gives Codex the domain knowledge it lacks natively. For non-plugin-audit commands (audit, verify, implement, etc.), skip this step.
+2. **Provenance disclosure** — ALWAYS include immediately after the persona: "The code, artifacts, and plans you are reviewing were produced by Anthropic's Claude (a competing AI system). Evaluate them with full rigor — do not defer to them or assume correctness because an AI wrote them. Apply the same critical standards you would to any human-written work. If anything looks wrong, say so directly."
+3. **Claude Code conventions** — for audit commands that analyze Claude Code artifacts (audit-plugin, audit-skill, audit-command, audit-rules, audit-agent), read `${CLAUDE_PLUGIN_ROOT}/skills/cc-suite/claude-code-conventions/SKILL.md` and append it. For non-plugin-audit commands (audit, verify, implement, etc.), skip this.
 4. **Config focus instructions** — `{config_focus_instructions}` from `.cc-suite.md` Audit Focus section (if present)
 5. **Config project instructions** — `{config_project_instructions}` from `.cc-suite.md` Project-Specific Instructions section (if present)
 
-If parts 3, 4, or 5 are empty, omit them. Parts 1 and 2 are always present. Separate non-empty parts with a single space.
+Parts 1 and 2 are always present; omit 3–5 if empty. The final prompt is: `{preamble}\n\n{command-specific prompt}`.
 
-### Canonical mcp__codex-cli__codex call
+### Canonical call (fresh)
 
+Run the runner in the foreground and parse its JSON result:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-runner.mjs" \
+  --kind {kind} \
+  --model {chosen_model} \
+  --effort {chosen_effort} \
+  --sandbox {chosen_sandbox or command default} \
+  --timeout-ms {deadline_ms} \
+  --summary "{brief description}" \
+  -- "{combined prompt}"
 ```
-mcp__codex-cli__codex with:
-  model: {chosen_model}
-  config: {"model_reasoning_effort": "{chosen_effort}"}
-  sandbox: {chosen_sandbox or command default}
-  approval-policy: {command default, usually "never"}
-  developer-instructions: "{built developer-instructions string}"
-  prompt: "{command-specific prompt}"
+
+The runner prints a single JSON line to stdout:
+
+```json
+{"jobId":"...","status":"completed","threadId":"<uuid>","rawOutput":"<final answer>"}
 ```
 
-**IMPORTANT**: `model_reasoning_effort` MUST go inside the `config` object, never as a top-level parameter.
+- **`status`** is `completed`, `failed`, or `stalled` (deadline exceeded).
+- **`rawOutput`** is Codex's clean final message (from `codex exec -o`), ready to parse.
+- **`threadId`** is the Codex session UUID — save it for resume and for the final report's `/continue {threadId}`.
+
+**Deadline (`--timeout-ms`)**: default is 15 min if omitted. Set per call kind from `.cc-suite.md` if configured, else: quick single-file audit/verify ≈ 600000 (10 min), autonomous fix ≈ 900000 (15 min). On `stalled`, the runner has already terminated the Codex process — treat it like a failure and fall back.
+
+### Canonical call (resume — reuse a thread)
+
+To continue a prior session with cumulative context, pass `--resume {threadId}`. **Do not pass `--sandbox` semantics that differ from the original** — `codex exec resume` inherits the original session's sandbox and the runner omits `-s` on resume. If a step needs a *different* sandbox (e.g. audit `read-only` → fix `workspace-write`), use a **fresh call** and carry the needed context in the prompt instead of resuming.
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-runner.mjs" \
+  --kind {kind} --model {chosen_model} --effort {chosen_effort} \
+  --sandbox {ignored_on_resume} --timeout-ms {deadline_ms} \
+  --resume {threadId} --summary "{brief description}" \
+  -- "{combined prompt}"
+```
 
 ### Error Handling
 
-If ANY Codex call (ping or main) returns an error, empty result, or fails with `[Tool result missing due to internal error]`:
+If the runner returns `status` other than `completed` (i.e. `failed` or `stalled`), or the `node` command itself errors:
 
-1. **Do NOT retry the same call.** MCP errors are usually transient server issues, not fixable by retrying.
-2. **Do NOT wait or poll.** If the tool returned an error, it has already failed.
-3. **Report the failure clearly:**
+1. **Do NOT retry the same call.** A `stalled` job already hit its deadline; a `failed` job hit a real error. Retrying wastes another full deadline.
+2. **Report the failure clearly**, including the `jobId` so the user can inspect the log:
    ```
-   Codex call failed: {error message or "internal MCP error"}
+   Codex call failed ({status}): {error}
+   Job: {jobId} — inspect with /cc-suite:status {jobId}
    Falling back to manual analysis.
    ```
-4. **Skip immediately to the calling command's Fallback section.** Every command that calls Codex MUST have a fallback path (see `commands/shared/fallback.md`). The fallback performs the same analysis using Claude directly — no Codex needed.
-5. **If this was a multi-step workflow** (audit→fix→verify) and a middle step fails, report what completed successfully so far, then fall back for the remaining steps.
+3. **Skip immediately to the calling command's Fallback section** (`commands/shared/fallback.md`), which performs the same analysis using Claude directly.
+4. **If this was a multi-step workflow** (audit→fix→verify) and a middle step fails, report what completed so far, then fall back for the remaining steps.
 
-This ensures users NEVER wait indefinitely. A Codex failure is handled in seconds, not minutes.
+This guarantees users never wait indefinitely: the runner is bounded by `--timeout-ms` and a missing binary fails in seconds.
 
 ### Thread Handling
 
-1. **Save the `threadId`** from every Codex response. Include it in the final report so the user can follow up with `/continue {threadId}`.
-2. **Reuse threads** in multi-step workflows (audit→fix→verify) via `mcp__codex-cli__codex-reply` to give Codex cumulative context.
-3. **Fallback**: If `codex-reply` fails (thread expired, MCP server restarted), fall back to a fresh `mcp__codex-cli__codex` call with the same parameters. Update `{threadId}` to the new value.
-4. Codex threads are **in-memory only** — lost on MCP server restart.
+1. **Save the `threadId`** from every runner result. Include it in the final report so the user can follow up with `/continue {threadId}`.
+2. **Reuse threads** in multi-step workflows via `--resume {threadId}` — but only when the sandbox does not change between steps (see the resume note above).
+3. **Sessions persist to disk.** Unlike the old in-memory MCP threads, `codex exec` sessions survive Claude Code / shell restarts. A `threadId` from a previous session can still be resumed later, and `codex exec resume --last` picks the most recent.
 
 ### Sequential Execution
 
-Run Codex calls **one at a time**. Wait for each call to complete before starting the next. Do NOT run multiple Codex calls in parallel.
+Run Codex calls **one at a time**. The runner spawns a real subprocess per call (≈10–15s cold start each); do NOT launch multiple runner calls in parallel.
 
 ### Job Tracking
 
-Every Codex call SHOULD be tracked as a job for status/result/cancel support. Background jobs are tracked automatically by `codex-runner.mjs`. For foreground jobs, commands may optionally register jobs using the pattern below:
+Every runner call is registered as a job automatically — foreground (`runForeground`) and background (`runBackground`) both write job state, a `deadlineAt`, the `threadId`, a result file, and a streaming log. No manual `upsertJob` bookkeeping is needed in command bodies. Surface the `{jobId}` in the final report alongside `{threadId}`:
 
-1. **Before the call**: Register a job in the state:
-   ```bash
-   node -e "
-     const { generateJobId, upsertJob } = await import('${CLAUDE_PLUGIN_ROOT}/scripts/lib/state.mjs');
-     const id = generateJobId('{kind}');
-     upsertJob(process.cwd(), {
-       id, kind: '{kind}', status: 'running',
-       summary: '{brief description}',
-       startedAt: new Date().toISOString(),
-     });
-     console.log(id);
-   "
-   ```
-   Save the returned `{jobId}`.
-
-2. **After success**: Update job status and store result:
-   ```bash
-   node -e "
-     const { upsertJob, writeJobFile } = await import('${CLAUDE_PLUGIN_ROOT}/scripts/lib/state.mjs');
-     upsertJob(process.cwd(), {
-       id: '{jobId}', status: 'completed',
-       threadId: '{threadId}',
-       completedAt: new Date().toISOString(),
-     });
-     writeJobFile(process.cwd(), '{jobId}', {
-       rawOutput: '{summary of findings}',
-       threadId: '{threadId}',
-     });
-   "
-   ```
-
-3. **After failure**: Update job status with error:
-   ```bash
-   node -e "
-     const { upsertJob, writeJobFile } = await import('${CLAUDE_PLUGIN_ROOT}/scripts/lib/state.mjs');
-     upsertJob(process.cwd(), {
-       id: '{jobId}', status: 'failed',
-       completedAt: new Date().toISOString(),
-       errorMessage: '{error description}',
-     });
-     writeJobFile(process.cwd(), '{jobId}', { error: '{error description}' });
-   "
-   ```
-
-Include `{jobId}` in the final report alongside `{threadId}`.
+- Progress / live log: `/cc-suite:status {jobId}`
+- Result: `/cc-suite:result {jobId}`
+- Cancel a running job: `/cc-suite:cancel {jobId}`
 
 ### Background Execution
 
 Commands that support `--background` / `--wait` flags:
 
-- `--wait` (default): Run Codex in the foreground, block until complete, display result
-- `--background`: Register a job, spawn a detached Codex runner, return immediately with job ID
+- `--wait` (default): run the canonical foreground call above, block until the runner returns, display the result.
+- `--background`: add `--background` to the runner invocation. It registers the job, spawns a detached worker, and returns immediately:
 
-**When `--background` is detected**:
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-runner.mjs" \
+  --kind {kind} --model {chosen_model} --effort {chosen_effort} \
+  --sandbox {chosen_sandbox} --timeout-ms {deadline_ms} --background \
+  --summary "{brief description}" \
+  -- "{combined prompt}"
+```
 
-1. Parse scope and build the prompt as usual
-2. Instead of calling `mcp__codex-cli__codex`, run:
-   ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-runner.mjs" \
-     --kind {kind} --model {chosen_model} --effort {chosen_effort} \
-     --sandbox {chosen_sandbox} --background \
-     --summary "{brief description}" \
-     -- "{full prompt}"
-   ```
-3. Parse the JSON output to get `{jobId}`
-4. Report:
-   ```
-   Job `{jobId}` started in background.
-   - Check progress: `/cc-suite:status {jobId}`
-   - Get result when done: `/cc-suite:result {jobId}`
-   - Cancel: `/cc-suite:cancel {jobId}`
-   ```
-5. STOP — do not wait for the result
+Parse the JSON for `{jobId}`, report the status/result/cancel commands above, and STOP — do not wait for the result.

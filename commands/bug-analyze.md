@@ -61,7 +61,7 @@ If the bug description references specific files or paths, use `commands/shared/
 
 If `--background` mode was selected, follow the **Background Execution** section in `commands/shared/codex-call.md`. Build the prompt as described below, then hand off to the background runner with `--kind bug-analyze`.
 
-Follow `commands/shared/codex-call.md` for availability test, call pattern, and **Job Tracking**.
+Follow `commands/shared/codex-call.md` for the call pattern (CLI runner) and **Job Tracking**.
 
 - **Command persona**: "You are a root cause analyst. Trace bugs to their origin."
 - **Sandbox**: `read-only`

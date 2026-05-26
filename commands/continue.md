@@ -12,9 +12,9 @@ $ARGUMENTS
 
 ## What This Does
 
-Uses the `mcp__codex-cli__codex-reply` MCP tool to continue a previous Codex session. The thread preserves full context from the original command, so you can:
+Continues a previous Codex session via `codex exec resume` (through the CLI runner). The session preserves full context from the original command, so you can:
 
-> **Note**: Codex threads are **in-memory only** — they are lost when the MCP server restarts (e.g. after restarting Claude Code or the Codex MCP process). If a thread is no longer available, start a fresh session with /audit, /implement, or another command instead.
+> **Note**: Codex CLI sessions **persist on disk**, so they survive Claude Code / shell restarts (unlike the old in-memory MCP threads). A `threadId` from an earlier session can still be resumed later. If a session id is genuinely unknown, `codex exec resume --last` picks the most recent; otherwise start fresh with /audit, /implement, or another command.
 
 - Iterate on audit findings: "Now fix the 3 Critical issues you found"
 - Follow up on implementation: "Run the tests and fix any failures"
@@ -67,20 +67,26 @@ AskUserQuestion:
 
 ### Step 2: Send follow-up to Codex
 
-```
-mcp__codex-cli__codex-reply with:
-  threadId: {threadId}
-  prompt: "{follow_up_prompt}"
+Resume the session through the CLI runner (per `commands/shared/codex-call.md`):
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-runner.mjs" \
+  --kind continue --model {chosen_model} --effort {chosen_effort} \
+  --sandbox read-only --timeout-ms 600000 \
+  --resume {threadId} --summary "continue {threadId}" \
+  -- "{follow_up_prompt}"
 ```
 
-**If `codex-reply` fails** (thread not found / expired / MCP server restarted):
+Parse the JSON result; the `rawOutput` is Codex's reply. Note: `resume` inherits the original session's sandbox — to grant write access, start a fresh command instead (e.g. `/implement`).
+
+**If the runner returns `failed`/`stalled`** (session id not found, or deadline exceeded):
 
 ```
-Thread `{threadId}` is no longer available — Codex threads are in-memory only and are lost when the MCP server restarts.
+Session `{threadId}` could not be resumed (status: {status}). Job: {jobId} — inspect with /cc-suite:status {jobId}.
 
 Options:
+- Try `codex exec resume --last` if you meant the most recent session
 - Start a fresh session: /audit, /implement, /bug-analyze, etc.
-- Re-run the original command to create a new thread
 ```
 And STOP.
 

@@ -42,17 +42,17 @@ Follow `commands/shared/scope-parse.md` for remaining argument parsing, skip pat
 
 ### Step 2: Run initial audit
 
-Follow `commands/shared/codex-call.md` for availability test and call pattern.
+Follow `commands/shared/codex-call.md` for the call pattern (CLI runner — no MCP bridge, no availability ping).
 
-If Codex does not respond, fall back to a manual Claude audit per `commands/shared/fallback.md` and report the findings — but do not attempt the fix loop. The fix loop requires Codex to apply edits autonomously; without it, report what was found and ask the user to fix manually.
+If the runner returns `failed`/`stalled`, fall back to a manual Claude audit per `commands/shared/fallback.md` and report the findings — but do not attempt the fix loop. The fix loop requires Codex to apply edits autonomously; without it, report what was found and ask the user to fix manually.
 
 - **Command persona**: "You are a thorough code auditor. Report every issue with exact file:line locations."
 - **Sandbox**: `read-only`
-- **Approval-policy**: `never`
+- **Deadline**: `--timeout-ms 600000` (10 min) per file
 
-Use the audit prompts from `commands/audit.md` (full or mini, matching the chosen type). Run per file.
+Use the audit prompts from `commands/audit.md` (full or mini, matching the chosen type). Run per file — each is its own runner job (own deadline, own heartbeat, isolated blast radius).
 
-**Save the `threadId`** as `{audit_threadId}` for reuse in fix and verify steps.
+**Save the `threadId`** from the audit result as `{audit_threadId}` for the final report. Note: the fix step changes the sandbox to `workspace-write`, which `resume` cannot do — so the fix and verify steps use **fresh calls** carrying the findings explicitly, not `--resume`.
 
 Collect all findings into a structured audit report. Display it to the user.
 
@@ -127,56 +127,52 @@ Store as `{chosen_fixer}`.
 
 ##### If `{chosen_fixer}` is **Codex**:
 
-**Reuse the audit thread** via `codex-reply`:
+Use a **fresh** runner call (per `commands/shared/codex-call.md`) at the fix sandbox — not `--resume`, since fixing needs `workspace-write` and resume inherits the audit's `read-only` sandbox. Carry the findings explicitly in the prompt.
 
-```
-mcp__codex-cli__codex-reply with:
-  threadId: {audit_threadId}
-  prompt: "Fix the following findings from your audit. For each finding, make the smallest targeted fix at the exact file:line location.
-
-FINDINGS TO FIX:
-{filtered findings in file:line | severity | finding | fix format}
-
-RULES:
-- Fix each finding at the exact location reported
-- Make minimal, targeted changes — do not refactor surrounding code
-- Do not delete code unless the finding specifically calls for removal
-- After fixing, run the project test suite (npm test, pytest, go test ./..., cargo test — whichever is detected)
-- Report: what you fixed, what you couldn't fix, and the test results"
-```
-
-**Fallback**: If `codex-reply` fails (thread expired), use a fresh `mcp__codex-cli__codex` call following `commands/shared/codex-call.md`:
 - **Command persona**: "You are an autonomous code fixer. Fix every finding precisely at the reported location. Do not introduce new findings."
-- **Sandbox**: `{chosen_sandbox}`
+- **Sandbox**: `{chosen_sandbox}` (typically `workspace-write`)
+- **Deadline**: `--timeout-ms 900000` (15 min)
+- **Prompt body**:
+  ```
+  Fix the following findings. For each, make the smallest targeted fix at the exact file:line location.
 
-Update `{audit_threadId}` to the new threadId from whichever call succeeded.
+  FINDINGS TO FIX:
+  {filtered findings in file:line | severity | finding | fix format}
 
-Display summary: `git diff --stat` + Codex's fix report.
+  RULES:
+  - Fix each finding at the exact location reported
+  - Make minimal, targeted changes — do not refactor surrounding code
+  - Do not delete code unless the finding specifically calls for removal
+  - After fixing, run the project test suite (npm test, pytest, go test ./..., cargo test — whichever is detected)
+  - Report: what you fixed, what you couldn't fix, and the test results
+  ```
+
+If the runner returns `failed`/`stalled`, report the `{jobId}` and fall back per `commands/shared/fallback.md`. Save the result `threadId` as `{fix_threadId}`.
+
+Display summary: `git diff --stat` + Codex's fix report (from the runner's `rawOutput`).
 
 #### 3c: Verify fixes
 
-**If `{chosen_fixer}` was Codex** — continue the same thread:
+Verification is `read-only`, so it always uses a **fresh** runner call (per `commands/shared/codex-call.md`) — independent of who fixed. This also gives an independent read when Codex was the fixer (a fresh call, not the fixer's own session).
 
-```
-mcp__codex-cli__codex-reply with:
-  threadId: {audit_threadId}
-  prompt: "Verify whether the following findings have been fixed. Check each file at the exact location.
-
-ORIGINAL FINDINGS:
-{the findings sent for fixing}
-
-For each finding report:
-- FIXED — finding resolved, no new problems introduced
-- NOT FIXED — finding still present (explain why)
-- PARTIAL — partially addressed (explain what remains)
-- REGRESSED — fix introduced a new problem (describe it)"
-```
-
-**If `{chosen_fixer}` was Claude** — use a fresh Codex call for independent verification:
 - **Command persona**: "You are a verification auditor. Only check findings from the provided audit report."
 - **Sandbox**: `read-only`
+- **Deadline**: `--timeout-ms 600000` (10 min)
+- **Prompt body**:
+  ```
+  Verify whether the following findings have been fixed. Check each file at the exact location.
 
-**Fallback**: If `codex-reply` fails, use a fresh call (same as Claude-fixer path).
+  ORIGINAL FINDINGS:
+  {the findings sent for fixing}
+
+  For each finding report:
+  - FIXED — finding resolved, no new problems introduced
+  - NOT FIXED — finding still present (explain why)
+  - PARTIAL — partially addressed (explain what remains)
+  - REGRESSED — fix introduced a new problem (describe it)
+  ```
+
+Save the result `threadId` as `{verify_threadId}`. If the runner returns `failed`/`stalled`, report the `{jobId}` and fall back per `commands/shared/fallback.md`.
 
 #### 3d: Evaluate results
 
@@ -210,7 +206,7 @@ For each finding report:
 **Audit type**: Full (9-dim) / Mini (5-dim)
 **Fixer**: {Claude / Codex}
 **Model**: {chosen_model} | **Effort**: {chosen_effort} | **Sandbox**: {chosen_sandbox}
-**Thread ID**: `{audit_threadId}` _(use `/continue {audit_threadId}` to iterate further — Codex only)_
+**Thread ID**: `{verify_threadId or fix_threadId or audit_threadId}` _(use `/continue {threadId}` to iterate further — sessions persist on disk across restarts)_
 **Rounds**: {iteration count}
 
 ## Result: {ACCEPTED / PARTIAL / UNCHANGED}
@@ -247,7 +243,7 @@ For each finding report:
 - Run tests: {project test command — npm test, pytest, go test ./..., cargo test}
 - Commit: if satisfied with the fixes
 - Revert: `git checkout .` to undo all changes
-- Continue: `/continue {audit_threadId}` to address remaining issues
+- Continue: `/continue {verify_threadId or fix_threadId}` to address remaining issues
 ```
 
 ### Verdicts

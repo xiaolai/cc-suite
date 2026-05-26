@@ -81,7 +81,7 @@ For **full audits**, include test files — they are needed for Dimension 7 (Tes
 
 If `--background` mode was selected, follow the **Background Execution** section in `commands/shared/codex-call.md` instead of the inline execution below. Build the prompt as described in this step, then hand off to the background runner with `--kind audit`.
 
-Follow `commands/shared/codex-call.md` for availability test, call pattern, and **Job Tracking**.
+Follow `commands/shared/codex-call.md` for the call pattern (CLI runner) and **Job Tracking**.
 
 - **Command persona**: "You are a thorough security and code quality auditor." (full) / "You are a fast code quality reviewer focused on logic, duplication, and dead code." (mini)
 - **Sandbox**: `read-only`

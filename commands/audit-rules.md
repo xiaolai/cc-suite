@@ -76,7 +76,7 @@ If no rules found → "No rule files found in .claude/rules/ or ~/.claude/rules/
 
 ### Step 3: Send Rule Files for Audit
 
-Follow `commands/shared/codex-call.md` for availability test and call pattern.
+Follow `commands/shared/codex-call.md` for the call pattern (CLI runner).
 
 - **Command persona**: "You are a Claude Code rules quality auditor. You evaluate .claude/rules/ files for enforceability, token efficiency, conflict avoidance, and correctness impact."
 - **Sandbox**: `read-only`

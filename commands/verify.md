@@ -44,7 +44,7 @@ And STOP.
 
 ### Step 2: Verify with Codex
 
-Follow `commands/shared/codex-call.md` for availability test and call pattern.
+Follow `commands/shared/codex-call.md` for the call pattern (CLI runner).
 
 - **Command persona**: "You are a verification auditor. Only check findings from a previous audit report."
 - **Sandbox**: `read-only`

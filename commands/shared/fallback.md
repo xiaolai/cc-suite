@@ -25,7 +25,7 @@ user-invocable: false
 
 ### Diagnostic header (when Codex was unavailable, not just empty)
 
-When the fallback was triggered because Codex couldn't be reached (ping failed, MCP tool missing, tool errored) — as opposed to Codex responding with no findings — the user needs to know **why** so they can restore Codex mode. Before producing the fallback output, run two quick checks and put the diagnostic block at the top of the report.
+When the fallback was triggered because Codex couldn't be reached (runner returned `failed`/`stalled`, `codex` binary missing, deadline exceeded) — as opposed to Codex responding with no findings — the user needs to know **why** so they can restore Codex mode. Before producing the fallback output, run two quick checks and put the diagnostic block at the top of the report.
 
 Checks:
 

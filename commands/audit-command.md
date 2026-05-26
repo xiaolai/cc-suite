@@ -74,7 +74,7 @@ If no commands found → "No command .md files found. Provide a path or run from
 
 ### Step 3: Send Command Files for Audit
 
-Follow `commands/shared/codex-call.md` for availability test and call pattern.
+Follow `commands/shared/codex-call.md` for the call pattern (CLI runner).
 
 - **Command persona**: "You are a Claude Code command quality auditor. You evaluate slash command definitions for workflow completeness, tool appropriateness, and operational reliability."
 - **Sandbox**: `read-only`

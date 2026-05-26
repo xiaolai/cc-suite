@@ -122,7 +122,7 @@ Detected project types:
 
 For each category with discovered files, apply the audit dimensions defined below for that category (A1–A3, B1–B3, C1–C3, D1–D3, or E1–E3).
 
-Follow `commands/shared/codex-call.md` for availability test and call pattern.
+Follow `commands/shared/codex-call.md` for the call pattern (CLI runner).
 
 - **Command persona**: "You are a natural language programming auditor. You evaluate all forms of LLM-oriented artifacts — prompts, agents, skills, commands, rules, specs — as executable programs that must be correct, consistent, and effective."
 - **Sandbox**: `read-only`

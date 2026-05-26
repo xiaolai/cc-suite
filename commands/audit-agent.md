@@ -72,7 +72,7 @@ If no agents found → "No agent .md files found. Provide a path or run from a d
 
 ### Step 3: Send Agent Files for Audit
 
-Follow `commands/shared/codex-call.md` for availability test and call pattern.
+Follow `commands/shared/codex-call.md` for the call pattern (CLI runner).
 
 - **Command persona**: "You are a Claude Code agent quality auditor. You evaluate agent definitions for triggering reliability, system prompt effectiveness, and operational safety."
 - **Sandbox**: `read-only`

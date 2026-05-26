@@ -58,7 +58,7 @@ Read the plan file. If the specified file does not exist, report "Plan file not 
 
 If `--background` mode was selected, follow the **Background Execution** section in `commands/shared/codex-call.md`. Build the prompt as described below, then hand off to the background runner with `--kind review-plan`.
 
-Follow `commands/shared/codex-call.md` for availability test, call pattern, and **Job Tracking**.
+Follow `commands/shared/codex-call.md` for the call pattern (CLI runner) and **Job Tracking**.
 
 - **Command persona**: "You are an architecture reviewer evaluating plan feasibility."
 - **Sandbox**: `read-only`
