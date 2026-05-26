@@ -909,6 +909,8 @@ fi
 
 cleanup
 
+PINNED_OCTOPUS_VERSION="$(tr -d '[:space:]' < "$SCRIPTS/lib/claude-octopus-pin.txt")"
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # T34  mcp_claude.sh — appends claude-code block to a fresh config.toml
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -920,7 +922,7 @@ assert_exit0 bash "$SCRIPTS/mcp_claude.sh"
 assert_file ".codex/config.toml"
 assert_contains ".codex/config.toml" ">>> cc-suite-claude-mcp >>>"
 assert_contains ".codex/config.toml" "[mcp_servers.claude-code]"
-assert_contains ".codex/config.toml" "claude-octopus@"
+assert_contains ".codex/config.toml" "claude-octopus@${PINNED_OCTOPUS_VERSION}"
 
 cleanup
 
@@ -990,6 +992,86 @@ assert_not_contains ".codex/config.toml" ">>> cc-suite-claude-mcp >>>"
 assert_contains     ".codex/config.toml" 'other.js'
 
 cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T37  mcp_claude.sh — refreshes the sentinel block when the pin has moved
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T37: mcp_claude.sh — refreshes stale sentinel block in place"
+make_tmp
+
+# Write a stale cc-suite-managed block (an older claude-octopus pin).
+mkdir -p .codex
+cat > .codex/config.toml <<'TOML'
+# >>> cc-suite-claude-mcp >>>
+[mcp_servers.claude-code]
+command = "npx"
+args    = ["-y", "claude-octopus@1.0.0"]
+env     = {}
+# <<< cc-suite-claude-mcp <<<
+TOML
+
+assert_exit0 bash "$SCRIPTS/mcp_claude.sh"
+
+# The new pin must replace the old one — exactly once, no duplicates.
+assert_contains     ".codex/config.toml" "claude-octopus@${PINNED_OCTOPUS_VERSION}"
+assert_not_contains ".codex/config.toml" "claude-octopus@1.0.0"
+assert_count ">>> cc-suite-claude-mcp >>>" ".codex/config.toml" "1"
+assert_count "[mcp_servers.claude-code]"   ".codex/config.toml" "1"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T38  mcp_claude.sh — refresh preserves unrelated config in the same file
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T38: mcp_claude.sh — refresh preserves unrelated TOML"
+make_tmp
+
+mkdir -p .codex
+cat > .codex/config.toml <<'TOML'
+# >>> cc-suite-claude-mcp >>>
+[mcp_servers.claude-code]
+command = "npx"
+args    = ["-y", "claude-octopus@1.0.0"]
+env     = {}
+# <<< cc-suite-claude-mcp <<<
+
+[other_setting]
+foo = "bar"
+
+[mcp_servers.something-else]
+command = "node"
+args    = ["unrelated.js"]
+TOML
+
+assert_exit0 bash "$SCRIPTS/mcp_claude.sh"
+
+assert_contains     ".codex/config.toml" "claude-octopus@${PINNED_OCTOPUS_VERSION}"
+assert_not_contains ".codex/config.toml" "claude-octopus@1.0.0"
+assert_contains     ".codex/config.toml" "[other_setting]"
+assert_contains     ".codex/config.toml" 'foo = "bar"'
+assert_contains     ".codex/config.toml" "[mcp_servers.something-else]"
+assert_contains     ".codex/config.toml" "unrelated.js"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T39  boot_test_claude_mcp.mjs — pinned claude-octopus boots and handshakes
+#
+# Network-dependent — uses npx to pull the pinned version. Set
+# CC_SUITE_SKIP_BOOT_TEST=1 to skip (offline / pre-merge CI).
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T39: boot test — pinned claude-octopus@${PINNED_OCTOPUS_VERSION} boots and responds"
+
+if [ "${CC_SUITE_SKIP_BOOT_TEST:-0}" = "1" ]; then
+  skip_msg="boot test skipped (CC_SUITE_SKIP_BOOT_TEST=1)"
+  printf "${B}  · %s${N}\n" "$skip_msg"
+else
+  if node "$SCRIPTS/lib/boot_test_claude_mcp.mjs" >/dev/null 2>&1; then
+    ok_msg "claude-octopus@${PINNED_OCTOPUS_VERSION} booted and responded to MCP initialize"
+  else
+    fail_msg "claude-octopus@${PINNED_OCTOPUS_VERSION} failed to boot or respond — pin may be broken"
+  fi
+fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Summary

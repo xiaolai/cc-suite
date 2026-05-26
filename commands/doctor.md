@@ -59,6 +59,16 @@ Compare to the version in `${CLAUDE_PLUGIN_ROOT}/../../.claude-plugin/plugin.jso
 [ -L .agents/skills ] && [ ! -d .agents/skills ] && echo "broken" || echo "ok"
 ```
 
+**Check E — pinned claude-octopus boots and handshakes**
+
+This is the only check that catches "the registered claude-octopus@<version> is no longer reachable / no longer works on this machine." Network-dependent.
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/lib/boot_test_claude_mcp.mjs"
+```
+
+Exit 0 = pin works. Non-zero = report verbatim and flag as a fixable issue (the fix is `/cc-suite:update`, which refreshes the registration and re-tests).
+
 ### Step 3: Build the diagnosis report
 
 Group all findings into three buckets:
@@ -79,6 +89,8 @@ Group all findings into three buckets:
 | 8 | cache stale | version mismatch | Skills symlink points to old cache | Run `claude plugin update cc-suite@xiaolai` then `/cc-suite:bridge-skills` |
 | 9 | Codex CLI | not found | `$audit`, `$audit-fix`, `$claude-*` skills require Codex CLI | Install from https://github.com/openai/codex |
 | 10 | `.mcp.json → codex-cli` | stale | Project still has the legacy npm registration — Codex MCP server loads with the wrong API and every Codex call falls back | `/cc-suite:repair` |
+| 11 | `.codex/config.toml → Codex` | stale pin | Registered claude-octopus version doesn't match the plugin's expected pin — Codex may be running an older Claude bridge | `/cc-suite:update` |
+| 12 | claude-octopus boot test | failed | The pinned claude-octopus does not boot or respond to MCP on this machine — Codex delegation to Claude will fail | `/cc-suite:update` (refreshes registration + re-tests). If still failing, the pin may be broken; escalate to the cc-suite maintainer. |
 
 Use the actual item names and details from the status output — the table above is a reference mapping, not a literal template.
 
@@ -140,6 +152,12 @@ After this runs, **restart Claude Code** so the MCP loader picks up the new serv
 **`/cc-suite:init` step 8 (claude-code MCP)** — run:
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_claude.sh"
+```
+
+**`/cc-suite:update` (stale pin or failed boot test)** — re-render the claude-code MCP block with the current pin, pre-warm the npx cache, and re-run the boot handshake. The full flow lives in `/cc-suite:update`; the auto-fix path can run the same scripts inline:
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_claude.sh"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/lib/boot_test_claude_mcp.mjs"
 ```
 
 **stale nested symlink** — remove the flagged path:

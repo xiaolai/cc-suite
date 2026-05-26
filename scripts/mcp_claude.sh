@@ -1,14 +1,25 @@
 #!/usr/bin/env bash
-# cc-suite: add the claude-octopus MCP server to .codex/config.toml (idempotent).
+# cc-suite: add (or refresh) the claude-octopus MCP server in .codex/config.toml.
 #
 # claude-octopus wraps the Anthropic Claude Agent SDK and exposes claude_code /
 # claude_code_reply tools so Codex can delegate tasks back to Claude.
-# The npm package is pinned to a known version below.
-# Bump CC_SUITE_CLAUDE_MCP_VERSION at the top of this script to upgrade.
+#
+# The pinned version lives in scripts/lib/claude-octopus-pin.txt — single source
+# of truth, also read by the boot-handshake test and the integration suite.
+# Override at runtime with CC_SUITE_CLAUDE_MCP_VERSION=<version> for testing.
 
 set -euo pipefail
 
-CC_SUITE_CLAUDE_MCP_VERSION="${CC_SUITE_CLAUDE_MCP_VERSION:-1.0.0}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PIN_FILE="${SCRIPT_DIR}/lib/claude-octopus-pin.txt"
+
+if [ -z "${CC_SUITE_CLAUDE_MCP_VERSION:-}" ]; then
+  if [ ! -f "$PIN_FILE" ]; then
+    printf '! pin file missing: %s\n' "$PIN_FILE" >&2
+    exit 1
+  fi
+  CC_SUITE_CLAUDE_MCP_VERSION="$(tr -d '[:space:]' < "$PIN_FILE")"
+fi
 
 ok()   { printf '✓ %s\n' "$*"; }
 skip() { printf '· %s\n' "$*"; }
@@ -25,20 +36,65 @@ TOML=".codex/config.toml"
 # Sentinel used inside config.toml to guard the claude-code block.
 SENTINEL_OPEN="# >>> cc-suite-claude-mcp >>>"
 SENTINEL_CLOSE="# <<< cc-suite-claude-mcp <<<"
+PIN_MARKER="claude-octopus@${CC_SUITE_CLAUDE_MCP_VERSION}"
 
-# ── idempotency check ────────────────────────────────────────────────────────
-# Two-stage check: (1) cc-suite's own sentinel block already present, or
-# (2) some other tool — or the user — already registered a [mcp_servers.claude-code]
-# table. In the second case we must NOT append a duplicate, since TOML treats
-# two tables with the same key as a parse error and Codex will refuse to start.
+# ── build the canonical TOML block ───────────────────────────────────────────
+BLOCK="$(cat <<TOML
+${SENTINEL_OPEN}
+[mcp_servers.claude-code]
+command = "npx"
+args    = ["-y", "${PIN_MARKER}"]
+env     = {}
+${SENTINEL_CLOSE}
+TOML
+)"
+
+# ── idempotency / freshen check ──────────────────────────────────────────────
+# Four cases:
+#   1. Sentinel block found AND body contains current pin       → skip (no-op)
+#   2. Sentinel block found AND body has different/older pin   → rewrite
+#   3. Sentinel absent  AND user-managed [mcp_servers.claude-code] present
+#                                                              → skip with warning
+#   4. Sentinel absent  AND no claude-code block at all         → append
 if [ -f "$TOML" ]; then
   if grep -qF "$SENTINEL_OPEN" "$TOML"; then
-    skip "$TOML already contains cc-suite claude-code MCP block"
+    # Extract the sentinel block and check whether it already pins the current
+    # version. Doing this with awk keeps macOS/Linux behavior identical.
+    current_block="$(awk -v sopen="$SENTINEL_OPEN" -v sclose="$SENTINEL_CLOSE" '
+      $0 == sopen  { capture=1 }
+      capture      { print }
+      $0 == sclose { capture=0 }
+    ' "$TOML")"
+
+    if printf '%s' "$current_block" | grep -qF "$PIN_MARKER"; then
+      skip "$TOML already pins ${PIN_MARKER}"
+      exit 0
+    fi
+
+    # Pin moved (or block is malformed) — rewrite in place.
+    tmpfile="$(mktemp)"
+    # Delete the sentinel block (inclusive) and one immediately-following
+    # blank separator line, if present. Leaves the rest of the file untouched.
+    awk -v sopen="$SENTINEL_OPEN" -v sclose="$SENTINEL_CLOSE" '
+      $0 == sopen                       { skip=1; next }
+      $0 == sclose                      { skip=0; trailing_blank=1; next }
+      skip                              { next }
+      trailing_blank && /^[[:space:]]*$/ { trailing_blank=0; next }
+      { trailing_blank=0; print }
+    ' "$TOML" > "$tmpfile"
+
+    {
+      cat "$tmpfile"
+      [ -s "$tmpfile" ] && printf '\n'
+      printf '%s\n' "$BLOCK"
+    } > "$TOML"
+    rm -f "$tmpfile"
+    ok "$TOML: claude-code MCP server refreshed (now pinned @${CC_SUITE_CLAUDE_MCP_VERSION})"
     exit 0
   fi
-  # Match both `[mcp_servers.claude-code]` and `[mcp_servers."claude-code"]`,
-  # allowing leading whitespace. A pre-existing entry takes precedence —
-  # cc-suite refuses to clobber user-managed config.
+
+  # No sentinel — but does a user-managed [mcp_servers.claude-code] table exist?
+  # Match both bare and quoted-key forms with optional leading whitespace.
   if grep -qE '^[[:space:]]*\[mcp_servers\.(claude-code|"claude-code")\][[:space:]]*$' "$TOML"; then
     skip "$TOML already registers [mcp_servers.claude-code] (not cc-suite-managed) — leaving it alone"
     skip "  to let cc-suite manage it, remove the existing block and re-run /cc-suite:repair"
@@ -46,19 +102,8 @@ if [ -f "$TOML" ]; then
   fi
 fi
 
-# ── build the TOML block ─────────────────────────────────────────────────────
-BLOCK="$(cat <<TOML
-${SENTINEL_OPEN}
-[mcp_servers.claude-code]
-command = "npx"
-args    = ["-y", "claude-octopus@${CC_SUITE_CLAUDE_MCP_VERSION}"]
-env     = {}
-${SENTINEL_CLOSE}
-TOML
-)"
-
+# ── append a fresh block ─────────────────────────────────────────────────────
 if [ -f "$TOML" ]; then
-  # Append with a blank separator line.
   {
     printf '\n'
     printf '%s\n' "$BLOCK"

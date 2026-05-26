@@ -125,9 +125,18 @@ else
 fi
 
 # .codex/config.toml — claude-code (claude-octopus) registration
+_pin_file="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/scripts/lib/claude-octopus-pin.txt"
+_expected_pin="$(tr -d '[:space:]' < "$_pin_file" 2>/dev/null || echo unknown)"
 if [ -f .codex/config.toml ]; then
   if grep -qF ">>> cc-suite-claude-mcp >>>" .codex/config.toml; then
-    mark ".codex/config.toml → Codex" ok "claude-code registered (Codex can invoke Claude as tool)"
+    if grep -qF "claude-octopus@${_expected_pin}" .codex/config.toml; then
+      mark ".codex/config.toml → Codex" ok   "claude-code pinned @${_expected_pin}"
+    else
+      _live_pin=$(grep -oE 'claude-octopus@[0-9][^"]*' .codex/config.toml | head -1)
+      mark ".codex/config.toml → Codex" warn "claude-code pinned @${_live_pin:-?} but plugin expects @${_expected_pin} — run /cc-suite:update"
+    fi
+  elif grep -qE '^[[:space:]]*\[mcp_servers\.(claude-code|"claude-code")\][[:space:]]*$' .codex/config.toml; then
+    mark ".codex/config.toml → Codex" warn "claude-code registered by another source (not cc-suite-managed)"
   else
     mark ".codex/config.toml → Codex" miss "claude-code not registered (run /cc-suite:init step 8)"
   fi
