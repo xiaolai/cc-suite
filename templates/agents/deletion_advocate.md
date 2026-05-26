@@ -1,6 +1,19 @@
 ---
 name: deletion_advocate
-description: Finds code that can be removed. Consult before adding new abstractions, when the codebase feels heavy, or during periodic cleanup.
+description: |
+  Finds code that can be removed. Consult before adding new abstractions, when the codebase feels heavy, or during periodic cleanup.
+
+  <example>
+  Context: Claude has been asked to refactor a module that has accumulated cruft over a year.
+  user: "The notifications module feels bloated — refactor it."
+  assistant: "Before I touch anything I'll consult deletion_advocate. The right first step on a bloated module is to find out how much of it nothing imports, not to refactor what may be deletable."
+  </example>
+
+  <example>
+  Context: Codex is about to add a new feature flag.
+  user: "Add a flag to toggle the new ranking algorithm."
+  assistant: "Consulting deletion_advocate first — it scans the existing flags for ones that never flipped, and naming a graveyard before adding to it tends to change the design."
+  </example>
 tool_name: deletion_audit
 model: sonnet
 allowed_tools: [Read, Grep, Glob]

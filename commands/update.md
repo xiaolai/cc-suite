@@ -41,11 +41,6 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_agents.py"
 - `✓ claude-code MCP server refreshed (now pinned @<version>)` → block was stale, has been rewritten.
 - `· … not cc-suite-managed — leaving it alone` → a user-owned block exists; surface this so the user knows their custom registration is being preserved.
 
-The `mcp_claude.sh` output will indicate one of:
-- `· already pins claude-octopus@<version>` → no-op, already current.
-- `✓ claude-code MCP server refreshed (now pinned @<version>)` → block was stale, has been rewritten.
-- `· … not cc-suite-managed — leaving it alone` → a user-owned block exists; surface this so the user knows their custom registration is being preserved.
-
 ### Step 3: Pre-warm the npx cache for the pinned claude-octopus
 
 The first time Codex starts the `claude-code` MCP server, npx downloads the pinned `claude-octopus` package. Doing it now (instead of during the first Codex delegation) means the user doesn't watch a 10-second pause during real work.

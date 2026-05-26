@@ -1,9 +1,22 @@
 ---
 name: north_star_advisor
-description: Reminds the caller of the project's overarching priorities. Consult before architectural decisions or when scope is drifting.
+description: |
+  Reminds the caller of the project's overarching priorities. Consult before architectural decisions or when scope is drifting.
+
+  <example>
+  Context: Claude is about to add a config-driven plugin system to a tool whose pitch is "do one thing well".
+  user: "I'm planning to add a YAML-based plugin loader so users can extend the audit dimensions."
+  assistant: "Before I proceed, I'll consult north_star_advisor — adding a plugin loader is exactly the kind of scope creep this advisor is meant to flag."
+  </example>
+
+  <example>
+  Context: Codex is deciding between a minimal stdlib parser and a heavier dependency.
+  user: "Should we pull in PyYAML or write a tiny parser ourselves?"
+  assistant: "Consulting north_star_advisor — this is a dependency-vs-self-contained call where the project's stated values determine the right answer, not generic 'best practice'."
+  </example>
 tool_name: north_star_consult
 model: opus
-allowed_tools: [Read, Grep, Glob]
+allowed_tools: [Read, Grep]
 permission_mode: default
 max_turns: 5
 max_budget_usd: 0.50

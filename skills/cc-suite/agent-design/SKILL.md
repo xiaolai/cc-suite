@@ -22,7 +22,20 @@ Rule of thumb: if you'd describe the thing as "a person you'd ask for an opinion
 ```markdown
 ---
 name: <kebab_or_snake_case_name>          # required if filename ≠ desired name
-description: <one-line caller-facing summary>
+description: |                             # multi-line block scalar — see below
+  <one-line caller-facing summary>
+
+  <example>
+  Context: <when a caller would consult this advisor>
+  user: "<the kind of question they'd ask>"
+  assistant: "<how Claude/Codex would invoke the advisor — show the framing, not the answer>"
+  </example>
+
+  <example>
+  Context: <a second, different scenario>
+  user: "<another representative question>"
+  assistant: "<another framing>"
+  </example>
 tool_name: <name>_consult                  # optional; default <name>_consult
 model: opus | sonnet | haiku               # optional; default = caller's setting
 allowed_tools: [Read, Grep, Glob]          # default for advisors
@@ -42,6 +55,12 @@ State the values, not the procedures. See the writing rules below.
 ```
 
 The body becomes the `CLAUDE_APPEND_PROMPT` (default) or `CLAUDE_SYSTEM_PROMPT` (when `prompt_mode: replace`). Almost always use `append` — Claude Code's preset is useful, you're adding a perspective on top of it.
+
+### Why `<example>` blocks in description matter
+
+The `description` field becomes the MCP tool description that Claude and Codex see when deciding whether to consult this advisor. Two `<example>` blocks showing realistic call sites teach the *caller* (not the advisor itself) when this advisor is the right one to invoke. Without them, the caller has only a one-liner to go on and tends to either over-call or under-call the advisor.
+
+Use a YAML literal block scalar (`description: |`) so newlines and `<example>` tags survive parsing. `bridge_agents.py` preserves the full multi-line value into `CLAUDE_DESCRIPTION` verbatim.
 
 ## Writing the prompt: values, not procedures
 
@@ -148,3 +167,14 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_agents.py"
 `/cc-suite:add-agent` and `/cc-suite:remove-agent` do this automatically. `/cc-suite:repair` and `/cc-suite:update` re-bridge as part of their normal flow.
 
 For Claude to actually see the new MCP server, restart the Claude Code session (the MCP loader reads `.mcp.json` at startup, not on every prompt). Codex picks up `.codex/config.toml` changes per-invocation.
+
+## Scope Note
+
+This skill covers **cc-suite advisor agent design** — claude-octopus-backed MCP advisors declared in `.cc-suite/agents/`. It defines the file format, the values-not-procedures prompt convention, model and tool defaults, working-directory scoping, budget caps, and the per-agent timeline model.
+
+It does **not** cover:
+
+- **Claude Code's native sub-agent system** (Task tool, `.claude/agents/`) — a different mechanism with different semantics. Use those when you want to spawn a one-shot subagent in isolated context, not when you want a persistent consultative persona. See [`claude-architecture`](../../../../claude-architecture) for the native-agent surface.
+- **Skill authoring** — for writing skills (knowledge that loads on demand, no model invocation), refer to `cc-suite/claude-code-conventions` and the `nlpm:conventions` family.
+- **MCP server authoring from scratch** — `claude-octopus` is the MCP server; this skill describes how to *configure* it per advisor, not how to build a new MCP server.
+- **The bridge mechanics** — how `bridge_agents.py` writes `.mcp.json` and `.codex/config.toml`. See `scripts/bridge_agents.py` itself, plus `commands/init.md` / `repair.md` / `update.md` for when the bridge runs.

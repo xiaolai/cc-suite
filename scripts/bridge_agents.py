@@ -135,21 +135,74 @@ def _split_csv(s: str) -> List[str]:
 
 
 def parse_agent_file(path: Path) -> Dict[str, Any]:
-    """Parse one agent file into a dict with keys + '_body' for the system prompt."""
+    """Parse one agent file into a dict with keys + '_body' for the system prompt.
+
+    Supports flat `key: value` plus YAML block scalars (`key: |` literal,
+    `key: >` folded). Block-scalar continuation lines are detected by
+    indentation greater than the key's column.
+    """
     text = path.read_text(encoding="utf-8")
     m = _FRONTMATTER_RE.match(text)
     if not m:
         raise ValueError(f"{path}: no YAML frontmatter (expected leading '---')")
     fm_text, body = m.group(1), m.group(2).strip()
     agent: Dict[str, Any] = {}
-    for raw_line in fm_text.splitlines():
-        line = raw_line.rstrip()
+    lines = fm_text.splitlines()
+    i = 0
+    while i < len(lines):
+        raw = lines[i]
+        line = raw.rstrip()
         if not line or line.lstrip().startswith("#"):
+            i += 1
             continue
         if ":" not in line:
+            i += 1
             continue
         key, _, val = line.partition(":")
-        agent[key.strip()] = _parse_scalar(val)
+        key = key.strip()
+        val_stripped = val.strip()
+        # Block scalar marker: `key: |` (literal) or `key: >` (folded).
+        if val_stripped in ("|", ">"):
+            mode = val_stripped
+            base_indent = len(raw) - len(raw.lstrip())
+            collected: List[str] = []
+            i += 1
+            while i < len(lines):
+                cont = lines[i]
+                if not cont.strip():
+                    collected.append("")
+                    i += 1
+                    continue
+                indent = len(cont) - len(cont.lstrip())
+                if indent <= base_indent:
+                    break
+                collected.append(cont[base_indent + 2:] if len(cont) > base_indent + 2 else cont.lstrip())
+                i += 1
+            if mode == "|":
+                # Literal: preserve newlines exactly.
+                value = "\n".join(collected).rstrip("\n")
+            else:
+                # Folded: blank lines stay, single newlines become spaces.
+                pieces: List[str] = []
+                buf: List[str] = []
+                for ln in collected:
+                    if ln == "":
+                        if buf:
+                            pieces.append(" ".join(buf))
+                            buf = []
+                        pieces.append("")
+                    else:
+                        buf.append(ln)
+                if buf:
+                    pieces.append(" ".join(buf))
+                # Collapse trailing blanks.
+                while pieces and pieces[-1] == "":
+                    pieces.pop()
+                value = "\n".join(pieces)
+            agent[key] = value
+            continue
+        agent[key] = _parse_scalar(val)
+        i += 1
     agent["_body"] = body
     agent.setdefault("name", path.stem)
     # Validate name — must be a valid MCP server key (alphanumeric, dash, underscore).
