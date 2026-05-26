@@ -21,7 +21,19 @@ Each tool reads from its own files. `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` sit ne
 
 ## Install
 
+Two install paths — both reach the same code. Pick one:
+
+**Via Anthropic's official community marketplace** (curated; updates lag the maintainer's marketplace by up to ~24h):
+
 ```bash
+claude plugin marketplace add anthropics/claude-plugins-community
+claude plugin install cc-suite@claude-community --scope project
+```
+
+**Via the xiaolai marketplace** (latest version lands here first):
+
+```bash
+claude plugin marketplace add xiaolai/claude-plugin-marketplace
 claude plugin install cc-suite@xiaolai --scope project
 ```
 
