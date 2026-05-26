@@ -34,8 +34,8 @@ Parse `$ARGUMENTS` for `--full` or `--mini` flags. Remove the flag from the rema
 
 | Condition | Audit depth |
 |-----------|-------------|
-| `--full` flag present | Full (all applicable pillars per artifact type) |
-| `--mini` flag present | Mini (core pillars only) |
+| `--full` flag present | Full (all applicable dimensions per artifact type) |
+| `--mini` flag present | Mini (core dimensions only) |
 | Neither flag | Ask the user |
 
 ### Step 2: Discover ALL NL Artifacts
@@ -120,7 +120,7 @@ Detected project types:
 
 ### Step 3: Audit by Category
 
-For each category with discovered files, apply the audit pillars defined below for that category (A1–A3, B1–B3, C1–C3, D1–D3, or E1–E3).
+For each category with discovered files, apply the audit dimensions defined below for that category (A1–A3, B1–B3, C1–C3, D1–D3, or E1–E3).
 
 Follow `commands/shared/codex-call.md` for availability test and call pattern.
 
@@ -246,7 +246,7 @@ prompt: |
   |---|----------|---------|----------------|----------------|
 
   **Overall Verdict**: CLEAN / NEEDS ATTENTION / NEEDS WORK
-  **Top Issues** (ordered by severity)
+  **Top Findings** (ordered by severity)
   **Strengths**
 ```
 
@@ -310,8 +310,8 @@ After auditing each category, check for contradictions BETWEEN categories:
 
 ## Verdict: {CLEAN | NEEDS ATTENTION | NEEDS WORK}
 
-## Top Issues
-1. **[Severity]** {issue description} — `{file_path}`
+## Top Findings
+1. **[Severity]** {finding description} — `{file_path}`
 
 ## Strengths
 - {positive pattern or well-structured artifact}

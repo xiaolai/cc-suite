@@ -20,8 +20,8 @@ Parse `$ARGUMENTS` for `--full` or `--mini` flags. Remove the flag from the rema
 
 | Condition | Audit depth |
 |-----------|-------------|
-| `--full` flag present | Full (7 pillars) |
-| `--mini` flag present | Mini (4 pillars) |
+| `--full` flag present | Full (7 dimensions) |
+| `--mini` flag present | Mini (4 dimensions) |
 | Neither flag | Ask the user (below) |
 
 If asking:
@@ -31,9 +31,9 @@ AskUserQuestion:
   question: "Which audit depth?"
   header: "Audit depth"
   options:
-    - label: "Mini (4 pillars) (Recommended)"
+    - label: "Mini (4 dimensions) (Recommended)"
       description: "Schema, specification, structure, maintainability — fast overview"
-    - label: "Full (7 pillars)"
+    - label: "Full (7 dimensions)"
       description: "Adds security, behavioral consistency, robustness — thorough"
 ```
 
@@ -48,9 +48,9 @@ Follow `commands/shared/plugin-discover.md` to:
 
 ### Step 3: Audit Execution
 
-For each discovered artifact, run the applicable pillar checks. Read every artifact file using the Read tool. Analyze the content directly — no external model calls.
+For each discovered artifact, run the applicable dimension checks. Read every artifact file using the Read tool. Analyze the content directly — no external model calls.
 
-#### Pillar 0: YAML Schema Validation (Mini + Full)
+#### Dimension 0: YAML Schema Validation (Mini + Full)
 
 For each `.md` artifact with YAML frontmatter, check:
 
@@ -70,7 +70,7 @@ For `hooks.json`:
 
 **Severity**: Critical (missing required fields), Medium (unknown fields), Low (missing optional fields)
 
-#### Pillar 1: Specification Quality (Mini + Full)
+#### Dimension 1: Specification Quality (Mini + Full)
 
 For each command and agent `.md` body, check:
 
@@ -83,7 +83,7 @@ For each command and agent `.md` body, check:
 
 **Severity**: High (missing examples in agents, no output format), Medium (ambiguous quantifiers), Low (minor vagueness)
 
-#### Pillar 2: Security Posture (Full only)
+#### Dimension 2: Security Posture (Full only)
 
 For each artifact, check:
 
@@ -96,7 +96,7 @@ For each artifact, check:
 
 **Severity**: Critical (secrets in text, unquoted `$ARGUMENTS` in Bash), High (write tools on read-only agents, `allowed-tools: ["*"]`), Medium (unnecessary tools), Low (Bash without justification comment)
 
-#### Pillar 3: Structural Integrity (Mini + Full)
+#### Dimension 3: Structural Integrity (Mini + Full)
 
 Check cross-references and structure:
 
@@ -109,7 +109,7 @@ Check cross-references and structure:
 
 **Severity**: Critical (broken references), High (orphaned artifacts, missing hook scripts), Medium (heading hierarchy violations), Low (minor structural issues)
 
-#### Pillar 4: Behavioral Consistency (Full only)
+#### Dimension 4: Behavioral Consistency (Full only)
 
 Check for contradictions:
 
@@ -120,7 +120,7 @@ Check for contradictions:
 
 **Severity**: High (direct contradictions), Medium (implicit conflicts, inconsistent patterns), Low (style inconsistencies)
 
-#### Pillar 5: Robustness & Edge Cases (Full only)
+#### Dimension 5: Robustness & Edge Cases (Full only)
 
 Check for graceful handling of edge conditions:
 
@@ -132,7 +132,7 @@ Check for graceful handling of edge conditions:
 
 **Severity**: High (no empty input handling, missing dependency checks), Medium (no fallback paths), Low (no large input consideration)
 
-#### Pillar 6: Maintainability (Mini + Full)
+#### Dimension 6: Maintainability (Mini + Full)
 
 Check for long-term maintenance concerns:
 
@@ -147,7 +147,7 @@ Check for long-term maintenance concerns:
 
 ### Step 4: Report
 
-#### Mini Report (4 pillars)
+#### Mini Report (4 dimensions)
 
 ```markdown
 # Plugin Audit Report (Mini)
@@ -155,17 +155,17 @@ Check for long-term maintenance concerns:
 **Date**: {today}
 **Plugin**: {plugin_name} v{plugin_version}
 **Artifacts**: {total_count} ({commands} commands, {partials} partials, {agents} agents, {skills} skills, {hooks} hooks)
-**Audit depth**: Mini (4 pillars)
+**Audit depth**: Mini (4 dimensions)
 
 ## Findings
 
-| Artifact | Pillar | Severity | Issue | Recommendation |
+| Artifact | Dimension | Severity | Finding | Recommendation |
 |----------|--------|----------|-------|----------------|
 | ... | ... | ... | ... | ... |
 
-## Summary by Pillar
+## Summary by Dimension
 
-| Pillar | Critical | High | Medium | Low | Status |
+| Dimension | Critical | High | Medium | Low | Status |
 |--------|----------|------|--------|-----|--------|
 | 0. Schema Validation | X | X | X | X | OK/ISSUE |
 | 1. Specification Quality | X | X | X | X | OK/ISSUE |
@@ -189,7 +189,7 @@ Check for long-term maintenance concerns:
 - For security, behavioral, and robustness checks, run `/audit-plugin --full`
 ```
 
-#### Full Report (7 pillars)
+#### Full Report (7 dimensions)
 
 ```markdown
 # Plugin Audit Report (Full)
@@ -197,17 +197,17 @@ Check for long-term maintenance concerns:
 **Date**: {today}
 **Plugin**: {plugin_name} v{plugin_version}
 **Artifacts**: {total_count} ({commands} commands, {partials} partials, {agents} agents, {skills} skills, {hooks} hooks)
-**Audit depth**: Full (7 pillars)
+**Audit depth**: Full (7 dimensions)
 
 ## Findings
 
-| Artifact | Pillar | Severity | Issue | Recommendation |
+| Artifact | Dimension | Severity | Finding | Recommendation |
 |----------|--------|----------|-------|----------------|
 | ... | ... | ... | ... | ... |
 
-## Summary by Pillar
+## Summary by Dimension
 
-| Pillar | Critical | High | Medium | Low | Status |
+| Dimension | Critical | High | Medium | Low | Status |
 |--------|----------|------|--------|-----|--------|
 | 0. Schema Validation | X | X | X | X | OK/ISSUE |
 | 1. Specification Quality | X | X | X | X | OK/ISSUE |
@@ -220,44 +220,44 @@ Check for long-term maintenance concerns:
 **Verdict**: PASS / NEEDS WORK / BLOCKED
 
 ### Verdict Criteria
-- **PASS**: No Critical or High findings across all 7 pillars
+- **PASS**: No Critical or High findings across all 7 dimensions
 - **NEEDS WORK**: No Critical, but 1+ High findings
 - **BLOCKED**: 1+ Critical findings (plugin has defects that could cause failures)
 
-## Findings by Pillar
+## Findings by Dimension
 
-### Pillar 0: Schema Validation
-| Artifact | Severity | Issue | Recommendation |
+### Dimension 0: Schema Validation
+| Artifact | Severity | Finding | Recommendation |
 |----------|----------|-------|----------------|
 | ... | ... | ... | ... |
 
-### Pillar 1: Specification Quality
-| Artifact | Severity | Issue | Recommendation |
+### Dimension 1: Specification Quality
+| Artifact | Severity | Finding | Recommendation |
 |----------|----------|-------|----------------|
 | ... | ... | ... | ... |
 
-### Pillar 2: Security Posture
-| Artifact | Severity | Issue | Recommendation |
+### Dimension 2: Security Posture
+| Artifact | Severity | Finding | Recommendation |
 |----------|----------|-------|----------------|
 | ... | ... | ... | ... |
 
-### Pillar 3: Structural Integrity
-| Artifact | Severity | Issue | Recommendation |
+### Dimension 3: Structural Integrity
+| Artifact | Severity | Finding | Recommendation |
 |----------|----------|-------|----------------|
 | ... | ... | ... | ... |
 
-### Pillar 4: Behavioral Consistency
-| Artifact | Severity | Issue | Recommendation |
+### Dimension 4: Behavioral Consistency
+| Artifact | Severity | Finding | Recommendation |
 |----------|----------|-------|----------------|
 | ... | ... | ... | ... |
 
-### Pillar 5: Robustness & Edge Cases
-| Artifact | Severity | Issue | Recommendation |
+### Dimension 5: Robustness & Edge Cases
+| Artifact | Severity | Finding | Recommendation |
 |----------|----------|-------|----------------|
 | ... | ... | ... | ... |
 
-### Pillar 6: Maintainability
-| Artifact | Severity | Issue | Recommendation |
+### Dimension 6: Maintainability
+| Artifact | Severity | Finding | Recommendation |
 |----------|----------|-------|----------------|
 | ... | ... | ... | ... |
 

@@ -113,15 +113,15 @@ AskUserQuestion:
 
 Store as `{chosen_fixer}`.
 
-#### 3b: Fix issues
+#### 3b: Fix findings
 
 ##### If `{chosen_fixer}` is **Claude**:
 
-1. For each issue in the filtered findings:
+1. For each finding in the filtered set:
    - Read the file, understand context, apply the smallest targeted fix via Edit
    - Fix all related locations if needed
-2. Do NOT refactor surrounding code — only fix reported issues
-3. Do NOT delete code unless the issue calls for removal (dead code, unused imports)
+2. Do NOT refactor surrounding code — only fix reported findings
+3. Do NOT delete code unless the finding calls for removal (dead code, unused imports)
 4. After fixing, run tests if a test runner is detected (check for `jest.config.*`, `vitest.config.*`, `pytest.ini`, `conftest.py`, `Cargo.toml` with `[dev-dependencies]`, `go.mod`, or a `test` script in `package.json`)
 5. Show summary: `git diff --stat` + list of fixes applied
 
@@ -132,21 +132,21 @@ Store as `{chosen_fixer}`.
 ```
 mcp__codex-cli__codex-reply with:
   threadId: {audit_threadId}
-  prompt: "Fix the following issues from your audit. For each issue, make the smallest targeted fix at the exact file:line location.
+  prompt: "Fix the following findings from your audit. For each finding, make the smallest targeted fix at the exact file:line location.
 
-ISSUES TO FIX:
-{filtered findings in file:line | severity | issue | fix format}
+FINDINGS TO FIX:
+{filtered findings in file:line | severity | finding | fix format}
 
 RULES:
-- Fix each issue at the exact location reported
+- Fix each finding at the exact location reported
 - Make minimal, targeted changes — do not refactor surrounding code
-- Do not delete code unless the issue specifically calls for removal
+- Do not delete code unless the finding specifically calls for removal
 - After fixing, run the project test suite (npm test, pytest, go test ./..., cargo test — whichever is detected)
 - Report: what you fixed, what you couldn't fix, and the test results"
 ```
 
 **Fallback**: If `codex-reply` fails (thread expired), use a fresh `mcp__codex-cli__codex` call following `commands/shared/codex-call.md`:
-- **Command persona**: "You are an autonomous code fixer. Fix every issue precisely at the reported location. Do not introduce new issues."
+- **Command persona**: "You are an autonomous code fixer. Fix every finding precisely at the reported location. Do not introduce new findings."
 - **Sandbox**: `{chosen_sandbox}`
 
 Update `{audit_threadId}` to the new threadId from whichever call succeeded.
@@ -160,20 +160,20 @@ Display summary: `git diff --stat` + Codex's fix report.
 ```
 mcp__codex-cli__codex-reply with:
   threadId: {audit_threadId}
-  prompt: "Verify whether the following issues have been fixed. Check each file at the exact location.
+  prompt: "Verify whether the following findings have been fixed. Check each file at the exact location.
 
-ORIGINAL ISSUES:
-{the issues sent for fixing}
+ORIGINAL FINDINGS:
+{the findings sent for fixing}
 
-For each issue report:
-- FIXED — issue resolved, no new problems introduced
-- NOT FIXED — issue still present (explain why)
+For each finding report:
+- FIXED — finding resolved, no new problems introduced
+- NOT FIXED — finding still present (explain why)
 - PARTIAL — partially addressed (explain what remains)
 - REGRESSED — fix introduced a new problem (describe it)"
 ```
 
 **If `{chosen_fixer}` was Claude** — use a fresh Codex call for independent verification:
-- **Command persona**: "You are a verification auditor. Only check issues from the provided audit report."
+- **Command persona**: "You are a verification auditor. Only check findings from the provided audit report."
 - **Sandbox**: `read-only`
 
 **Fallback**: If `codex-reply` fails, use a fresh call (same as Claude-fixer path).

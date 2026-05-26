@@ -32,8 +32,8 @@ Parse `$ARGUMENTS` for `--full` or `--mini` flags. Remove the flag from the rema
 
 | Condition | Audit depth |
 |-----------|-------------|
-| `--full` flag present | Full (7 pillars) |
-| `--mini` flag present | Mini (4 pillars) |
+| `--full` flag present | Full (7 dimensions) |
+| `--mini` flag present | Mini (4 dimensions) |
 | Neither flag | Ask the user (below) |
 
 If asking:
@@ -43,9 +43,9 @@ AskUserQuestion:
   question: "Which audit depth?"
   header: "Agent Audit"
   options:
-    - label: "Mini (4 pillars) (Recommended)"
+    - label: "Mini (4 dimensions) (Recommended)"
       description: "Schema, triggering, system prompt, tool selection — fast overview"
-    - label: "Full (7 pillars)"
+    - label: "Full (7 dimensions)"
       description: "Adds scope boundaries, output specification, safety — thorough"
 ```
 
@@ -82,13 +82,13 @@ Send ALL agent files in a SINGLE Codex call:
 
 ```
 prompt: |
-  Audit the following Claude Code agent file(s) across the applicable pillars.
+  Audit the following Claude Code agent file(s) across the applicable dimensions.
   Be critical — a poorly defined agent either never triggers or triggers wrongly.
 
   Files:
   {for each agent: path + full content}
 
-  ## Pillar 0: Frontmatter Schema (Mini + Full)
+  ## Dimension 0: Frontmatter Schema (Mini + Full)
 
   Note: The canonical Claude Code schemas are provided in your developer-instructions (from the claude-code-conventions skill). Use those as the authoritative reference. The rules below highlight agent-specific checks.
 
@@ -111,7 +111,7 @@ prompt: |
   - Invalid `color` value → Low
   - Unknown frontmatter fields → Low
 
-  ## Pillar 1: Triggering Quality (Mini + Full)
+  ## Dimension 1: Triggering Quality (Mini + Full)
 
   The `description` field determines WHEN Claude invokes this agent. This is the most critical field:
   - **Example blocks**: MUST have `<example>` blocks with Context + user/assistant dialogue
@@ -123,7 +123,7 @@ prompt: |
 
   Severity: Critical (no examples), High (vague examples, high false-positive risk), Medium (limited diversity), Low (minor phrasing)
 
-  ## Pillar 2: System Prompt Quality (Mini + Full)
+  ## Dimension 2: System Prompt Quality (Mini + Full)
 
   The body of the agent .md is the system prompt. Evaluate:
   - **Mission clarity**: Is the agent's purpose stated in the first 1-2 sentences?
@@ -135,23 +135,23 @@ prompt: |
 
   Severity: High (no mission, no output format), Medium (vague instructions, ambiguous language), Low (minor clarity issues)
 
-  ## Pillar 3: Tool Selection (Mini + Full)
+  ## Dimension 3: Tool Selection (Mini + Full)
 
   Agents should have exactly the tools they need:
   - **Least privilege**: Does the `tools` list include tools the body never references?
   - **Missing tools**: Does the body describe actions that need tools not listed?
   - **Bash justification**: If Bash is listed, is there a clear need (script execution, git commands)?
   - **Write on read-only**: If the agent is read-only (audit, review, analyze), does it have Write/Edit?
-  - **Task tool**: If the agent dispatches sub-agents, does it have the Task tool?
+  - **Task tool**: If the agent dispatches subagents, does it have the Task tool?
   - **Skill alignment**: If `skills` are listed, does the body actually reference skill content?
 
   Severity: High (missing needed tools, write on read-only), Medium (excess tools), Low (unused skills)
 
-  ## Pillar 4: Scope & Boundaries (Full only)
+  ## Dimension 4: Scope & Boundaries (Full only)
 
   Agents should have clear operational boundaries:
   - **Responsibility overlap**: Do multiple agents in the same plugin cover the same ground?
-  - **Delegation clarity**: If this agent dispatches sub-agents, are the boundaries clear?
+  - **Delegation clarity**: If this agent dispatches subagents, are the boundaries clear?
   - **Input validation**: Does the agent check its inputs before acting?
   - **Escalation path**: When the agent can't handle something, does it say what to do?
   - **Model tier fit**: Does the model (haiku/sonnet/opus) match the task's complexity tier?
@@ -161,7 +161,7 @@ prompt: |
 
   Severity: High (responsibility overlap, wrong model tier), Medium (no escalation), Low (missing validation)
 
-  ## Pillar 5: Output Specification (Full only)
+  ## Dimension 5: Output Specification (Full only)
 
   Agents must define their output format:
   - **Structured output**: Does the agent define a specific format (JSON, markdown template, table)?
@@ -172,7 +172,7 @@ prompt: |
 
   Severity: High (no output format), Medium (incomplete output spec), Low (inconsistent formatting)
 
-  ## Pillar 6: Safety & Trust (Full only)
+  ## Dimension 6: Safety & Trust (Full only)
 
   Agents should be safe by default:
   - **Untrusted input**: If the agent processes user-provided content (files, URLs, text), does it treat content as data, not instructions?
@@ -188,13 +188,13 @@ prompt: |
 
   For each agent file:
 
-  **[Pillar N: Name]**
+  **[Dimension N: Name]**
   | # | Severity | Finding | Location | Recommendation |
   |---|----------|---------|----------|----------------|
 
   Then:
   **Overall Verdict**: CLEAN / NEEDS ATTENTION / NEEDS WORK
-  **Top Issues** (ordered by severity)
+  **Top Findings** (ordered by severity)
   **Strengths** of the agents
   **Model tier assessment** (is each agent on the right model?)
 ```
@@ -209,7 +209,7 @@ Display Codex's audit report. Add your own assessment if you disagree or notice 
 **Agent(s)**: {filenames}
 **Model**: {chosen_model} | **Effort**: {chosen_effort}
 **Thread ID**: `{threadId}`
-**Depth**: {Mini (4 pillars) | Full (7 pillars)}
+**Depth**: {Mini (4 dimensions) | Full (7 dimensions)}
 **Verdict**: {CLEAN | NEEDS ATTENTION | NEEDS WORK}
 
 ## Agent Inventory
@@ -219,7 +219,7 @@ Display Codex's audit report. Add your own assessment if you disagree or notice 
 
 ## Findings
 
-(Per-pillar tables using the format defined in the Step 3 prompt)
+(Per-dimension tables using the format defined in the Step 3 prompt)
 
 | # | Severity | Finding | Location | Recommendation |
 |---|----------|---------|----------|----------------|
@@ -229,9 +229,9 @@ Display Codex's audit report. Add your own assessment if you disagree or notice 
 | Agent | Current Model | Recommended | Rationale |
 |-------|--------------|-------------|-----------|
 
-## Top Issues
+## Top Findings
 
-1. **[Severity]** {issue description} — `{file_path}`
+1. **[Severity]** {finding description} — `{file_path}`
 
 ## Strengths
 

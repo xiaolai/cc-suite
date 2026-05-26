@@ -32,8 +32,8 @@ Parse `$ARGUMENTS` for `--full` or `--mini` flags. Remove the flag from the rema
 
 | Condition | Audit depth |
 |-----------|-------------|
-| `--full` flag present | Full (7 pillars) |
-| `--mini` flag present | Mini (4 pillars) |
+| `--full` flag present | Full (7 dimensions) |
+| `--mini` flag present | Mini (4 dimensions) |
 | Neither flag | Ask the user (below) |
 
 If asking:
@@ -43,9 +43,9 @@ AskUserQuestion:
   question: "Which audit depth?"
   header: "Skill Audit Depth"
   options:
-    - label: "Mini (4 pillars) (Recommended)"
+    - label: "Mini (4 dimensions) (Recommended)"
       description: "Schema, description quality, content structure, context efficiency — fast overview"
-    - label: "Full (7 pillars)"
+    - label: "Full (7 dimensions)"
       description: "Adds scope boundaries, cross-references, actionability — thorough"
 ```
 
@@ -82,13 +82,13 @@ Send ALL skill files in a SINGLE Codex call:
 
 ```
 prompt: |
-  Audit the following Claude Code skill file(s) across the applicable pillars.
+  Audit the following Claude Code skill file(s) across the applicable dimensions.
   Be critical — flag anything that would reduce triggering accuracy or teaching effectiveness.
 
   Files:
   {for each skill: path + full content}
 
-  ## Pillar 0: Frontmatter Schema (Mini + Full)
+  ## Dimension 0: Frontmatter Schema (Mini + Full)
 
   Note: The canonical Claude Code schemas are provided in your developer-instructions (from the claude-code-conventions skill). Use those as the authoritative reference. The rules below highlight skill-specific checks.
 
@@ -104,7 +104,7 @@ prompt: |
   - `description` is empty or generic ("A useful skill") → High
   - Unknown frontmatter fields → Low
 
-  ## Pillar 1: Description Quality (Mini + Full)
+  ## Dimension 1: Description Quality (Mini + Full)
 
   The `description` field determines WHEN Claude loads this skill. Audit for:
   - **Trigger specificity**: Does it contain specific trigger phrases that match user queries?
@@ -118,7 +118,7 @@ prompt: |
 
   Severity: High (vague/generic description), Medium (missing triggers), Low (suboptimal phrasing)
 
-  ## Pillar 2: Content Structure (Mini + Full)
+  ## Dimension 2: Content Structure (Mini + Full)
 
   The body of SKILL.md should teach patterns effectively:
   - **Heading hierarchy**: H2 for sections, H3 for subsections, no skipped levels
@@ -129,7 +129,7 @@ prompt: |
 
   Severity: High (no code examples, >800 lines), Medium (skipped headings, pseudocode), Low (minor organization)
 
-  ## Pillar 3: Context Efficiency (Mini + Full)
+  ## Dimension 3: Context Efficiency (Mini + Full)
 
   Skills consume context window tokens. Every line must earn its place:
   - **Redundancy**: Content that repeats what Claude already knows from training data
@@ -139,7 +139,7 @@ prompt: |
 
   Severity: Medium (redundant/verbose content), Low (minor verbosity)
 
-  ## Pillar 4: Scope Boundaries (Full only)
+  ## Dimension 4: Scope Boundaries (Full only)
 
   Skills should have clear domain boundaries:
   - **Scope note**: Does the skill clarify what it covers vs. what related skills cover?
@@ -149,7 +149,7 @@ prompt: |
 
   Severity: High (domain mixing, major gaps), Medium (missing scope note), Low (no cross-references)
 
-  ## Pillar 5: Cross-References & Integration (Full only)
+  ## Dimension 5: Cross-References & Integration (Full only)
 
   How well does this skill integrate with the broader system:
   - **Referenced files exist**: If the skill mentions `references/`, `examples/`, or `scripts/` files, do they exist?
@@ -159,7 +159,7 @@ prompt: |
 
   Severity: Critical (broken file references), High (orphaned skill), Medium (naming mismatch)
 
-  ## Pillar 6: Actionability (Full only)
+  ## Dimension 6: Actionability (Full only)
 
   Can a developer immediately apply this skill's guidance?
   - **Concrete over abstract**: Does it give specific patterns, not general advice?
@@ -173,13 +173,13 @@ prompt: |
 
   For each skill file:
 
-  **[Pillar N: Name]**
+  **[Dimension N: Name]**
   | # | Severity | Finding | Location | Recommendation |
   |---|----------|---------|----------|----------------|
 
   Then:
   **Overall Verdict**: CLEAN / NEEDS ATTENTION / NEEDS WORK
-  **Top Issues** (ordered by severity)
+  **Top Findings** (ordered by severity)
   **Strengths** of the skill
 ```
 
@@ -193,20 +193,20 @@ Display Codex's audit report. Add your own assessment if you disagree or notice 
 **Skill(s)**: {filenames}
 **Model**: {chosen_model} | **Effort**: {chosen_effort}
 **Thread ID**: `{threadId}`
-**Depth**: {Mini (4 pillars) | Full (7 pillars)}
+**Depth**: {Mini (4 dimensions) | Full (7 dimensions)}
 **Verdict**: {CLEAN | NEEDS ATTENTION | NEEDS WORK}
 
 ## Findings
 
-(Per-pillar tables using the format defined in the Step 3 prompt)
+(Per-dimension tables using the format defined in the Step 3 prompt)
 
 | # | Severity | Finding | Location | Recommendation |
 |---|----------|---------|----------|----------------|
 
-## Top Issues
+## Top Findings
 
-1. **[Severity]** {issue description} — `{file_path}:{line}`
-2. **[Severity]** {issue description} — `{file_path}:{line}`
+1. **[Severity]** {finding description} — `{file_path}:{line}`
+2. **[Severity]** {finding description} — `{file_path}:{line}`
 
 ## Strengths
 
@@ -222,6 +222,6 @@ Display Codex's audit report. Add your own assessment if you disagree or notice 
 Follow `commands/shared/fallback.md`.
 
 1. Read each SKILL.md using the Read tool
-2. Walk through all applicable pillars as described above
+2. Walk through all applicable dimensions as described above
 3. Check: frontmatter completeness, description triggers, heading hierarchy, code examples, length, redundancy
 4. Report in the same format

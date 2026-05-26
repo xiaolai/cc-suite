@@ -32,8 +32,8 @@ Parse `$ARGUMENTS` for `--full` or `--mini` flags. Remove the flag from the rema
 
 | Condition | Audit depth |
 |-----------|-------------|
-| `--full` flag present | Full (7 pillars) |
-| `--mini` flag present | Mini (4 pillars) |
+| `--full` flag present | Full (7 dimensions) |
+| `--mini` flag present | Mini (4 dimensions) |
 | Neither flag | Ask the user (below) |
 
 If asking:
@@ -43,9 +43,9 @@ AskUserQuestion:
   question: "Which audit depth?"
   header: "Rules Audit Depth"
   options:
-    - label: "Mini (4 pillars) (Recommended)"
+    - label: "Mini (4 dimensions) (Recommended)"
       description: "Schema, enforceability, token budget, conflict detection — fast overview"
-    - label: "Full (7 pillars)"
+    - label: "Full (7 dimensions)"
       description: "Adds path scoping, tooling overlap, staleness analysis — thorough"
 ```
 
@@ -86,7 +86,7 @@ Send ALL rule files in a SINGLE Codex call:
 
 ```
 prompt: |
-  Audit the following Claude Code rule file(s) across the applicable pillars.
+  Audit the following Claude Code rule file(s) across the applicable dimensions.
   Be critical — every rule that wastes tokens or creates conflicts actively hurts Claude's performance.
 
   Files:
@@ -94,7 +94,7 @@ prompt: |
 
   Total lines: {N} / 500 budget
 
-  ## Pillar 0: Schema & Formatting (Mini + Full)
+  ## Dimension 0: Schema & Formatting (Mini + Full)
 
   Note: The canonical Claude Code schemas are provided in your developer-instructions (from the claude-code-conventions skill). Use those as the authoritative reference. The rules below highlight rules-specific checks.
 
@@ -115,7 +115,7 @@ prompt: |
   - Directories for 3+ related rules: `topic/NN-name.md` format
   - NN numbering: gaps OK (00, 02, 04), no need to renumber
 
-  ## Pillar 1: Enforceability (Mini + Full)
+  ## Dimension 1: Enforceability (Mini + Full)
 
   Every rule must be verifiable — if you can't check compliance, the rule is noise:
   - **Testable**: Can a test, linter, or code review verify the rule? If not, flag it
@@ -127,7 +127,7 @@ prompt: |
 
   Severity: High (unenforceable/vague rules), Medium (partially enforceable), Low (minor ambiguity)
 
-  ## Pillar 2: Token Budget (Mini + Full)
+  ## Dimension 2: Token Budget (Mini + Full)
 
   Rules consume context tokens on EVERY Claude interaction. Audit for ROI:
   - **Total budget**: All rule files combined should be under 500 lines. Flag if over.
@@ -146,7 +146,7 @@ prompt: |
 
   Severity: High (>500 total lines, major redundancy), Medium (redundancy with training/tooling), Low (minor verbosity)
 
-  ## Pillar 3: Conflict Detection (Mini + Full)
+  ## Dimension 3: Conflict Detection (Mini + Full)
 
   Rules must not contradict each other:
   - **Direct conflicts**: Rule A says "always use X" while Rule B says "never use X"
@@ -160,7 +160,7 @@ prompt: |
 
   Severity: Critical (direct contradictions), High (scope conflicts without priority), Medium (CLAUDE.md overlap)
 
-  ## Pillar 4: Path Scoping (Full only)
+  ## Dimension 4: Path Scoping (Full only)
 
   Rules should be scoped to where they apply:
   - **Over-broad rules**: Universal rules that only apply to specific file types or directories
@@ -172,7 +172,7 @@ prompt: |
 
   Severity: Medium (over-broad rules), Low (missing optimal scoping)
 
-  ## Pillar 5: Tooling Overlap (Full only)
+  ## Dimension 5: Tooling Overlap (Full only)
 
   Rules should complement, not duplicate, existing enforcement:
   - **Linter rules**: If ESLint/ruff/clippy already enforces it, reference the linter instead
@@ -185,7 +185,7 @@ prompt: |
 
   Severity: Medium (full duplication of tooling), Low (partial overlap)
 
-  ## Pillar 6: Staleness & Relevance (Full only)
+  ## Dimension 6: Staleness & Relevance (Full only)
 
   Rules decay over time:
   - **References to removed code**: Rule mentions functions, files, or patterns that no longer exist in the codebase
@@ -209,13 +209,13 @@ prompt: |
   | Rules enforced by tooling | N (candidates for removal) |
   | Conflicting rules | N |
 
-  **[Pillar N: Name]**
+  **[Dimension N: Name]**
   | # | Severity | Finding | File:Line | Recommendation |
   |---|----------|---------|-----------|----------------|
 
   Then:
   **Overall Verdict**: CLEAN / NEEDS ATTENTION / NEEDS WORK
-  **Top Issues** (ordered by severity)
+  **Top Findings** (ordered by severity)
   **Candidates for removal** (rules that duplicate tooling or are stale)
   **Strengths** of the rule set
 ```
@@ -231,7 +231,7 @@ Display Codex's audit report. Add your own assessment if you disagree or notice 
 **Scope**: {project | global | both}
 **Model**: {chosen_model} | **Effort**: {chosen_effort}
 **Thread ID**: `{threadId}`
-**Depth**: {Mini (4 pillars) | Full (7 pillars)}
+**Depth**: {Mini (4 dimensions) | Full (7 dimensions)}
 **Verdict**: {CLEAN | NEEDS ATTENTION | NEEDS WORK}
 
 ## Budget
@@ -240,7 +240,7 @@ Display Codex's audit report. Add your own assessment if you disagree or notice 
 
 ## Findings
 
-(Per-pillar tables using the format defined in the Step 3 prompt — one table per applicable pillar)
+(Per-dimension tables using the format defined in the Step 3 prompt — one table per applicable dimension)
 
 | # | Severity | Finding | File:Line | Recommendation |
 |---|----------|---------|-----------|----------------|
@@ -257,10 +257,10 @@ Potential savings: {N} lines ({pct}% of budget)
 
 (Describe each conflict: which rules contradict, their locations, and the resolution — or "None detected")
 
-## Top Issues
+## Top Findings
 
-1. **[Severity]** {issue description} — `{file_path}:{line}`
-2. **[Severity]** {issue description} — `{file_path}:{line}`
+1. **[Severity]** {finding description} — `{file_path}:{line}`
+2. **[Severity]** {finding description} — `{file_path}:{line}`
 
 ## Strengths
 
@@ -276,7 +276,7 @@ Potential savings: {N} lines ({pct}% of budget)
 Follow `commands/shared/fallback.md`.
 
 1. Read each rule file using the Read tool
-2. Walk through all applicable pillars as described above
+2. Walk through all applicable dimensions as described above
 3. Cross-reference: for each rule, check if it conflicts with any other rule or CLAUDE.md instruction
 4. Count total lines and check budget
 5. Verify file paths mentioned in rules still exist (using Glob)

@@ -6,84 +6,95 @@ version: 0.1.0
 
 # cc-suite Domain Vocabulary
 
-> The canonical noun-and-verb set for cc-suite. Every artifact name, prose description, and rule wording should draw from this registry. Synonyms are flagged by `/nlpm:check` and penalized by `/nlpm:score` when R51 is enabled.
+> The canonical noun-and-verb set for cc-suite. Every artifact name, prose description, and rule wording should draw from this registry. Drift between canonical terms and declared deprecated synonyms is flagged by `/nlpm:check` and penalized by `/nlpm:score` when R51 is enabled.
 >
-> **Status:** seeded by `/nlpm:vocab-init` on 2026-05-26. Seeded with literary warrant from the corpus extractor plus high-confidence drift pairs from `/nlpm:vocab-drift`. R51 is OFF by default — see "Adopting R51" below.
+> **Status:** seeded by `/nlpm:vocab-init` on 2026-05-26 and pruned during the initial migration pass. Only deprecation pairs that can be cleanly enforced (no false positives in the current corpus) are in `registry.yaml`. Other observed drift is documented below as **convention-only** with the rationale for non-enforcement.
 
 ---
 
-## Scopes (P1 of vocabulary-design-principles.md)
+## Scopes
 
-cc-suite has a single scope. Unlike NLPM (which has both internal and auditor scopes), cc-suite's artifacts all describe one system — the bridge layer between Claude Code, Codex CLI, and Gemini CLI. There is no "auditor scope" because cc-suite delegates audit work to Codex via shared skills rather than running its own audit pipelines.
+cc-suite has a single scope. Unlike NLPM (internal + auditor), cc-suite's artifacts all describe one system — the bridge between Claude Code, Codex CLI, and Gemini CLI.
 
 | Scope | Paths | Description |
 |-------|-------|-------------|
-| `internal` | `commands/`, `skills/cc-suite/`, `templates/agents/`, `AGENTS.md` | What cc-suite does to its own bridge and advisor artifacts. |
+| `internal` | `commands/`, `skills/cc-suite/`, `templates/agents/`, `AGENTS.md` | The cc-suite bridge subsystem itself. |
 
-## Verbs (literary warrant from corpus)
+## Enforced deprecation pairs (R51 will flag these)
 
-Each canonical verb has a one-line scope note. The **deprecated synonyms** column lists terms that were observed in the corpus but should be replaced by the canonical when authoring new artifacts. An empty deprecated column means no drift is currently flagged — but new authors should still check `registry.yaml` for the latest list.
+These are clean drifts: the canonical term has fully replaced the deprecated one in the corpus, and the deprecated term has no remaining legitimate uses.
 
-### internal scope
+| Canonical | Deprecated synonym | Status |
+|-----------|--------------------|--------|
+| `dimension` | `pillar` | Fully migrated (Mar 2026). All 5 audit-family commands now use `Dimension N:` headings and `(N dimensions)` phrasing. |
+| `subagent` | `sub-agent` | Fully migrated. The hyphenated form was a typo accident in agent-design SKILL.md and audit-agent.md. |
+| `refresh` | `freshen` | Fully migrated. `freshen-aware` / `freshen semantics` in AGENTS.md rewritten to `refresh-aware` / `refresh semantics`. |
 
-| Canonical verb | Frequency | Scope of action | Deprecated synonyms |
-|----------------|-----------|-----------------|---------------------|
-| `audit` | 9 | Structured multi-dimension code/artifact scan with severity table (Codex-delegated) | — |
-| `bridge` | 3 | Umbrella verb for making one tool's config visible to another (write to `.mcp.json` + `.codex/config.toml`) | — |
-| `refresh` | 3 | Re-pull external content (e.g. Claude Code conventions) and re-render anything derived from it | — |
-| `init` | 1 (+ `initialize` 2) | First-time project setup of all cc-suite bridge artifacts | `initialize` (allow only in H1 headings) |
-| `check` | 2 | Lightweight prerequisite / connectivity probe | — |
-| `consult` | (body) | Invoke a cc-suite advisor agent via MCP and receive its judgment | `review` (when "review" means consulting an advisor; `review` stays canonical for Codex-delegated plan/PR analysis) |
-| `delegate` | (frontmatter) | Forward a task to Claude Code via `mcp__claude-code__claude_code` | `ask`, `send` (allowed in frontmatter description openings only) |
-| `fix` | 1 | Code-level remediation of a specific reported defect | — (distinct from `repair`, which means infrastructure recovery) |
-| `repair` | 1 | Non-interactive re-run of all cc-suite bridge / registration scripts | — (distinct from `fix`) |
-| `verify` | 1 | Confirm a prior code-fix outcome via Claude MCP | `check` (only when the operation is confirmation, not connectivity probing) |
-| `update` | 1 | User-side coupled refresh after `claude plugin update cc-suite` | `freshen` (implementation-internal term; do not use in user-facing prose) |
-| `register` | (body) | Persist an MCP server entry into `.mcp.json` or `.codex/config.toml` | — |
-| `expose` | (body, "Expose skills") | Symlink-based sub-operation of `bridge` for cc-suite plugin skills | — |
-| `mirror` | (body) | One-directional copy sub-operation of `bridge` for hooks and MCP | — |
-| `setup` | 1 | Higher-level user activity composed of init + configure + verify; not interchangeable with `init` (which is one step of setup) | — |
-| `add` / `remove` / `list` | 1 / 2 / 2 | CRUD verbs for the `.cc-suite/agents/` advisor registry | — |
-| `cancel`, `continue`, `implement`, `plan`, `analyze`, `result`, `status`, `unbridge` | 1 each | Specific commands; no canonical-vs-synonym competition observed | — |
-| `preflight` | 1 | Verify Codex connectivity and discover available models before delegation | — |
-| `create` / `fetch` | 1 each | Description-only verbs, not yet competing | — |
+## Canonical-only verbs (no deprecation; just the canonical form)
 
-`bridge`, `expose`, and `mirror` are intentionally three terms naming three distinct sub-operations within the bridge subsystem — they are NOT synonyms. `bridge` is the umbrella; `expose` covers skills (symlinks); `mirror` covers hooks and MCP (file copies). Authors should pick the specific verb when describing a single operation and the umbrella when describing the subsystem.
+Used to establish the cc-suite verb vocabulary so new artifacts pick from this set rather than coining synonyms. R51 doesn't penalize anything here because no observed drift exists.
 
-## Nouns (literary warrant from corpus)
+| Canonical | Definition |
+|-----------|------------|
+| `audit` | Structured multi-dimension code/artifact scan with severity table (Codex-delegated). |
+| `bridge` | Umbrella verb for making one tool's config visible to another. |
+| `update` | User-side coupled re-render after `claude plugin update cc-suite` (slash command). |
+| `init` | First-time project setup of all cc-suite bridge artifacts. |
+| `check` | Lightweight prerequisite / connectivity probe. |
+| `consult` | Invoke a cc-suite advisor and receive its judgment. |
+| `delegate` | Forward a task to Claude Code via `mcp__claude-code__claude_code`. |
+| `fix` | Code-level remediation of a specific reported defect (distinct from `repair`). |
+| `repair` | Non-interactive re-run of all bridge / registration scripts (distinct from `fix`). |
+| `verify` | Confirm a prior code-fix outcome via Claude MCP. |
+| `register` | Persist an MCP server entry into `.mcp.json` or `.codex/config.toml`. |
+| `expose` | Symlink-based sub-operation of `bridge` for cc-suite plugin skills. |
+| `mirror` | One-directional copy sub-operation of `bridge` for hooks and MCP. |
+| `setup` | Higher-level user activity composed of init + configure + verify. |
+| `review` | Send a plan or PR to Codex for architectural review (distinct from `consult`). |
+| `cancel` `continue` `implement` `plan` `analyze` `result` `status` `add` `remove` `list` `preflight` `unbridge` | Single-command verbs; one canonical, no competing synonyms observed. |
 
-### Artifact-class nouns
+## Canonical-only nouns
 
-| Canonical | Frequency | Definition | Deprecated synonyms |
-|-----------|-----------|------------|---------------------|
-| `advisor` | (heading) | A project-scoped value-over-rules persona declared in `.cc-suite/agents/`, backed by `claude-octopus` as a separately-configured MCP server | `agent` (when referring to a cc-suite advisor; `agent` stays canonical for Claude Code's native subagent concept) |
-| `subagent` | (body) | A Claude Code Task-tool spawned worker that executes focused work in isolated context | `sub-agent` (hyphenated form) |
-| `bridge` | 10 | The cc-suite-managed subsystem that wires Claude/Codex/Gemini together via shared AGENTS.md, mirrored MCP servers, and exposed skills | — (used as both noun and verb; see verb table) |
-| `finding` | 11 | A single defect surfaced by an audit/review — file:line, severity, recommendation | `issue` (when referring to a structured audit table row; `issue` stays canonical for user-facing prompts and GitHub issues) |
-| `dimension` | 13 | A numbered axis the auditor scores artifacts against (e.g. "Dimension 1: Logic & Correctness") | `pillar` (used in the audit-family commands but should converge on `dimension` to match `audit.md`, the umbrella command) |
-| `pillar` | 17 | (currently used in `audit-agent.md`, `audit-command.md`, `audit-skill.md`, `audit-rules.md`, `audit-plugin.md` — flagged for migration to `dimension`) | — |
-| `sentinel block` | (body) | The cc-suite-owned section in `.codex/config.toml` or `.gitignore`, delimited by `# >>> cc-suite-... >>>` / `# <<< ... <<<` comments | bare `block` (too generic; reserve for `code block` / `review gate blocks`) |
-| `thread` | (body) | The Codex execution-continuation handle (the `threadId` MCP parameter, displayed as "Thread ID" in command output) | `session` (in continue.md description; align on `thread` to match the actual parameter name) |
-| `registration` | 6 | The persisted MCP server entry produced by `bridge`; lives in `.mcp.json` and `.codex/config.toml` | — |
-| `preset` | (body) | A starter advisor agent file shipped under `templates/agents/` for users to copy and customize | `template` (when used in user-facing prose; `template` stays canonical for the directory name `templates/agents/`) |
-| `pin` | (body) | The version string for `claude-octopus` in `scripts/lib/claude-octopus-pin.txt` that every bridge script reads | — |
-| `timeline` | (body) | The per-advisor persistent consultation history at `.cc-suite/agents/<name>/timeline/` | — |
-| `artifact` | (body) | A file cc-suite owns: command, skill, agent, hook, manifest, config | — |
-| `script` | (body) | An executable under `scripts/`: bash, python, mjs | — |
+| Canonical | Definition |
+|-----------|------------|
+| `advisor` | A project-scoped value-over-rules persona declared in `.cc-suite/agents/`, backed by `claude-octopus` as a separately-configured MCP server. |
+| `bridge` | The cc-suite-managed subsystem that wires Claude/Codex/Gemini together. |
+| `finding` | A single defect surfaced by an audit/review — file:line, severity, recommendation. Use in structured audit output (column headers, "Top Findings" sections, per-finding iteration in audit-fix/verify). |
+| `sentinel block` | The cc-suite-owned section in `.codex/config.toml` or `.gitignore`, delimited by sentinel comments. |
+| `thread` | The Codex execution-continuation handle (the `threadId` MCP parameter). |
+| `registration` | The persisted MCP server entry produced by `bridge`. |
+| `preset` | A starter advisor agent file shipped under `templates/agents/`. |
+| `pin` | The version string for `claude-octopus` in `scripts/lib/claude-octopus-pin.txt`. |
+| `timeline` | The per-advisor persistent consultation history at `.cc-suite/agents/<name>/timeline/`. |
+| `artifact` | A file cc-suite owns — command, skill, agent, hook, manifest, config. |
+| `script` | An executable under `scripts/` — bash, python, or mjs. |
 
-### Role-nouns (advisor-preset filenames paired with their stance)
+### Role-noun suffixes for advisor preset names (intentional sub-variants)
 
-The persona suffixes are **intentional sub-variants** of `advisor`, not drift. Each suffix encodes the persona's stance:
+These are **not drift** — each suffix encodes the persona's stance.
 
-| Role-noun suffix | Meaning | Example preset |
-|------------------|---------|----------------|
-| `_advisor` | General-purpose value advisor; offers judgement on broad scope | `north_star_advisor` |
-| `_reviewer` | Reviews finished work against a single quality dimension | `clarity_reviewer` |
-| `_critic` | Judges the output of an upstream process (typically docs) | `documentation_critic` |
-| `_advocate` | Argues for one specific action over alternatives | `deletion_advocate`, `simplicity_advocate` |
-| `_skeptic` | Adversarial reviewer; assumes hostile inputs / worst case | `security_skeptic` |
+| Suffix | Stance | Example preset |
+|--------|--------|----------------|
+| `_advisor` | General-purpose value advisor; broad-scope judgment. | `north_star_advisor` |
+| `_reviewer` | Reviews finished work against a single quality dimension. | `clarity_reviewer` |
+| `_critic` | Judges the output of an upstream process (typically docs). | `documentation_critic` |
+| `_advocate` | Argues for one specific action over alternatives. | `deletion_advocate`, `simplicity_advocate` |
+| `_skeptic` | Adversarial reviewer; assumes hostile inputs / worst case. | `security_skeptic` |
 
-When introducing a new preset, pick the suffix that best matches its stance. If none fit, default to `_advisor`.
+When introducing a new preset, pick the suffix that best matches its stance. Default to `_advisor` when none fit.
+
+## Why some pairs are convention-only (not enforced by R51)
+
+The `/nlpm:vocab-drift` scan surfaced several drift candidates that look like clean canonical/deprecated pairs but turn out to be **polysemous** in cc-suite. R51 is mechanical — it flags every occurrence of a deprecated term regardless of context — so declaring these would generate false-positive penalties on legitimate uses. They are conventions, not rules:
+
+| Concept pair | Why we don't enforce |
+|--------------|----------------------|
+| `finding` ← `issue` | `finding` is canonical for audit-output rows (column headers, `Top Findings` sections, per-finding iteration in `audit-fix.md` / `verify.md`). But `issue` legitimately means a different thing elsewhere: infrastructure problem in `doctor.md` ("Found N issues. Fix them?"), implementation hiccup in `implement.md` ("Issues encountered"), code-quality category in audit prose ("minor clarity issues"). A blanket deprecation would mis-rename all three contexts. **Convention**: structured rows say `Finding`; everything else stays `issue`. |
+| `advisor` ← `agent` | `advisor` is canonical for cc-suite personas in prose. But `agent` is unavoidable in file paths (`.cc-suite/agents/`, `templates/agents/`), command names (`add-agent`, `remove-agent`, `list-agents`) — chosen to match Claude Code's `.claude/agents/` convention — and refers to Claude Code's native subagent concept in design discussions. **Convention**: speak about "advisors" in prose; keep the file/dir/command layout using `agent`. |
+| `thread` ← `session` | `thread` is canonical for the Codex execution-continuation handle. `session` appears in `continue.md`'s description as user-facing language ("Continue a previous Codex session"). **Convention**: prefer `thread` in technical contexts; tolerate `session` in user-facing descriptions. |
+| `delegate` ← `ask` / `send` | `delegate` is canonical in skill bodies. `ask` and `send` appear in `description:` frontmatter openings of the claude-* skills because they're more natural English for a one-line summary. **Convention**: skill body uses `delegate`; frontmatter description allows either. |
+| `preset` ← `template` | `preset` is the user-facing concept. `template` is the directory name (`templates/agents/`) and appears in `add-agent.md` frontmatter where it accurately describes what gets copied. **Convention**: speak about "presets" in prose; the on-disk word is `template`. |
+| `verify` ← `check` | `verify` is canonical for code-fix-outcome confirmation. `check` covers infrastructure probes (`Step 2: Run additional deep checks` in `doctor.md`). **Convention**: don't conflate. |
 
 ---
 
@@ -100,11 +111,11 @@ When introducing a new preset, pick the suffix that best matches its stance. If 
 
 2. New terms appear in `analysis/vocabulary-extract/summary.md`.
 3. Add a row to the matching table above (Verbs or Nouns, in the correct scope). Cite at least one file as evidence.
-4. To deprecate a synonym, list it in the canonical term's "Deprecated synonyms" column AND add it to `registry.yaml`'s `deprecated:` list.
+4. To deprecate a synonym, add it to the canonical term's `deprecated:` list in `registry.yaml` AND update the "Enforced deprecation pairs" table above. Before doing this, run `grep -r "<deprecated>"` and confirm the term has no legitimate alternate meanings — if it does, document the pair in "Why some pairs are convention-only" instead.
 
 ## Adopting R51
 
-R51 is **off by default**. The registry is seeded and ready, but enabling it will produce penalty findings against the corpus until the deprecated terms are migrated. To turn on vocabulary drift detection on this project, add to `.claude/nlpm.local.md`:
+To turn on vocabulary drift detection on this project, add to `.claude/nlpm.local.md`:
 
 ```yaml
 rule_overrides:
@@ -113,18 +124,10 @@ rule_overrides:
     vocabulary_skill: skills/cc-suite/vocabulary/
 ```
 
-Without this opt-in, R51 contributes zero penalty regardless of artifact contents — but `/nlpm:check` will still report drift advisorily.
-
-Recommended migration sequence before flipping the switch:
-
-1. `issue` → `finding` in audit-fix.md, verify.md, audit table rows
-2. `pillar` → `dimension` across the audit-family commands
-3. `agent` → `advisor` in cc-suite-advisor contexts (rename `add-agent` / `remove-agent` / `list-agents` to `add-advisor` / etc. is optional but cleanest)
-4. `sub-agent` → `subagent` in agent-design SKILL.md
-5. Then enable R51 and re-score.
+The pruned registry should produce zero R51 findings on the current corpus.
 
 ## See also
 
-- The corpus extractor lives at `${NLPM_ROOT}/analysis/scripts/extract-vocabulary.py`
+- The corpus extractor: `${NLPM_ROOT}/analysis/scripts/extract-vocabulary.py`
 - The six design principles: `${NLPM_ROOT}/analysis/vocabulary-design-principles.md`
-- The starting drift scan that informed this registry: run `/nlpm:vocab-drift` for an updated advisory list
+- Run `/nlpm:vocab-drift` periodically to surface new candidate pairs as the corpus grows.

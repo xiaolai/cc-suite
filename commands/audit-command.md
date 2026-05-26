@@ -32,8 +32,8 @@ Parse `$ARGUMENTS` for `--full` or `--mini` flags. Remove the flag from the rema
 
 | Condition | Audit depth |
 |-----------|-------------|
-| `--full` flag present | Full (7 pillars) |
-| `--mini` flag present | Mini (4 pillars) |
+| `--full` flag present | Full (7 dimensions) |
+| `--mini` flag present | Mini (4 dimensions) |
 | Neither flag | Ask the user (below) |
 
 If asking:
@@ -43,9 +43,9 @@ AskUserQuestion:
   question: "Which audit depth?"
   header: "Command Audit Depth"
   options:
-    - label: "Mini (4 pillars) (Recommended)"
+    - label: "Mini (4 dimensions) (Recommended)"
       description: "Schema, workflow clarity, tool selection, output spec — fast overview"
-    - label: "Full (7 pillars)"
+    - label: "Full (7 dimensions)"
       description: "Adds error handling, argument safety, shared partial usage — thorough"
 ```
 
@@ -84,13 +84,13 @@ Send ALL command files in a SINGLE Codex call (batch if >10 files):
 
 ```
 prompt: |
-  Audit the following Claude Code command file(s) across the applicable pillars.
+  Audit the following Claude Code command file(s) across the applicable dimensions.
   Be critical — flag anything that would cause runtime failures or confuse Claude.
 
   Files:
   {for each command: path + full content}
 
-  ## Pillar 0: Frontmatter Schema (Mini + Full)
+  ## Dimension 0: Frontmatter Schema (Mini + Full)
 
   Note: The canonical Claude Code schemas are provided in your developer-instructions (from the claude-code-conventions skill). Use those as the authoritative reference. The rules below highlight command-specific checks.
 
@@ -109,7 +109,7 @@ prompt: |
   - Using `tools` instead of `allowed-tools` → Medium
   - Unknown frontmatter fields → Low
 
-  ## Pillar 1: Workflow Clarity (Mini + Full)
+  ## Dimension 1: Workflow Clarity (Mini + Full)
 
   Commands must give Claude clear, unambiguous step-by-step instructions:
   - **Numbered steps**: Are steps clearly numbered and sequential?
@@ -121,7 +121,7 @@ prompt: |
 
   Severity: Critical (missing steps that would cause failure), High (ambiguous decision logic), Medium (vague language), Low (minor granularity issues)
 
-  ## Pillar 2: Tool Selection (Mini + Full)
+  ## Dimension 2: Tool Selection (Mini + Full)
 
   Commands should request exactly the tools they need:
   - **Least privilege**: Does `allowed-tools` include tools the command body never uses?
@@ -133,7 +133,7 @@ prompt: |
 
   Severity: High (missing needed tools, write on read-only), Medium (excess tools), Low (Bash without justification)
 
-  ## Pillar 3: Output Specification (Mini + Full)
+  ## Dimension 3: Output Specification (Mini + Full)
 
   Commands must define what they output to the user:
   - **Report template**: Is there a defined output format (markdown template, table structure)?
@@ -144,7 +144,7 @@ prompt: |
 
   Severity: High (no output format defined), Medium (incomplete template), Low (minor format inconsistencies)
 
-  ## Pillar 4: Error Handling (Full only)
+  ## Dimension 4: Error Handling (Full only)
 
   Commands should handle failures gracefully:
   - **Empty arguments**: What happens when `$ARGUMENTS` is empty?
@@ -155,7 +155,7 @@ prompt: |
 
   Severity: High (no empty arg handling, no fallback), Medium (missing prerequisite checks), Low (vague error messages)
 
-  ## Pillar 5: Argument Safety (Full only)
+  ## Dimension 5: Argument Safety (Full only)
 
   Commands that accept user input must handle it safely:
   - **$ARGUMENTS in Bash**: Is `$ARGUMENTS` quoted when used in shell commands?
@@ -166,7 +166,7 @@ prompt: |
 
   Severity: Critical (unquoted $ARGUMENTS in Bash), High (no validation), Medium (missing defaults)
 
-  ## Pillar 6: Shared Partial Usage (Full only)
+  ## Dimension 6: Shared Partial Usage (Full only)
 
   For plugins that use shared partials:
   - **Referenced partials exist**: Every partial mentioned in the body exists at the referenced path
@@ -181,13 +181,13 @@ prompt: |
 
   For each command file:
 
-  **[Pillar N: Name]**
+  **[Dimension N: Name]**
   | # | Severity | Finding | Location | Recommendation |
   |---|----------|---------|----------|----------------|
 
   Then:
   **Overall Verdict**: CLEAN / NEEDS ATTENTION / NEEDS WORK
-  **Top Issues** (ordered by severity)
+  **Top Findings** (ordered by severity)
   **Strengths** of the commands
 ```
 
@@ -201,20 +201,20 @@ Display Codex's audit report. Add your own assessment if you disagree or notice 
 **Command(s)**: {filenames}
 **Model**: {chosen_model} | **Effort**: {chosen_effort}
 **Thread ID**: `{threadId}`
-**Depth**: {Mini (4 pillars) | Full (7 pillars)}
+**Depth**: {Mini (4 dimensions) | Full (7 dimensions)}
 **Verdict**: {CLEAN | NEEDS ATTENTION | NEEDS WORK}
 
 ## Findings
 
-(Per-pillar tables using the format defined in the Step 3 prompt)
+(Per-dimension tables using the format defined in the Step 3 prompt)
 
 | # | Severity | Finding | Location | Recommendation |
 |---|----------|---------|----------|----------------|
 
-## Top Issues
+## Top Findings
 
-1. **[Severity]** {issue description} — `{file_path}:{line}`
-2. **[Severity]** {issue description} — `{file_path}:{line}`
+1. **[Severity]** {finding description} — `{file_path}:{line}`
+2. **[Severity]** {finding description} — `{file_path}:{line}`
 
 ## Strengths
 
@@ -230,6 +230,6 @@ Display Codex's audit report. Add your own assessment if you disagree or notice 
 Follow `commands/shared/fallback.md`.
 
 1. Read each command file using the Read tool
-2. Walk through all applicable pillars as described above
+2. Walk through all applicable dimensions as described above
 3. Check: frontmatter completeness, step clarity, tool alignment, output templates, error paths
 4. Report in the same format

@@ -1,29 +1,28 @@
 # Machine-readable vocabulary registry for cc-suite.
 #
-# Seeded by /nlpm:vocab-init on 2026-05-26. Adopter must continue to
-# prune and add deprecation pairs as the corpus evolves. Read by
-# /nlpm:check and /nlpm:score when R51 is enabled in
-# .claude/nlpm.local.md.
+# Seeded by /nlpm:vocab-init on 2026-05-26. Pruned during initial
+# migration: only deprecation pairs that can be **cleanly enforced**
+# without false positives are listed below. Other observed drift
+# (issue↔finding, agent↔advisor, etc.) is documented in SKILL.md as
+# convention only — see "Why some pairs are convention-only" there.
 #
-# See skills/cc-suite/vocabulary/SKILL.md for human-readable scope notes,
-# the role-noun suffix convention, and the migration sequence recommended
-# before enabling R51.
+# Read by /nlpm:check and /nlpm:score when R51 is enabled in
+# .claude/nlpm.local.md.
 
 scopes:
   - id: internal
     description: |
-      The cc-suite bridge subsystem itself — commands, skills, advisor
-      preset templates, AGENTS.md, hooks, scripts. There is no "auditor"
-      scope because cc-suite delegates audit work to Codex via shared
-      skills rather than running its own audit pipelines.
+      The cc-suite bridge subsystem — commands, skills, advisor preset
+      templates, AGENTS.md, hooks, scripts. There is no "auditor" scope
+      because cc-suite delegates audit work to Codex via shared skills.
     paths:
       - commands/
       - skills/cc-suite/
       - templates/agents/
       - AGENTS.md
 
-# Verbs that mean the same in any scope. Since cc-suite has only one
-# scope, this list is empty by construction.
+# Verbs that mean the same in any scope. cc-suite has only one scope,
+# so this list is empty by construction.
 cross_scope_homonyms:
   verbs: []
 
@@ -34,18 +33,21 @@ verbs:
       deprecated: []
 
     - canonical: bridge
-      definition: Umbrella verb for making one tool's config visible to another (write to .mcp.json + .codex/config.toml).
+      definition: Umbrella verb for making one tool's config visible to another.
       deprecated: []
 
     - canonical: refresh
-      definition: Re-pull external content (e.g. Claude Code conventions) and re-render anything derived from it.
+      definition: Bring an artifact, configuration, or knowledge resource to the currently-expected state. Includes the `mcp_claude.sh` rewrite-in-place behavior, the `/cc-suite:update` re-render flow, and `/cc-suite:refresh-knowledge`.
+      deprecated:
+        - freshen   # implementation-internal term; use `refresh` everywhere
+
+    - canonical: update
+      definition: User-side coupled re-render after `claude plugin update cc-suite`. Distinct from `refresh` (broader) in that `update` names the slash command.
       deprecated: []
 
     - canonical: init
       definition: First-time project setup of all cc-suite bridge artifacts.
-      deprecated:
-        - initialize     # allow only in H1 headings
-        - re-initialize  # use "re-init" instead
+      deprecated: []
 
     - canonical: check
       definition: Lightweight prerequisite / connectivity probe.
@@ -54,33 +56,22 @@ verbs:
     - canonical: consult
       definition: Invoke a cc-suite advisor agent via MCP and receive its judgment.
       deprecated: []
-      # "review" is NOT deprecated — it stays canonical for the
-      # /cc-suite:review-plan command which delegates Codex.
 
     - canonical: delegate
       definition: Forward a task to Claude Code via mcp__claude-code__claude_code.
-      deprecated:
-        - ask    # acceptable only in skill frontmatter description openings
-        - send   # acceptable only in skill frontmatter description openings
+      deprecated: []
 
     - canonical: fix
       definition: Code-level remediation of a specific reported defect.
       deprecated: []
-      # Distinct from `repair` — fix = code, repair = infrastructure.
 
     - canonical: repair
-      definition: Non-interactive re-run of all cc-suite bridge / registration scripts.
+      definition: Non-interactive re-run of all cc-suite bridge / registration scripts. Distinct from `fix` — `fix` = code, `repair` = infrastructure.
       deprecated: []
 
     - canonical: verify
       definition: Confirm a prior code-fix outcome via Claude MCP.
-      deprecated:
-        - check  # only when the operation is confirmation, not connectivity probing
-
-    - canonical: update
-      definition: User-side coupled refresh after `claude plugin update cc-suite`.
-      deprecated:
-        - freshen  # implementation-internal term; do not use in user-facing prose
+      deprecated: []
 
     - canonical: register
       definition: Persist an MCP server entry into .mcp.json or .codex/config.toml.
@@ -135,9 +126,8 @@ verbs:
       deprecated: []
 
     - canonical: review
-      definition: Send a plan or PR to Codex for architectural review.
+      definition: Send a plan or PR to Codex for architectural review. Distinct from `consult` (advisor invocation).
       deprecated: []
-      # Distinct from `consult` — review = Codex delegation, consult = advisor invocation.
 
     - canonical: plan
       definition: Ask Claude Code to produce an implementation plan.
@@ -154,9 +144,8 @@ verbs:
 nouns:
   artifact_class:
     - canonical: advisor
-      definition: A project-scoped value-over-rules persona declared in .cc-suite/agents/, backed by claude-octopus as a separately-configured MCP server.
-      deprecated:
-        - agent  # only when referring to a cc-suite advisor; "agent" stays canonical for Claude Code's native subagent
+      definition: A project-scoped value-over-rules persona declared in .cc-suite/agents/, backed by claude-octopus as a separately-configured MCP server. (See SKILL.md for why `agent` is NOT in the deprecated list.)
+      deprecated: []
 
     - canonical: subagent
       definition: A Claude Code Task-tool spawned worker that executes focused work in isolated context.
@@ -164,37 +153,33 @@ nouns:
         - sub-agent
 
     - canonical: bridge
-      definition: The cc-suite-managed subsystem that wires Claude/Codex/Gemini together via shared AGENTS.md, mirrored MCP servers, and exposed skills.
+      definition: The cc-suite-managed subsystem that wires Claude/Codex/Gemini together.
       deprecated: []
 
     - canonical: finding
-      definition: A single defect surfaced by an audit/review — file:line, severity, recommendation.
-      deprecated:
-        - issue  # only when referring to a structured audit table row; "issue" stays canonical for user-facing prompts and GitHub issues
+      definition: A single defect surfaced by an audit/review — file:line, severity, recommendation. (See SKILL.md for why `issue` is NOT in the deprecated list.)
+      deprecated: []
 
     - canonical: dimension
       definition: A numbered axis the auditor scores artifacts against.
       deprecated:
-        - pillar  # used in the audit-family commands; should converge on "dimension" to match audit.md
+        - pillar
 
     - canonical: sentinel block
       definition: The cc-suite-owned section in .codex/config.toml or .gitignore, delimited by sentinel comments.
       deprecated: []
-      # Bare "block" is too generic to flag mechanically — disambiguate by hand.
 
     - canonical: thread
       definition: The Codex execution-continuation handle (the threadId MCP parameter).
-      deprecated:
-        - session  # in continue.md description — align on "thread" to match the actual parameter name
+      deprecated: []
 
     - canonical: registration
-      definition: The persisted MCP server entry produced by bridge; lives in .mcp.json and .codex/config.toml.
+      definition: The persisted MCP server entry produced by bridge.
       deprecated: []
 
     - canonical: preset
-      definition: A starter advisor agent file shipped under templates/agents/ for users to copy and customize.
-      deprecated:
-        - template  # only in user-facing prose; "template" stays canonical for the directory name
+      definition: A starter advisor agent file shipped under templates/agents/.
+      deprecated: []
 
     - canonical: pin
       definition: The version string for claude-octopus in scripts/lib/claude-octopus-pin.txt.
@@ -212,9 +197,7 @@ nouns:
       definition: An executable under scripts/ — bash, python, or mjs.
       deprecated: []
 
-  # Persona suffixes for advisor preset names. NOT drift — each suffix
-  # encodes the persona's stance and should be picked deliberately when
-  # naming a new advisor. See vocabulary/SKILL.md for the convention.
+  # Persona suffixes for advisor preset names. NOT drift.
   role_nouns:
     - canonical: advisor
       stance: General-purpose value advisor; broad-scope judgment.
@@ -227,7 +210,4 @@ nouns:
     - canonical: skeptic
       stance: Adversarial reviewer; assumes hostile inputs / worst case.
 
-# Verbs proposed but rejected pending warrant. Use this section to
-# record vocabulary requests that didn't earn entry — keeps PR
-# discussions from re-proposing the same rejected term.
 rejected_pending_warrant: []

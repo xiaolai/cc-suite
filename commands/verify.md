@@ -20,14 +20,14 @@ Follow the instructions in `commands/shared/model-selection.md` to discover avai
 
 ## Workflow
 
-**CRITICAL**: This command verifies fixes from a PREVIOUS audit. It does NOT discover new issues.
+**CRITICAL**: This command verifies fixes from a PREVIOUS audit. It does NOT discover new findings.
 
 ### Step 1: Input Parsing
 
 `$ARGUMENTS` should contain or reference the previous audit report:
 - If empty: Look for recent `audit-*.md` file in current directory
 - If file path: Read that audit report
-- If contains "Critical Issues": Use as inline report
+- If contains "Critical Findings": Use as inline report
 
 If no audit report found:
 ```
@@ -46,7 +46,7 @@ And STOP.
 
 Follow `commands/shared/codex-call.md` for availability test and call pattern.
 
-- **Command persona**: "You are a verification auditor. Only check issues from a previous audit report."
+- **Command persona**: "You are a verification auditor. Only check findings from a previous audit report."
 - **Sandbox**: `read-only`
 - **Approval-policy**: `never`
 
@@ -58,17 +58,17 @@ prompt: "Your ONLY job is to confirm fixes from a previous audit.
 
 ## Your Mission
 
-1. **Extract Issue Checklist by Dimension**:
-   Parse all issues organized by whatever dimensions appear in the audit report.
+1. **Extract Finding Checklist by Dimension**:
+   Parse all findings organized by whatever dimensions appear in the audit report.
    Full audits have 9 dimensions; mini audits have 5. Only verify what's present.
 
-2. **Verify Each Issue**:
-   For each issue from the report:
+2. **Verify Each Finding**:
+   For each finding from the report:
    - Read the file at the exact location
-   - Check if the issue still exists
+   - Check if the finding still exists
    - Mark status:
-     - FIXED — Issue resolved, no new problems introduced
-     - NOT FIXED — Issue still present
+     - FIXED — Finding resolved, no new problems introduced
+     - NOT FIXED — Finding still present
      - PARTIAL — Partially addressed
      - MOVED — Code relocated, verify new location
 
@@ -78,10 +78,10 @@ prompt: "Your ONLY job is to confirm fixes from a previous audit.
    - DO NOT run comprehensive scan
 
 ## Requirements
-- ONLY verify issues from the audit report
-- Do NOT discover new issues systematically
+- ONLY verify findings from the audit report
+- Do NOT discover new findings systematically
 - Be fast (2-10 minutes)
-- Clear pass/fail per issue"
+- Clear pass/fail per finding"
 ```
 
 ### Step 3: Report
@@ -107,20 +107,20 @@ prompt: "Your ONLY job is to confirm fixes from a previous audit.
 {For each dimension present:}
 
 ### {Dimension Name}
-| Issue | File:Line | Status | Notes |
-|-------|-----------|--------|-------|
+| Finding | File:Line | Status | Notes |
+|---------|-----------|--------|-------|
 | ... | ... | ... | ... |
 
-## Remaining Issues (Not Fixed)
+## Remaining Findings (Not Fixed)
 
-| Priority | Dimension | Issue | File:Line |
-|----------|-----------|-------|-----------|
+| Priority | Dimension | Finding | File:Line |
+|----------|-----------|---------|-----------|
 | ... | ... | ... | ... |
 
-## New Issues Introduced (if any)
+## New Findings Introduced (if any)
 
-| Severity | Dimension | Issue | File:Line |
-|----------|-----------|-------|-----------|
+| Severity | Dimension | Finding | File:Line |
+|----------|-----------|---------|-----------|
 | ... | ... | ... | ... |
 
 ## Verdict
@@ -135,7 +135,7 @@ prompt: "Your ONLY job is to confirm fixes from a previous audit.
 
 Follow `commands/shared/fallback.md`.
 
-1. Parse the audit report to extract all issues by dimension
+1. Parse the audit report to extract all findings by dimension
 2. Read each file at the specified lines
-3. Check if the issue still exists — mark FIXED, NOT FIXED, PARTIAL, or MOVED
+3. Check if the finding still exists — mark FIXED, NOT FIXED, PARTIAL, or MOVED
 4. Report in the same format as Step 3

@@ -30,7 +30,7 @@ When claude-octopus ships a new version that cc-suite should adopt:
 2. Run `bash tests/integration.sh` — T39 actually boots the new pin and exchanges one MCP `initialize` to verify it works.
 3. Bump cc-suite's own version per the normal release workflow.
 
-Users get the new pin when they run `claude plugin update cc-suite@xiaolai` followed by `/cc-suite:update` — the second command re-renders the `.codex/config.toml` block in place (the pre-existing block won't be silently preserved because freshen-aware `mcp_claude.sh` detects the pin mismatch and rewrites).
+Users get the new pin when they run `claude plugin update cc-suite@xiaolai` followed by `/cc-suite:update` — the second command re-renders the `.codex/config.toml` block in place (the pre-existing block won't be silently preserved because refresh-aware `mcp_claude.sh` detects the pin mismatch and rewrites).
 
 ## Smoke Test
 
@@ -59,7 +59,7 @@ Run the integration suite (47+ test sections, 240+ assertions):
 bash tests/integration.sh
 ```
 
-Tests cover every `scripts/*.sh`, the `mcp_codex.sh` migration path, `status.sh` output, freshen semantics for `mcp_claude.sh` (T34–T38), a real boot-and-handshake against the pinned `claude-octopus` (T39, network-dependent — set `CC_SUITE_SKIP_BOOT_TEST=1` to skip), and the advisor-agent subsystem (T40–T47: registration, idempotency, removal, conflict refusal, freshen, TOML preservation, invalid-input rejection). Add a new `T<N>` section for any new behavior; the suite uses `make_tmp` / `cleanup` / `assert_*` helpers and tallies pass/fail counts in its summary.
+Tests cover every `scripts/*.sh`, the `mcp_codex.sh` migration path, `status.sh` output, refresh semantics for `mcp_claude.sh` (T34–T38), a real boot-and-handshake against the pinned `claude-octopus` (T39, network-dependent — set `CC_SUITE_SKIP_BOOT_TEST=1` to skip), and the advisor-agent subsystem (T40–T47: registration, idempotency, removal, conflict refusal, refresh, TOML preservation, invalid-input rejection). Add a new `T<N>` section for any new behavior; the suite uses `make_tmp` / `cleanup` / `assert_*` helpers and tallies pass/fail counts in its summary.
 
 ## Shared Memory
 
