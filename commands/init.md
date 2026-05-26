@@ -13,6 +13,7 @@ Set up cc-suite for the current project. This command leaves the project with **
 4. **Codex MCP registration** — adds the `codex-cli` MCP server to `.mcp.json` and mirrors any other project MCP servers into `.codex/config.toml`
 5. **Claude MCP registration** — adds the `claude-code` MCP server (claude-octopus) to `.codex/config.toml`
 6. **Hooks bridge** — mirrors `.claude/settings.json` hooks into `.codex/hooks.json` (no-op if there are no hooks)
+7. **Advisor agents bridge** — registers any declared `.cc-suite/agents/*.md` as MCP advisors in both registries (no-op if there are no agents)
 
 ## Workflow
 
@@ -260,7 +261,19 @@ If the script exits non-zero, report the error and stop.
 
 ---
 
-### Step 11: Final summary
+### Step 11: Bridge advisor agents
+
+Register any cc-suite advisor agents declared in `.cc-suite/agents/*.md` as MCP servers in both `.mcp.json` and `.codex/config.toml`. No-op when the project has no agents yet — safe to run unconditionally:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_agents.py"
+```
+
+If the script reports any conflicts (user-managed entries with the same name as a declared agent), surface them and continue. Conflicts don't block init — they just leave the conflicting agent unregistered until the user resolves the naming.
+
+---
+
+### Step 12: Final summary
 
 Display a combined status report:
 

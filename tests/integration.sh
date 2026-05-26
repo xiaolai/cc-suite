@@ -1074,6 +1074,247 @@ else
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# T40  bridge_agents.py — no-op when .cc-suite/agents/ does not exist
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T40: bridge_agents.py — no-op without .cc-suite/agents/"
+make_tmp
+
+assert_exit0 python3 "$SCRIPTS/bridge_agents.py"
+
+# Should leave no .mcp.json behind and create an empty .codex/config.toml at most.
+assert_no_file ".mcp.json"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T41  bridge_agents.py — registers a single advisor in both registries
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T41: bridge_agents.py — single advisor end-to-end"
+make_tmp
+
+mkdir -p .cc-suite/agents
+cat > .cc-suite/agents/clarity_reviewer.md <<'AGENT'
+---
+name: clarity_reviewer
+description: Reviews code for readability.
+tool_name: clarity_review
+model: sonnet
+allowed_tools: [Read, Grep, Glob]
+max_turns: 3
+---
+
+You value simplicity over cleverness.
+AGENT
+
+assert_exit0 python3 "$SCRIPTS/bridge_agents.py"
+
+# .mcp.json: entry exists with the marker key.
+assert_file ".mcp.json"
+assert_contains ".mcp.json" '"clarity_reviewer"'
+assert_contains ".mcp.json" '"_cc_suite_agent": "clarity_reviewer"'
+assert_contains ".mcp.json" '"CLAUDE_TOOL_NAME": "clarity_review"'
+assert_contains ".mcp.json" '"CLAUDE_MODEL": "sonnet"'
+
+# .codex/config.toml: sentinel block and TOML table both present.
+assert_contains ".codex/config.toml" ">>> cc-suite-agent: clarity_reviewer >>>"
+assert_contains ".codex/config.toml" "[mcp_servers.clarity_reviewer]"
+assert_contains ".codex/config.toml" 'CLAUDE_TOOL_NAME = "clarity_review"'
+assert_contains ".codex/config.toml" "<<< cc-suite-agent: clarity_reviewer <<<"
+
+# Timeline dir created, gitignore rule written.
+assert_dir ".cc-suite/agents/clarity_reviewer/timeline"
+assert_file ".cc-suite/.gitignore"
+assert_contains ".cc-suite/.gitignore" "*/timeline/"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T42  bridge_agents.py — multiple agents registered, then idempotent re-run
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T42: bridge_agents.py — multiple agents + idempotent re-run"
+make_tmp
+
+mkdir -p .cc-suite/agents
+cat > .cc-suite/agents/north_star.md <<'AGENT'
+---
+name: north_star
+description: Project north star.
+---
+You hold first-principles reasoning above retrieval.
+AGENT
+cat > .cc-suite/agents/security_skeptic.md <<'AGENT'
+---
+name: security_skeptic
+description: Security-focused adversarial reviewer.
+---
+You assume any input is hostile until validated.
+AGENT
+
+assert_exit0 python3 "$SCRIPTS/bridge_agents.py"
+
+assert_contains ".mcp.json" '"north_star"'
+assert_contains ".mcp.json" '"security_skeptic"'
+assert_count ">>> cc-suite-agent:" ".codex/config.toml" "2"
+
+hash1="$(md5 -q .mcp.json 2>/dev/null || md5sum .mcp.json | awk '{print $1}')"
+hash2="$(md5 -q .codex/config.toml 2>/dev/null || md5sum .codex/config.toml | awk '{print $1}')"
+
+assert_exit0 python3 "$SCRIPTS/bridge_agents.py"
+
+hash1b="$(md5 -q .mcp.json 2>/dev/null || md5sum .mcp.json | awk '{print $1}')"
+hash2b="$(md5 -q .codex/config.toml 2>/dev/null || md5sum .codex/config.toml | awk '{print $1}')"
+
+if [ "$hash1" = "$hash1b" ]; then ok_msg ".mcp.json unchanged on re-run"; else fail_msg ".mcp.json changed on re-run"; fi
+if [ "$hash2" = "$hash2b" ]; then ok_msg ".codex/config.toml unchanged on re-run"; else fail_msg ".codex/config.toml changed on re-run"; fi
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T43  bridge_agents.py — agent file deleted → registration cleaned up
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T43: bridge_agents.py — removal triggers cleanup in both registries"
+make_tmp
+
+mkdir -p .cc-suite/agents
+cat > .cc-suite/agents/ephemeral.md <<'AGENT'
+---
+name: ephemeral
+description: Temporary advisor.
+---
+Body.
+AGENT
+python3 "$SCRIPTS/bridge_agents.py" >/dev/null
+
+assert_contains ".mcp.json" '"ephemeral"'
+assert_contains ".codex/config.toml" ">>> cc-suite-agent: ephemeral >>>"
+
+rm .cc-suite/agents/ephemeral.md
+assert_exit0 python3 "$SCRIPTS/bridge_agents.py"
+
+assert_not_contains ".mcp.json" '"ephemeral"'
+assert_not_contains ".codex/config.toml" "cc-suite-agent: ephemeral"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T44  bridge_agents.py — refuses to clobber a user-managed entry with the same name
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T44: bridge_agents.py — refuses to overwrite user-managed .mcp.json entry"
+make_tmp
+
+mkdir -p .cc-suite/agents
+cat > .cc-suite/agents/my_advisor.md <<'AGENT'
+---
+name: my_advisor
+description: Would-be cc-suite advisor.
+---
+Body.
+AGENT
+
+cat > .mcp.json <<'JSON'
+{
+  "mcpServers": {
+    "my_advisor": {
+      "command": "node",
+      "args": ["/path/to/my/server.js"]
+    }
+  }
+}
+JSON
+
+# Should exit non-zero because of the conflict.
+assert_exit_nonzero python3 "$SCRIPTS/bridge_agents.py"
+
+# The user's manual entry must still be there and untouched.
+assert_contains ".mcp.json" '"/path/to/my/server.js"'
+assert_not_contains ".mcp.json" '"_cc_suite_agent"'
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T45  bridge_agents.py — freshen: changing agent body updates the registration
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T45: bridge_agents.py — freshens registration when agent body changes"
+make_tmp
+
+mkdir -p .cc-suite/agents
+cat > .cc-suite/agents/drifter.md <<'AGENT'
+---
+name: drifter
+description: First version.
+---
+The first system prompt.
+AGENT
+python3 "$SCRIPTS/bridge_agents.py" >/dev/null
+assert_contains ".mcp.json" "The first system prompt."
+
+cat > .cc-suite/agents/drifter.md <<'AGENT'
+---
+name: drifter
+description: Second version.
+---
+The second system prompt — completely different.
+AGENT
+assert_exit0 python3 "$SCRIPTS/bridge_agents.py"
+
+assert_contains     ".mcp.json" "The second system prompt"
+assert_not_contains ".mcp.json" "The first system prompt"
+# Exactly one entry should exist for this name.
+assert_count '"_cc_suite_agent": "drifter"' ".mcp.json" "1"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T46  bridge_agents.py — preserves unrelated TOML config in .codex/config.toml
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T46: bridge_agents.py — preserves unrelated TOML when rewriting agent blocks"
+make_tmp
+
+mkdir -p .codex .cc-suite/agents
+cat > .codex/config.toml <<'TOML'
+[other_section]
+keep = "me"
+
+[mcp_servers.unrelated_server]
+command = "node"
+args    = ["unrelated.js"]
+TOML
+
+cat > .cc-suite/agents/advisor_x.md <<'AGENT'
+---
+name: advisor_x
+description: New advisor.
+---
+Body.
+AGENT
+
+assert_exit0 python3 "$SCRIPTS/bridge_agents.py"
+
+assert_contains ".codex/config.toml" "[other_section]"
+assert_contains ".codex/config.toml" 'keep = "me"'
+assert_contains ".codex/config.toml" "[mcp_servers.unrelated_server]"
+assert_contains ".codex/config.toml" 'unrelated.js'
+assert_contains ".codex/config.toml" ">>> cc-suite-agent: advisor_x >>>"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T47  bridge_agents.py — rejects an agent file with no frontmatter
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T47: bridge_agents.py — invalid agent file is rejected"
+make_tmp
+
+mkdir -p .cc-suite/agents
+echo "no frontmatter at all" > .cc-suite/agents/broken.md
+
+assert_exit_nonzero python3 "$SCRIPTS/bridge_agents.py"
+
+# Nothing should have been written.
+assert_no_file ".mcp.json"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Summary
 # ═══════════════════════════════════════════════════════════════════════════════
 echo

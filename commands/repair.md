@@ -59,9 +59,17 @@ Mirrors `.claude/settings.json` hooks into `.codex/hooks.json`. Skips gracefully
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_hooks.py"
 ```
 
-If any script in Steps 1–6 exits non-zero, report the error output and the step that failed, then continue running the remaining steps. Collect all failures and surface them together in the final status below.
+### Step 7: Bridge advisor agents (if applicable)
 
-### Step 7: Final status
+Re-registers any cc-suite advisor agents declared in `.cc-suite/agents/*.md`. No-op if the directory doesn't exist.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_agents.py"
+```
+
+If any script in Steps 1–7 exits non-zero, report the error output and the step that failed, then continue running the remaining steps. Collect all failures and surface them together in the final status below.
+
+### Step 8: Final status
 
 Run the full status check and display the output:
 

@@ -144,6 +144,31 @@ else
   mark ".codex/config.toml → Codex" miss "(run /cc-suite:init)"
 fi
 
+# .cc-suite/agents — declared advisor agents
+if [ -d .cc-suite/agents ] && ls .cc-suite/agents/*.md >/dev/null 2>&1; then
+  _declared_count=$(find .cc-suite/agents -maxdepth 1 -name "*.md" -type f 2>/dev/null | wc -l | tr -d ' ')
+  _registered_count=0
+  if [ -f .mcp.json ]; then
+    _registered_count=$(python3 -c "
+import json
+try:
+    d = json.loads(open('.mcp.json').read())
+    s = d.get('mcpServers', {})
+    n = sum(1 for v in s.values() if isinstance(v, dict) and v.get('_cc_suite_agent'))
+    print(n)
+except Exception:
+    print(0)
+" 2>/dev/null || echo 0)
+  fi
+  if [ "$_declared_count" = "$_registered_count" ]; then
+    mark ".cc-suite/agents/" ok "${_declared_count} advisor(s) declared and registered"
+  else
+    mark ".cc-suite/agents/" warn "${_declared_count} declared, ${_registered_count} registered — run /cc-suite:repair"
+  fi
+else
+  mark ".cc-suite/agents/" miss "(no advisor agents declared — add one with /cc-suite:add-agent)"
+fi
+
 # .gitignore sentinel
 if [ -f .gitignore ] && grep -qF "# >>> cc-suite >>>" .gitignore; then
   mark ".gitignore" ok "has cc-suite block"

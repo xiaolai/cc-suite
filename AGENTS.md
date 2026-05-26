@@ -53,13 +53,13 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/init.sh"
 
 ## Tests
 
-Run the integration suite (39+ test sections, 197+ assertions):
+Run the integration suite (47+ test sections, 240+ assertions):
 
 ```bash
 bash tests/integration.sh
 ```
 
-Tests cover every `scripts/*.sh`, the `mcp_codex.sh` migration path, `status.sh` output, freshen semantics for `mcp_claude.sh` (T34–T38), and a real boot-and-handshake against the pinned `claude-octopus` (T39, network-dependent — set `CC_SUITE_SKIP_BOOT_TEST=1` to skip). Add a new `T<N>` section for any new behavior; the suite uses `make_tmp` / `cleanup` / `assert_*` helpers and tallies pass/fail counts in its summary.
+Tests cover every `scripts/*.sh`, the `mcp_codex.sh` migration path, `status.sh` output, freshen semantics for `mcp_claude.sh` (T34–T38), a real boot-and-handshake against the pinned `claude-octopus` (T39, network-dependent — set `CC_SUITE_SKIP_BOOT_TEST=1` to skip), and the advisor-agent subsystem (T40–T47: registration, idempotency, removal, conflict refusal, freshen, TOML preservation, invalid-input rejection). Add a new `T<N>` section for any new behavior; the suite uses `make_tmp` / `cleanup` / `assert_*` helpers and tallies pass/fail counts in its summary.
 
 ## Shared Memory
 
@@ -76,3 +76,20 @@ This keeps Claude Code, Codex CLI, and Gemini CLI on the same context.
 - `.codex/hooks.json` / `.codex/config.toml` — Codex hooks/config (optional)
 - `.gemini/skills/`, `.gemini/commands/` — Gemini skills and TOML commands
 - `.mcp.json` — MCP server registrations (shared by all three tools)
+- `.cc-suite/agents/<name>.md` — declared advisor agents (see below)
+- `.cc-suite/agents/<name>/timeline/` — per-agent consultation history (gitignored by default)
+
+## Advisor Agents (`.cc-suite/agents/`)
+
+Advisor agents are project-scoped value-over-rules personas, each backed by a separately-configured `claude-octopus` MCP server. Both Claude and Codex can consult any advisor via `mcp__<name>__<tool_name>`. Each agent has its own model, system prompt, tool restrictions, working directory, and persistent timeline.
+
+Lifecycle:
+
+- **Create**: `/cc-suite:add-agent <preset>` copies a curated template into `.cc-suite/agents/<name>.md`, or `--custom` walks an interactive wizard. The agent-design skill (`skills/cc-suite/agent-design/SKILL.md`) is the load-bearing reference for what makes a good advisor.
+- **List**: `/cc-suite:list-agents` shows every declared advisor and its consult tool.
+- **Remove**: `/cc-suite:remove-agent <name>` deletes the file, cleans up MCP registrations, and (optionally) discards the timeline.
+- **Re-bridge after editing**: `python3 scripts/bridge_agents.py`. Also runs as part of `/cc-suite:init`, `/cc-suite:repair`, and `/cc-suite:update`.
+
+Mental model: an advisor is a *persona you consult*, not a *subagent that executes work*. If you'd describe the thing as "a person you'd ask for an opinion," it's an advisor. If you'd describe it as "a job you'd hand off," it's a Task subagent. If it's "a rulebook," it's a skill.
+
+The preset library under `templates/agents/` ships starter advisors (`north_star_advisor`, `clarity_reviewer`, `simplicity_advocate`, `security_skeptic`, `deletion_advocate`, `documentation_critic`). Copy and edit — the *value* of your project's advisors is in how they reflect *this project's* priorities, not the generic preset.
