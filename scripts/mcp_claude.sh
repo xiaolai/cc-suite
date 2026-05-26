@@ -27,9 +27,23 @@ SENTINEL_OPEN="# >>> cc-suite-claude-mcp >>>"
 SENTINEL_CLOSE="# <<< cc-suite-claude-mcp <<<"
 
 # ── idempotency check ────────────────────────────────────────────────────────
-if [ -f "$TOML" ] && grep -qF "$SENTINEL_OPEN" "$TOML"; then
-  skip "$TOML already contains cc-suite claude-code MCP block"
-  exit 0
+# Two-stage check: (1) cc-suite's own sentinel block already present, or
+# (2) some other tool — or the user — already registered a [mcp_servers.claude-code]
+# table. In the second case we must NOT append a duplicate, since TOML treats
+# two tables with the same key as a parse error and Codex will refuse to start.
+if [ -f "$TOML" ]; then
+  if grep -qF "$SENTINEL_OPEN" "$TOML"; then
+    skip "$TOML already contains cc-suite claude-code MCP block"
+    exit 0
+  fi
+  # Match both `[mcp_servers.claude-code]` and `[mcp_servers."claude-code"]`,
+  # allowing leading whitespace. A pre-existing entry takes precedence —
+  # cc-suite refuses to clobber user-managed config.
+  if grep -qE '^[[:space:]]*\[mcp_servers\.(claude-code|"claude-code")\][[:space:]]*$' "$TOML"; then
+    skip "$TOML already registers [mcp_servers.claude-code] (not cc-suite-managed) — leaving it alone"
+    skip "  to let cc-suite manage it, remove the existing block and re-run /cc-suite:repair"
+    exit 0
+  fi
 fi
 
 # ── build the TOML block ─────────────────────────────────────────────────────

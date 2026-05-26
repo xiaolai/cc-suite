@@ -910,6 +910,88 @@ fi
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# T34  mcp_claude.sh — appends claude-code block to a fresh config.toml
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T34: mcp_claude.sh — appends claude-code MCP block"
+make_tmp
+
+assert_exit0 bash "$SCRIPTS/mcp_claude.sh"
+
+assert_file ".codex/config.toml"
+assert_contains ".codex/config.toml" ">>> cc-suite-claude-mcp >>>"
+assert_contains ".codex/config.toml" "[mcp_servers.claude-code]"
+assert_contains ".codex/config.toml" "claude-octopus@"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T35  mcp_claude.sh — idempotent when cc-suite sentinel block already present
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T35: mcp_claude.sh — idempotent on re-run"
+make_tmp
+
+bash "$SCRIPTS/mcp_claude.sh" >/dev/null 2>&1
+hash1="$(md5 -q .codex/config.toml 2>/dev/null || md5sum .codex/config.toml | awk '{print $1}')"
+
+assert_exit0 bash "$SCRIPTS/mcp_claude.sh"
+hash2="$(md5 -q .codex/config.toml 2>/dev/null || md5sum .codex/config.toml | awk '{print $1}')"
+
+if [ "$hash1" = "$hash2" ]; then ok_msg ".codex/config.toml unchanged on re-run"
+else                              fail_msg ".codex/config.toml changed on re-run"; fi
+
+# Sentinel block must appear exactly once after re-run.
+assert_count ">>> cc-suite-claude-mcp >>>" ".codex/config.toml" "1"
+assert_count "[mcp_servers.claude-code]"  ".codex/config.toml" "1"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T36  mcp_claude.sh — refuses to clobber a pre-existing [mcp_servers.claude-code]
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T36: mcp_claude.sh — leaves user-managed claude-code block alone"
+make_tmp
+
+mkdir -p .codex
+cat > .codex/config.toml <<'TOML'
+[mcp_servers.claude-code]
+command = "node"
+args    = ["/path/to/user/server.js"]
+env     = {}
+TOML
+
+assert_exit0 bash "$SCRIPTS/mcp_claude.sh"
+
+# cc-suite sentinel must NOT have been added, and the user's command must remain.
+assert_not_contains ".codex/config.toml" ">>> cc-suite-claude-mcp >>>"
+assert_not_contains ".codex/config.toml" "claude-octopus@"
+assert_contains     ".codex/config.toml" "/path/to/user/server.js"
+# And the file must still have exactly one [mcp_servers.claude-code] table —
+# Codex would refuse to parse two duplicates, which is the bug this guards against.
+assert_count "[mcp_servers.claude-code]" ".codex/config.toml" "1"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T36b mcp_claude.sh — also recognises the quoted-key form
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T36b: mcp_claude.sh — recognises quoted [mcp_servers.\"claude-code\"]"
+make_tmp
+
+mkdir -p .codex
+cat > .codex/config.toml <<'TOML'
+[mcp_servers."claude-code"]
+command = "node"
+args    = ["other.js"]
+TOML
+
+assert_exit0 bash "$SCRIPTS/mcp_claude.sh"
+
+assert_not_contains ".codex/config.toml" ">>> cc-suite-claude-mcp >>>"
+assert_contains     ".codex/config.toml" 'other.js'
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Summary
 # ═══════════════════════════════════════════════════════════════════════════════
 echo
