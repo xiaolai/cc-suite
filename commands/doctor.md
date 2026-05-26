@@ -81,8 +81,8 @@ Group all findings into three buckets:
 |---|------|--------|-----------|-------------|
 | 1 | `.agents/skills` | missing | Codex cannot see any skills | `/cc-suite:bridge-skills` |
 | 2 | `.codex/hooks.json` | missing | Project hooks not bridged to Codex | `/cc-suite:bridge-hooks` (only needed if you have hooks in `.claude/settings.json`) |
-| 3 | `.mcp.json → codex-cli` | missing | Claude cannot invoke Codex as MCP tool | `/cc-suite:init` step 7 |
-| 4 | `.codex/config.toml → claude-code` | missing | Codex cannot invoke Claude as MCP tool | `/cc-suite:init` step 8 |
+| 3 | `.mcp.json → codex-cli` | missing | Claude cannot invoke Codex as MCP tool | `/cc-suite:init` step 8 |
+| 4 | `.codex/config.toml → claude-code` | missing | Codex cannot invoke Claude as MCP tool | `/cc-suite:init` step 9 |
 | 5 | `plugin_hooks` | not set | Plugin-bundled Codex hooks are inert | Add `plugin_hooks = true` under `[features]` in `~/.codex/config.toml` |
 | 6 | `project trust` | not trusted | Codex hooks and rules are inert for this project | Run `codex` once in this directory and accept the trust prompt |
 | 7 | stale nested symlink | present | Duplicate skills visible in Codex | `rm {path}` then `/cc-suite:bridge-skills` |
@@ -142,14 +142,14 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_hooks.py"
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_mcp.sh"
 ```
 
-**`/cc-suite:init` step 7 (codex-cli MCP) — fixes both missing and stale registrations** — run:
+**`/cc-suite:init` step 8 (codex-cli MCP) — fixes both missing and stale registrations** — run:
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_codex.sh"
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_mcp.sh"
 ```
 After this runs, **restart Claude Code** so the MCP loader picks up the new server definition.
 
-**`/cc-suite:init` step 8 (claude-code MCP)** — run:
+**`/cc-suite:init` step 9 (claude-code MCP)** — run:
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_claude.sh"
 ```

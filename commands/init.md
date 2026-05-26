@@ -5,12 +5,14 @@ description: Initialize cc-suite for the current project — sets up the AGENTS.
 
 # CC-Suite Init
 
-Set up cc-suite for the current project. This command runs four sub-routines in order:
+Set up cc-suite for the current project. This command leaves the project with **every bridge artifact in place** — anything `/cc-suite:repair` would re-create is created here first. The sub-routines, in order:
 
-1. **Bridge init** — creates `AGENTS.md`, `CLAUDE.md` (`@AGENTS.md`), and `.codex/config.toml`
-2. **Codex MCP registration** — adds the `codex-cli` MCP server to `.mcp.json`
-3. **Claude MCP registration** — adds the `claude-code` MCP server to `.codex/config.toml`
-4. **Project config** — generates `.cc-suite.md` with your preferred audit settings
+1. **Project config** — generates `.cc-suite.md` with your preferred audit settings
+2. **Bridge init** — creates `AGENTS.md`, `CLAUDE.md` (`@AGENTS.md`), `GEMINI.md`, `.codex/config.toml`, and the `.gitignore` block
+3. **Skills bridge** — exposes cc-suite's plugin skills via `.claude/skills/cc-suite` and `.agents/skills`
+4. **Codex MCP registration** — adds the `codex-cli` MCP server to `.mcp.json` and mirrors any other project MCP servers into `.codex/config.toml`
+5. **Claude MCP registration** — adds the `claude-code` MCP server (claude-octopus) to `.codex/config.toml`
+6. **Hooks bridge** — mirrors `.claude/settings.json` hooks into `.codex/hooks.json` (no-op if there are no hooks)
 
 ## Workflow
 
@@ -192,7 +194,7 @@ Display the generated `.cc-suite.md` settings.
 
 ### Step 6: Bridge init
 
-Run the bridge init script to create the single-source `AGENTS.md` and wire `CLAUDE.md` to import it:
+Run the bridge init script to create the single-source `AGENTS.md` and wire `CLAUDE.md` / `GEMINI.md` to import it:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/init.sh"
@@ -202,7 +204,19 @@ If the script exits non-zero, report the error and stop. A successful run will p
 
 ---
 
-### Step 7: Register Codex MCP server
+### Step 7: Expose plugin skills
+
+Link cc-suite's plugin skills into `.claude/skills/cc-suite/` and create `.agents/skills → ../.claude/skills` so Codex can see the same skill set as Claude Code:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_skills.sh"
+```
+
+If the script exits non-zero, report the error and stop.
+
+---
+
+### Step 8: Register Codex MCP server
 
 Add the `codex-cli` MCP server to `.mcp.json` so Claude can invoke Codex as an MCP tool:
 
@@ -222,7 +236,7 @@ If the script exits non-zero, report the error and stop.
 
 ---
 
-### Step 8: Register Claude MCP server
+### Step 9: Register Claude MCP server
 
 Add the `claude-code` MCP server (claude-octopus) to `.codex/config.toml` so Codex can invoke Claude as an MCP tool:
 
@@ -234,7 +248,19 @@ If the script exits non-zero, report the error and stop.
 
 ---
 
-### Step 9: Final summary
+### Step 10: Bridge hooks
+
+Mirror `.claude/settings.json` hooks into `.codex/hooks.json` so Codex runs the same lifecycle hooks Claude Code does. This is a no-op when the project has no hooks yet — safe to run unconditionally:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_hooks.py"
+```
+
+If the script exits non-zero, report the error and stop.
+
+---
+
+### Step 11: Final summary
 
 Display a combined status report:
 

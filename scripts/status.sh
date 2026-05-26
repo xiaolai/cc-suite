@@ -117,7 +117,7 @@ PY
   case "$_codex_cli_rc" in
     0) mark ".mcp.json → Claude" ok   "codex-cli registered (codex mcp-server)" ;;
     1) mark ".mcp.json → Claude" warn "codex-cli stale (legacy npm registration) — run /cc-suite:repair" ;;
-    2) mark ".mcp.json → Claude" miss "codex-cli not registered (run /cc-suite:init step 7)" ;;
+    2) mark ".mcp.json → Claude" miss "codex-cli not registered (run /cc-suite:init step 8)" ;;
     *) mark ".mcp.json → Claude" warn ".mcp.json unreadable" ;;
   esac
 else
@@ -138,7 +138,7 @@ if [ -f .codex/config.toml ]; then
   elif grep -qE '^[[:space:]]*\[mcp_servers\.(claude-code|"claude-code")\][[:space:]]*$' .codex/config.toml; then
     mark ".codex/config.toml → Codex" warn "claude-code registered by another source (not cc-suite-managed)"
   else
-    mark ".codex/config.toml → Codex" miss "claude-code not registered (run /cc-suite:init step 8)"
+    mark ".codex/config.toml → Codex" miss "claude-code not registered (run /cc-suite:init step 9)"
   fi
 else
   mark ".codex/config.toml → Codex" miss "(run /cc-suite:init)"

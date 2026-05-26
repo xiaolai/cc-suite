@@ -23,14 +23,22 @@ Tell the user the active version. If they haven't yet run `claude plugin update 
 
 ### Step 2: Re-render the bridge artifacts
 
-Run the four scripts that own cc-suite's `.codex/` footprint. Each one is now freshen-aware — sentinel blocks whose pinned versions no longer match the plugin's expectations are rewritten in place.
+Run every bridge script (mirrors what `/cc-suite:repair` would run). This is the user-side half of the coupled-release contract — every artifact the plugin owns gets rewritten against the *current* plugin's expectations.
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_codex.sh"
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_claude.sh"
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_mcp.sh"
+bash    "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_skills.sh"
+bash    "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_codex.sh"
+bash    "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_claude.sh"
+bash    "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_mcp.sh"
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_hooks.py"
 ```
+
+`bridge_skills.sh` is critical here: the `.claude/skills/cc-suite` symlink points at the plugin's version-stamped cache path (e.g. `~/.claude/plugins/cache/xiaolai/cc-suite/0.3.0/skills/cc-suite`). After `claude plugin update`, the new version lives at a different cache path, so the symlink is stale until re-pointed.
+
+`mcp_claude.sh` will print one of:
+- `· already pins claude-octopus@<version>` → no-op, already current.
+- `✓ claude-code MCP server refreshed (now pinned @<version>)` → block was stale, has been rewritten.
+- `· … not cc-suite-managed — leaving it alone` → a user-owned block exists; surface this so the user knows their custom registration is being preserved.
 
 The `mcp_claude.sh` output will indicate one of:
 - `· already pins claude-octopus@<version>` → no-op, already current.
