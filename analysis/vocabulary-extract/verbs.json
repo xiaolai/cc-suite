@@ -1,0 +1,215 @@
+{
+  "root": "/Users/joker/github/xiaolai/myprojects/claude-plugins/cc-suite",
+  "by_source": {
+    "commands:filename": {
+      "add": 1,
+      "agent": 3,
+      "audit": 8,
+      "command": 1,
+      "fix": 1,
+      "nlp": 1,
+      "plugin": 1,
+      "rules": 1,
+      "skill": 1,
+      "bridge": 3,
+      "hooks": 1,
+      "mcp": 1,
+      "skills": 1,
+      "bug": 1,
+      "analyze": 1,
+      "cancel": 1,
+      "continue": 1,
+      "doctor": 1,
+      "implement": 1,
+      "init": 1,
+      "list": 1,
+      "agents": 1,
+      "preflight": 1,
+      "refresh": 1,
+      "knowledge": 1,
+      "remove": 1,
+      "repair": 1,
+      "result": 1,
+      "review": 1,
+      "plan": 1,
+      "setup": 1,
+      "status": 1,
+      "unbridge": 1,
+      "update": 1,
+      "verify": 1
+    },
+    "commands:description": {
+      "create": 1,
+      "audit": 1,
+      "initialize": 1,
+      "list": 1,
+      "check": 2,
+      "refresh": 2,
+      "remove": 1,
+      "fetch": 1
+    },
+    "skills:description": {
+      "initialize": 1
+    }
+  },
+  "scope": {
+    "add": [
+      "internal"
+    ],
+    "agent": [
+      "internal"
+    ],
+    "create": [
+      "internal"
+    ],
+    "audit": [
+      "internal"
+    ],
+    "command": [
+      "internal"
+    ],
+    "fix": [
+      "internal"
+    ],
+    "nlp": [
+      "internal"
+    ],
+    "plugin": [
+      "internal"
+    ],
+    "rules": [
+      "internal"
+    ],
+    "skill": [
+      "internal"
+    ],
+    "bridge": [
+      "internal"
+    ],
+    "hooks": [
+      "internal"
+    ],
+    "mcp": [
+      "internal"
+    ],
+    "skills": [
+      "internal"
+    ],
+    "bug": [
+      "internal"
+    ],
+    "analyze": [
+      "internal"
+    ],
+    "cancel": [
+      "internal"
+    ],
+    "continue": [
+      "internal"
+    ],
+    "doctor": [
+      "internal"
+    ],
+    "implement": [
+      "internal"
+    ],
+    "init": [
+      "internal"
+    ],
+    "initialize": [
+      "internal"
+    ],
+    "list": [
+      "internal"
+    ],
+    "agents": [
+      "internal"
+    ],
+    "preflight": [
+      "internal"
+    ],
+    "check": [
+      "internal"
+    ],
+    "refresh": [
+      "internal"
+    ],
+    "knowledge": [
+      "internal"
+    ],
+    "remove": [
+      "internal"
+    ],
+    "repair": [
+      "internal"
+    ],
+    "result": [
+      "internal"
+    ],
+    "fetch": [
+      "internal"
+    ],
+    "review": [
+      "internal"
+    ],
+    "plan": [
+      "internal"
+    ],
+    "setup": [
+      "internal"
+    ],
+    "status": [
+      "internal"
+    ],
+    "unbridge": [
+      "internal"
+    ],
+    "update": [
+      "internal"
+    ],
+    "verify": [
+      "internal"
+    ]
+  },
+  "totals": {
+    "audit": 9,
+    "agent": 3,
+    "bridge": 3,
+    "refresh": 3,
+    "list": 2,
+    "remove": 2,
+    "initialize": 2,
+    "check": 2,
+    "add": 1,
+    "command": 1,
+    "fix": 1,
+    "nlp": 1,
+    "plugin": 1,
+    "rules": 1,
+    "skill": 1,
+    "hooks": 1,
+    "mcp": 1,
+    "skills": 1,
+    "bug": 1,
+    "analyze": 1,
+    "cancel": 1,
+    "continue": 1,
+    "doctor": 1,
+    "implement": 1,
+    "init": 1,
+    "agents": 1,
+    "preflight": 1,
+    "knowledge": 1,
+    "repair": 1,
+    "result": 1,
+    "review": 1,
+    "plan": 1,
+    "setup": 1,
+    "status": 1,
+    "unbridge": 1,
+    "update": 1,
+    "verify": 1,
+    "create": 1,
+    "fetch": 1
+  }
+}

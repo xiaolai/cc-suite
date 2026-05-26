@@ -1,0 +1,7 @@
+{
+  "scopes": {
+    "commands":      { "scope": "internal", "glob": "commands/*.md",            "role": "verb-filename" },
+    "skills":        { "scope": "internal", "glob": "skills/*/*/SKILL.md",      "role": "skill-dirname" },
+    "agent_presets": { "scope": "internal", "glob": "templates/agents/*.md",    "role": "noun-filename" }
+  }
+}
