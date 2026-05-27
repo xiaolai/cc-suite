@@ -1,7 +1,7 @@
 ---
 name: audit-fix
 description: Audit→fix→verify loop — finds issues, fixes them, verifies fixes, repeats until clean or you stop
-argument-hint: "[scope] [--full | --mini]"
+argument-hint: "[scope] [--full | --mini] [--severity=all|high] [--fixer=claude|codex] [--ask]"
 ---
 
 ## User Input
@@ -15,11 +15,21 @@ $ARGUMENTS
 Runs a complete audit→fix→verify cycle:
 
 1. **Audit** — find issues (full 9-dimension or mini 5-dimension)
-2. **Fix** — Claude or Codex fixes the issues (your choice)
+2. **Fix** — Claude fixes by default (or Codex with `--fixer=codex`)
 3. **Verify** — check that each fix actually resolved the issue
 4. **Repeat** — if issues remain, loop back to fix
 
 Continues until all issues are resolved or the user decides to stop.
+
+## Arguments
+
+By default this command runs **non-interactively**: fixes **all** findings using **Claude**, and stops at the end of the first round if any issues remain. Override the defaults with flags, or pass `--ask` to restore the interactive prompts.
+
+- `--severity=all|high` — which findings to fix (default `all`). `high` means "High severity and above": Critical+High on a full audit, High-only on a mini audit.
+- `--fixer=claude|codex` — who applies the fix (default `claude`).
+- `--ask` — show interactive `AskUserQuestion` prompts for fix scope, fixer choice, and the partial-iteration continue/switch decision.
+
+The `danger-full-access` sandbox warning below is always shown regardless of `--ask`.
 
 ## Model & Settings Selection
 
@@ -64,9 +74,13 @@ If **no issues found** → report CLEAN and STOP.
 
 Set `iteration = 1`.
 
-#### 3a: Ask before fixing
+#### 3a: Determine fix scope and fixer
 
-**Question 1 — Scope** (severity filter):
+Parse `--severity=`, `--fixer=`, and `--ask` from `$ARGUMENTS` (see **Arguments** above).
+
+**Scope** (severity filter):
+
+If `--ask` is set, prompt:
 
 For a **full audit** (has Critical severity):
 ```
@@ -98,7 +112,13 @@ AskUserQuestion:
 
 If "Stop here" → display final report and STOP.
 
-**Question 2 — Who fixes**:
+Otherwise (no `--ask`), apply the flag/default silently:
+- `--severity=all` (default) → fix all findings
+- `--severity=high` → filter to Critical+High (full audit) or High-only (mini audit)
+
+**Fixer**:
+
+If `--ask` is set, prompt:
 
 ```
 AskUserQuestion:
@@ -110,6 +130,10 @@ AskUserQuestion:
     - label: "Codex"
       description: "Send to Codex for autonomous fixing — sandboxed, isolated"
 ```
+
+Otherwise, apply the flag/default silently:
+- `--fixer=claude` (default) → Claude
+- `--fixer=codex` → Codex
 
 Store as `{chosen_fixer}`.
 
@@ -178,7 +202,7 @@ Save the result `threadId` as `{verify_threadId}`. If the runner returns `failed
 
 - **All FIXED** → proceed to Step 4
 - **Issues remain (NOT FIXED / PARTIAL / REGRESSED)** and `iteration < 3`:
-  - Increment `iteration`, show remaining issues, ask:
+  - If `--ask` is set, increment `iteration`, show remaining issues, and ask:
     ```
     AskUserQuestion:
       question: "{remaining} issues remain after round {iteration-1}. Try fixing again?"
@@ -191,9 +215,10 @@ Save the result `threadId` as `{verify_threadId}`. If the runner returns `failed
         - label: "Stop here"
           description: "Accept current state, fix remaining issues manually"
     ```
-  - "Fix remaining" → go to **3b** with remaining issues (same fixer)
-  - "Switch fixer" → flip `{chosen_fixer}`, go to **3b**. If switching TO Codex and sandbox is `danger-full-access`, re-confirm with the user before proceeding (same warning as initial sandbox confirmation).
-  - "Stop here" → proceed to Step 4
+    - "Fix remaining" → go to **3b** with remaining issues (same fixer)
+    - "Switch fixer" → flip `{chosen_fixer}`, go to **3b**. If switching TO Codex and sandbox is `danger-full-access`, re-confirm with the user before proceeding (same warning as initial sandbox confirmation).
+    - "Stop here" → proceed to Step 4
+  - Otherwise (no `--ask`), default to "Stop here" — proceed to Step 4 with current partial state, leaving the remaining issues in the final report so the user can decide manually.
 - **iteration = 3** → proceed to Step 4
 
 ### Step 4: Final report

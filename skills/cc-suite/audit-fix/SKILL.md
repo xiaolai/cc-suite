@@ -1,7 +1,7 @@
 ---
 name: audit-fix
 description: "Full audit→fix→verify cycle: Claude audits, Codex fixes, Claude verifies. Repeats up to 3 rounds until all issues are resolved or the user stops. Claude does all code reading and judgment; Codex does all file editing."
-version: 0.2.3
+version: 0.2.4
 ---
 
 # Audit-Fix
@@ -23,7 +23,11 @@ This is the primary quality loop: Claude provides independent analysis and verif
 | `--full` | off | 9-dimension audit |
 | `--mini` | on | 5-dimension audit (faster) |
 | `--rounds N` | 3 | Maximum fix→verify iterations |
+| `--severity=all\|high` | `all` | Which findings to fix. `high` = Critical+High (full) or High-only (mini) |
+| `--ask` | off | Restore interactive severity-filter and continue/stop prompts |
 | file/dir path | cwd | Scope |
+
+By default this skill runs **non-interactively**: fixes **all** findings, and stops after the first round if any issues remain. Pass `--ask` to restore the prompts.
 
 ## Workflow
 
@@ -54,7 +58,11 @@ If **no findings** → report CLEAN and stop.
 
 Display findings table to the user.
 
-### Step 2: Severity filter (ask user)
+### Step 2: Severity filter
+
+Parse `--severity=` and `--ask` from arguments.
+
+If `--ask` is set:
 
 ```
 Ask user: "Found N issues (Critical: N, High: N, Medium: N, Low: N). Which to fix?"
@@ -65,6 +73,10 @@ Options:
 ```
 
 If "Stop here" → display final report and stop.
+
+Otherwise apply the flag/default silently:
+- `--severity=all` (default) → fix all findings
+- `--severity=high` → filter to Critical+High (full audit) or High-only (mini audit)
 
 ### Step 3: Fix loop (max {--rounds} iterations, default 3)
 
@@ -104,11 +116,13 @@ mcp__claude-code__claude_code_reply:
 
 - **All FIXED** → proceed to Step 4
 - **Issues remain** and `round < {--rounds}`:
-  - Increment `round`
-  - Show remaining issues
-  - Ask: "N issues remain after round {round-1}. Fix again? (yes / stop)"
-  - "yes" → back to 3a with remaining issues only
-  - "stop" → proceed to Step 4
+  - If `--ask` is set:
+    - Increment `round`
+    - Show remaining issues
+    - Ask: "N issues remain after round {round-1}. Fix again? (yes / stop)"
+    - "yes" → back to 3a with remaining issues only
+    - "stop" → proceed to Step 4
+  - Otherwise (no `--ask`): default to "stop" — proceed to Step 4 with current partial state.
 - **round == {--rounds}** → proceed to Step 4
 
 ### Step 4: Final report
