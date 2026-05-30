@@ -61,7 +61,10 @@ function runStopReview(cwd, input = {}) {
     ...(input.session_id ? { [SESSION_ID_ENV]: input.session_id } : {}),
   };
 
-  // Use codex CLI directly for the review
+  // Use codex CLI directly for the review. stdio[0] = "ignore" makes Node
+  // attach /dev/null to the child's fd 0 — equivalent to `codex exec ... <
+  // /dev/null` from a shell. Required because this hook runs in a no-TTY
+  // background context where `codex exec` can otherwise hang on stdin.
   const result = spawnSync(
     "codex",
     [

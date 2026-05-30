@@ -137,6 +137,11 @@ function executeCodex(cwd, args, logFile) {
     let settled = false;
     let timedOut = false;
 
+    // stdio[0] = "ignore" tells Node to open /dev/null and attach it to the
+    // child's fd 0 — equivalent to running `codex exec ... < /dev/null` from a
+    // shell. Required because `codex exec` can hang on stdin in background /
+    // hook contexts that lack a controlling TTY. Do not change to "pipe" or
+    // "inherit" without preserving an explicit /dev/null on stdin.
     const child = spawn("codex", codexArgs, {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],

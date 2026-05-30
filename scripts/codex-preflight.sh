@@ -99,14 +99,18 @@ fi
 
 # ── Step 2: Get codex version ────────────────────────────────────────────────
 
-CODEX_VERSION=$(codex --version 2>/dev/null || echo "unknown")
+# All `codex` invocations below redirect stdin from /dev/null. This script may
+# run from background/hook contexts (Claude Code hooks, /cc-suite:preflight,
+# /cc-suite:init) with no controlling TTY, where `codex` subcommands can
+# otherwise block on stdin waiting for interactive prompts.
+CODEX_VERSION=$(codex --version </dev/null 2>/dev/null || echo "unknown")
 info "Codex version: $CODEX_VERSION"
 
 # ── Step 3: Check authentication ─────────────────────────────────────────────
 
 AUTH_MODE="unknown"
 
-LOGIN_STATUS=$(codex login status 2>&1) || true
+LOGIN_STATUS=$(codex login status </dev/null 2>&1) || true
 if echo "$LOGIN_STATUS" | grep -qi "logged in"; then
   if echo "$LOGIN_STATUS" | grep -qi "chatgpt"; then
     AUTH_MODE="chatgpt_login"
@@ -157,9 +161,9 @@ else
   info "No models_cache.json found, attempting to refresh..."
   TIMEOUT_CMD=$(resolve_timeout_cmd)
   if [[ -n "$TIMEOUT_CMD" ]]; then
-    $TIMEOUT_CMD "$REFRESH_TIMEOUT" codex login --refresh &>/dev/null || true
+    $TIMEOUT_CMD "$REFRESH_TIMEOUT" codex login --refresh </dev/null &>/dev/null || true
   else
-    codex login --refresh &>/dev/null || true
+    codex login --refresh </dev/null &>/dev/null || true
   fi
   if [[ -f "$MODELS_CACHE" ]]; then
     USE_CACHE=true
@@ -245,7 +249,7 @@ fi
 CODEX_CLOUD="false"
 TIMEOUT_CMD=$(resolve_timeout_cmd)
 if [[ -n "$TIMEOUT_CMD" ]]; then
-  if $TIMEOUT_CMD "$CLOUD_TIMEOUT" codex cloud list &>/dev/null; then
+  if $TIMEOUT_CMD "$CLOUD_TIMEOUT" codex cloud list </dev/null &>/dev/null; then
     CODEX_CLOUD="true"
   fi
 else
