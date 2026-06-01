@@ -385,11 +385,18 @@ def update_codex_toml(agents: List[Dict[str, Any]], pin: str) -> List[str]:
         env = agent_to_env(agent)
         env_block_lines = [f"{_toml_quote_key(k)} = {_toml_str(v)}" for k, v in env.items()]
         env_block = "\n".join(env_block_lines)
+        # Timeout fields must appear before the [.env] sub-table header — once
+        # that sub-table is opened we cannot add more keys to the parent table
+        # without a new [parent] header. tool_timeout_sec=900 covers
+        # multi-minute claude_code agent calls (Codex default is ~120s);
+        # startup_timeout_sec=60 covers cold-cache npx -y downloads.
         block = (
             f"{SENTINEL_OPEN}{name} >>>\n"
             f"[mcp_servers.{_toml_quote_key(name)}]\n"
             f'command = "npx"\n'
             f'args    = ["-y", "claude-octopus@{pin}"]\n'
+            f"startup_timeout_sec = 60\n"
+            f"tool_timeout_sec    = 900\n"
             f"[mcp_servers.{_toml_quote_key(name)}.env]\n"
             f"{env_block}\n"
             f"{SENTINEL_CLOSE}{name} <<<\n"

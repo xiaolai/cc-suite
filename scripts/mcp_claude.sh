@@ -45,6 +45,12 @@ ${SENTINEL_OPEN}
 command = "npx"
 args    = ["-y", "${PIN_MARKER}"]
 env     = {}
+# Codex default tool_timeout_sec is too short for claude_code calls: a
+# single multi-turn agent invocation can run several minutes, so 900s
+# matches the forward-direction codex-runner deadline. startup_timeout_sec
+# covers cold-cache npx -y downloads on first launch.
+startup_timeout_sec = 60
+tool_timeout_sec    = 900
 ${SENTINEL_CLOSE}
 TOML
 )"
@@ -66,7 +72,13 @@ if [ -f "$TOML" ]; then
       $0 == sclose { capture=0 }
     ' "$TOML")"
 
-    if printf '%s' "$current_block" | grep -qF "$PIN_MARKER"; then
+    # The block is considered up-to-date only if it pins the current
+    # claude-octopus version AND carries the tool_timeout_sec field added in
+    # cc-suite 0.7.2. Without the timeout check, configs pinned at the right
+    # version but written by a pre-0.7.2 cc-suite would never refresh, and
+    # `claude_code` tool calls would keep hitting Codex's default 120s ceiling.
+    if printf '%s' "$current_block" | grep -qF "$PIN_MARKER" \
+       && printf '%s' "$current_block" | grep -q "tool_timeout_sec"; then
       skip "$TOML already pins ${PIN_MARKER}"
       exit 0
     fi
