@@ -169,72 +169,10 @@ fi
 bash "${SCRIPT_DIR}/bridge_skills.sh"
 
 # --- 7. .gitignore ----------------------------------------------------------
-SENTINEL_START="# >>> cc-suite >>>"
-SENTINEL_END="# <<< cc-suite <<<"
-GITIGNORE_FILE=".gitignore"
-[ -f "$GITIGNORE_FILE" ] || touch "$GITIGNORE_FILE"
-# Detect the privacy mode of an existing block so we can replace it if it changed.
-EXISTING_PRIVATE=0
-if grep -qF "$SENTINEL_START" "$GITIGNORE_FILE"; then
-  grep -qF "cc-suite: PRIVATE mode" "$GITIGNORE_FILE" && EXISTING_PRIVATE=1 || EXISTING_PRIVATE=0
-  if [ "$PRIVATE" = "$EXISTING_PRIVATE" ]; then
-    skip ".gitignore already has cc-suite block (mode unchanged)"
-  else
-    # Remove the old block so it can be rewritten with the new mode below.
-    python3 - <<'PY'
-from pathlib import Path
-text = Path(".gitignore").read_text()
-start = text.find("# >>> cc-suite >>>")
-end   = text.find("# <<< cc-suite <<<")
-if start != -1 and end != -1:
-    nl = text.find("\n", end)
-    tail = nl + 1 if nl != -1 else len(text)
-    Path(".gitignore").write_text(text[:start].rstrip() + "\n" + text[tail:])
-PY
-  fi
-fi
-if ! grep -qF "$SENTINEL_START" "$GITIGNORE_FILE"; then
-  {
-    echo
-    echo "$SENTINEL_START"
-    cat <<'GI'
-# AI assistant local state
-.claude/settings.local.json
-.claude/CLAUDE.local.md
-.claude/*.local.*
-CLAUDE.local.md
-
-# Codex CLI — local files, keep checked-in subdirs
-.codex/*
-!.codex/skills/
-!.codex/prompts/
-!.codex/hooks.json
-!.codex/hooks.cc-suite.json
-!.codex/config.toml
-
-# Gemini CLI — local files, keep checked-in subdirs
-.gemini/*
-!.gemini/skills/
-!.gemini/commands/
-GI
-    if [ "$PRIVATE" = "1" ]; then
-      cat <<'GI'
-
-# cc-suite: PRIVATE mode — bridge artifacts not shared
-AGENTS.md
-CLAUDE.md
-GEMINI.md
-.claude/
-.agents/
-.codex/
-.gemini/
-.mcp.json
-GI
-    fi
-    echo "$SENTINEL_END"
-  } >> "$GITIGNORE_FILE"
-  ok ".gitignore: cc-suite block appended ($([ "$PRIVATE" = "1" ] && echo private || echo public) mode)"
-fi
+# Delegates to scripts/ensure_gitignore.sh — same helper bridge_skills.sh
+# calls, so the block stays in sync whether the user re-runs /cc-suite:init
+# or just /cc-suite:bridge-skills. PRIVATE carries the --private flag.
+PRIVATE="$PRIVATE" bash "$SCRIPT_DIR/ensure_gitignore.sh"
 
 echo
 ok "cc-suite init complete. Edit AGENTS.md for shared instructions."

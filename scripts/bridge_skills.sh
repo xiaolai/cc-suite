@@ -70,3 +70,9 @@ else
   count="$(find -L .agents/skills/ -maxdepth 2 -mindepth 2 -type d 2>/dev/null | wc -l | tr -d ' ')"
   ok ".agents/skills → ../.claude/skills (${count} skills visible to Codex)"
 fi
+
+# ── Step 3: ensure .gitignore covers the symlinks we just created ────────────
+# Hand off to the shared helper (also used by init.sh). CC_SUITE_RESPECT_MODE
+# preserves a PRIVATE block if the project chose that mode; new blocks are
+# created in the default public mode.
+CC_SUITE_RESPECT_MODE=1 bash "$SCRIPT_DIR/ensure_gitignore.sh"
