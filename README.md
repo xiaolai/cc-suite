@@ -18,6 +18,7 @@ Each tool reads from its own files. `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` sit ne
 | **MCP parity** | Mirrors `.mcp.json` project servers into `.codex/config.toml` so Codex sees the same servers. |
 | **Claude → Codex delegation** | Registers the `codex-cli` MCP server in `.mcp.json`. Claude can call `/audit`, `/implement`, `/bug-analyze`, and more directly. Full Codex job tracking, background mode, and stop-time review gate included. |
 | **Codex → Claude delegation** | Registers the `claude-code` MCP server (claude-octopus) in `.codex/config.toml`. Codex skills `$claude-review`, `$claude-plan`, `$claude-implement`, `$claude-debug` delegate to Claude and return structured results. |
+| **Codex reads Claude session history** | The same `claude-code` MCP server exposes `claude_code_sessions` (list this repo's Claude Code sessions, or all projects with `all_projects: true`) and `claude_code_transcript` (read a session by id). Codex can enumerate and read past Claude conversations for the repo. |
 
 ## Install
 
@@ -101,6 +102,15 @@ When Codex has `claude-code` registered in `.codex/config.toml`, it can invoke t
 | `claude-debug` | `$claude-debug` | Send a bug or failing test to Claude for root-cause analysis and fix. |
 
 All delegation calls include a provenance disclosure so Claude evaluates the work with full rigor rather than deferring to it.
+
+Beyond delegation, the `claude-code` MCP server also lets Codex **read Claude's session history** directly (no skill needed — these are plain MCP tools Codex discovers automatically):
+
+| Tool | What it does |
+|------|--------------|
+| `claude_code_sessions` | List Claude Code sessions, newest first. Scoped to the current repo by default; pass `all_projects: true` to list every project on the machine. Returns `session_id`, title, first prompt, git branch, and timestamps. |
+| `claude_code_transcript` | Read a full session transcript by `session_id` (from `claude_code_sessions`). |
+
+> Privacy note: reading a transcript surfaces that conversation's content to Codex (and thus to OpenAI). Session listing is repo-scoped by default; `all_projects: true` widens it to every project on the machine.
 
 ## Bidirectional delegation
 

@@ -2,7 +2,9 @@
 # cc-suite: add (or refresh) the claude-octopus MCP server in .codex/config.toml.
 #
 # claude-octopus wraps the Anthropic Claude Agent SDK and exposes claude_code /
-# claude_code_reply tools so Codex can delegate tasks back to Claude.
+# claude_code_reply tools so Codex can delegate tasks back to Claude, plus
+# claude_code_sessions / claude_code_transcript so Codex can list and read
+# Claude Code's session history for the repo.
 #
 # The pinned version lives in scripts/lib/claude-octopus-pin.txt — single source
 # of truth, also read by the boot-handshake test and the integration suite.
