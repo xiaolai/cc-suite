@@ -23,10 +23,20 @@ set -euo pipefail
 
 SENTINEL_START="# >>> cc-suite >>>"
 SENTINEL_END="# <<< cc-suite <<<"
-SCHEMA_MARKER="# cc-suite-schema: 2"
+SCHEMA_MARKER="# cc-suite-schema: 3"
 
 GITIGNORE_FILE=".gitignore"
 PRIVATE="${PRIVATE:-0}"
+
+# A publishable plugin repo ships its root files to every installer, and Claude
+# Code auto-registers a plugin-root .mcp.json — starting `codex mcp-server` for
+# everyone who installs the plugin. The codex-cli registration is a dev-only
+# delegation aid, so in a plugin repo it must stay out of the published tree
+# even in public mode (in private mode the whole bridge is already ignored).
+IS_PLUGIN_REPO=0
+if [ -f ".claude-plugin/plugin.json" ] || [ -f ".codex-plugin/plugin.json" ]; then
+  IS_PLUGIN_REPO=1
+fi
 
 ok()   { printf '✓ %s\n' "$*"; }
 skip() { printf '· %s\n' "$*"; }
@@ -89,6 +99,16 @@ CLAUDE.local.md
 .claude/skills/cc-suite
 .agents/skills
 GI
+  if [ "$IS_PLUGIN_REPO" = "1" ] && [ "$PRIVATE" != "1" ]; then
+    cat <<'GI'
+
+# cc-suite: plugin repo — keep the dev-only Codex MCP registration out of the
+# published plugin. Claude Code auto-registers a plugin-root .mcp.json, which
+# would start `codex mcp-server` for every installer. Local dev use is fine;
+# the file just stays untracked.
+.mcp.json
+GI
+  fi
   if [ "$PRIVATE" = "1" ]; then
     cat <<'GI'
 
@@ -107,4 +127,16 @@ GI
 } >> "$GITIGNORE_FILE"
 
 mode_label=$([ "$PRIVATE" = "1" ] && echo private || echo public)
-ok ".gitignore: cc-suite block written ($mode_label mode, schema 2)"
+ok ".gitignore: cc-suite block written ($mode_label mode, schema 3)"
+
+# Self-heal an already-leaked plugin repo: if .mcp.json is now ignored but was
+# committed by an earlier cc-suite version, drop it from the index so the ignore
+# takes effect. The working-tree file is kept for local dev. No-op outside a git
+# repo or when nothing is tracked.
+if [ "$IS_PLUGIN_REPO" = "1" ] && [ "$PRIVATE" != "1" ]; then
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+     && git ls-files --error-unmatch .mcp.json >/dev/null 2>&1; then
+    git rm --cached --quiet .mcp.json
+    ok ".mcp.json untracked (was shipping in the published plugin — kept locally)"
+  fi
+fi

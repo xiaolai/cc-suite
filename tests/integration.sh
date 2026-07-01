@@ -1315,6 +1315,64 @@ assert_no_file ".mcp.json"
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# T48  ensure_gitignore.sh — plugin repo: .mcp.json ignored + self-heal untrack
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T48: ensure_gitignore.sh — plugin repo untracks & ignores .mcp.json"
+make_tmp
+
+git init -q; git config user.email t@t; git config user.name t
+mkdir -p .claude-plugin
+echo '{"name":"x","version":"0.1.0"}' > .claude-plugin/plugin.json
+printf '{"mcpServers":{"codex-cli":{"type":"stdio","command":"codex","args":["mcp-server"]}}}\n' > .mcp.json
+git add -A; git commit -qm init >/dev/null 2>&1
+
+assert_exit0 git ls-files --error-unmatch .mcp.json      # tracked before fix
+bash "$SCRIPTS/ensure_gitignore.sh" >/dev/null 2>&1
+assert_contains ".gitignore" "cc-suite-schema: 3"
+assert_exit_nonzero git ls-files --error-unmatch .mcp.json   # now untracked
+assert_exit0 git check-ignore .mcp.json                      # now ignored
+assert_file ".mcp.json"                                      # working file kept
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T49  ensure_gitignore.sh — non-plugin app repo keeps .mcp.json shared
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T49: ensure_gitignore.sh — app repo leaves .mcp.json tracked"
+make_tmp
+
+git init -q; git config user.email t@t; git config user.name t
+printf '{"mcpServers":{}}\n' > .mcp.json
+git add -A; git commit -qm init >/dev/null 2>&1
+
+bash "$SCRIPTS/ensure_gitignore.sh" >/dev/null 2>&1
+assert_exit0 git ls-files --error-unmatch .mcp.json     # stays tracked
+assert_exit_nonzero git check-ignore .mcp.json          # not ignored
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T50  ensure_gitignore.sh — schema-2 → schema-3 migration self-heals a leak
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T50: ensure_gitignore.sh — schema migration untracks leaked .mcp.json"
+make_tmp
+
+git init -q; git config user.email t@t; git config user.name t
+mkdir -p .claude-plugin
+echo '{"name":"x","version":"0.1.0"}' > .claude-plugin/plugin.json
+printf '{"mcpServers":{"codex-cli":{"type":"stdio","command":"codex","args":["mcp-server"]}}}\n' > .mcp.json
+printf '# >>> cc-suite >>>\n# cc-suite-schema: 2\n.claude/settings.local.json\n# <<< cc-suite <<<\n' > .gitignore
+git add -A; git commit -qm init >/dev/null 2>&1
+
+bash "$SCRIPTS/ensure_gitignore.sh" >/dev/null 2>&1
+assert_contains ".gitignore" "cc-suite-schema: 3"
+assert_count "# >>> cc-suite >>>" ".gitignore" 1   # single block, no duplication
+assert_exit_nonzero git ls-files --error-unmatch .mcp.json   # migrated + untracked
+assert_exit0 git check-ignore .mcp.json
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Summary
 # ═══════════════════════════════════════════════════════════════════════════════
 echo
