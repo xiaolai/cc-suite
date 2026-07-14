@@ -24,7 +24,10 @@ If repair still leaves issues, the next step is `/cc-suite:init` in a Claude Cod
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/init.sh"
 ```
 
-Creates `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.codex/config.toml`, scaffold directories, and the `.gitignore` block. Skips each artifact if it is already in place.
+Creates `AGENTS.md`, `CLAUDE.md`, Codex scaffolding, the `.agents/` workspace
+skills/MCP projections, and the `.gitignore` block. Antigravity CLI (`agy`)
+reads `AGENTS.md` natively and no new Gemini-era project scaffolding is
+created. Skips each artifact if it is already in place.
 
 ### Step 2: Expose skills
 
@@ -56,7 +59,9 @@ Adds `claude-code` (claude-octopus) to `.codex/config.toml` so Codex can invoke 
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_mcp.sh"
 ```
 
-Copies additional MCP servers from `.mcp.json` into `.codex/config.toml`.
+Copies additional MCP servers from `.mcp.json` into `.codex/config.toml` and the
+generated `.agents/mcp_config.json` projection for agy. User-managed agy
+configuration without cc-suite provenance is preserved.
 
 ### Step 6: Bridge hooks
 

@@ -23,7 +23,7 @@ set -euo pipefail
 
 SENTINEL_START="# >>> cc-suite >>>"
 SENTINEL_END="# <<< cc-suite <<<"
-SCHEMA_MARKER="# cc-suite-schema: 3"
+SCHEMA_MARKER="# cc-suite-schema: 5"
 
 GITIGNORE_FILE=".gitignore"
 PRIVATE="${PRIVATE:-0}"
@@ -90,14 +90,14 @@ CLAUDE.local.md
 !.codex/hooks.cc-suite.json
 !.codex/config.toml
 
-# Gemini CLI — local files, keep checked-in subdirs
-.gemini/*
-!.gemini/skills/
-!.gemini/commands/
-
 # cc-suite-managed symlinks (created by bridge_skills.sh) — derived, not authored
 .claude/skills/cc-suite
 .agents/skills
+
+# Antigravity workspace MCP config is generated from .mcp.json and may contain
+# credentials or machine-specific paths.
+.agents/mcp_config.json
+.agents/.cc-suite-mcp.provenance.json
 GI
   if [ "$IS_PLUGIN_REPO" = "1" ] && [ "$PRIVATE" != "1" ]; then
     cat <<'GI'
@@ -115,11 +115,9 @@ GI
 # cc-suite: PRIVATE mode — bridge artifacts not shared
 AGENTS.md
 CLAUDE.md
-GEMINI.md
 .claude/
 .agents/
 .codex/
-.gemini/
 .mcp.json
 GI
   fi
@@ -127,7 +125,7 @@ GI
 } >> "$GITIGNORE_FILE"
 
 mode_label=$([ "$PRIVATE" = "1" ] && echo private || echo public)
-ok ".gitignore: cc-suite block written ($mode_label mode, schema 3)"
+ok ".gitignore: cc-suite block written ($mode_label mode, schema 5)"
 
 # Self-heal an already-leaked plugin repo: if .mcp.json is now ignored but was
 # committed by an earlier cc-suite version, drop it from the index so the ignore

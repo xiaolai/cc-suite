@@ -13,7 +13,10 @@ Use this as the escalation step after `/cc-suite:diagnose` has tried targeted fi
 
 ### Step 1: Run bridge init
 
-Creates `AGENTS.md`, `CLAUDE.md` (`@AGENTS.md`), `GEMINI.md`, `.codex/config.toml`, `.codex/prompts/`, `.gemini/skills/`, `.gemini/commands/`, and the `.gitignore` block.
+Creates `AGENTS.md`, `CLAUDE.md` (`@AGENTS.md`), Codex scaffolding, the
+`.agents/skills` bridge, and the generated `.agents/mcp_config.json` projection.
+Antigravity CLI (`agy`) reads `AGENTS.md` natively and uses `.agents/` workspace
+assets; no new Gemini-era project files are created.
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/init.sh"
@@ -45,7 +48,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_claude.sh"
 
 ### Step 5: Mirror MCP servers
 
-Copies any additional MCP servers from `.mcp.json` into `.codex/config.toml` so Codex can see the full project MCP surface.
+Copies MCP servers from `.mcp.json` into `.codex/config.toml` and
+`.agents/mcp_config.json` so Codex and agy can see the full project MCP surface.
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_mcp.sh"

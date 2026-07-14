@@ -1,13 +1,13 @@
 ---
 name: bridge-skills
-description: Symlink .agents/skills/ → .claude/skills/ so Codex CLI sees all Claude skills without duplication.
+description: Symlink .agents/skills/ → .claude/skills/ so Codex CLI and Antigravity CLI (`agy`) see all Claude skills without duplication.
 allowed-tools:
   - Bash
 ---
 
 # /cc-suite:bridge-skills
 
-Create the skills bridge in the current working directory so that every skill under `.claude/skills/` is automatically available to Codex CLI (which scans `.agents/skills/`).
+Create the skills bridge in the current working directory so that every skill under `.claude/skills/` is automatically available to Codex CLI and Antigravity CLI (`agy`) through `.agents/skills/`.
 
 Idempotent. Skips if the symlink already points to the right target. Errors if `.agents/skills/` exists as a real directory (no silent overwrite).
 

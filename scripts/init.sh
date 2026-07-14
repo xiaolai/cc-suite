@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cc-suite: initialize the Claude / Codex / Gemini bridge in the current repo.
+# cc-suite: initialize the Claude / Codex / Antigravity (`agy`) bridge in the current repo.
 # Idempotent. Safe to re-run.
 
 set -euo pipefail
@@ -78,8 +78,9 @@ TPL
 
 **Always write new instructions, rules, and memory to `AGENTS.md` only.**
 
-Never modify `CLAUDE.md` or `GEMINI.md` directly — they only import `AGENTS.md`.
-This keeps Claude Code, Codex CLI, and Gemini CLI on the same context.
+Never modify `CLAUDE.md` directly — it only imports `AGENTS.md`.
+This keeps Claude Code, Codex CLI, and Antigravity CLI (`agy`) on the same
+context; Codex and `agy` both read `AGENTS.md` natively.
 
 ## Project Structure
 
@@ -87,8 +88,7 @@ This keeps Claude Code, Codex CLI, and Gemini CLI on the same context.
 - `.agents/skills/` — symlink to `.claude/skills/` (Codex skill scan path)
 - `.codex/prompts/` — Codex slash-command prompts
 - `.codex/hooks.json` / `.codex/config.toml` — Codex hooks/config (optional)
-- `.gemini/skills/`, `.gemini/commands/` — Gemini skills and TOML commands
-- `.mcp.json` — MCP server registrations (shared by all three tools)
+- `.mcp.json` — MCP server registrations (Claude Code + Codex)
 TPL
   } > AGENTS.md
   ok "AGENTS.md written ($([ "$CLAUDE_MIGRATED" = "1" ] && echo "migrated from CLAUDE.md" || echo "fresh"))"
@@ -112,19 +112,11 @@ else
   ok "CLAUDE.md created (@AGENTS.md import)"
 fi
 
-# --- 3. GEMINI.md → @AGENTS.md import --------------------------------------
-if [ -f GEMINI.md ]; then
-  _gemini_trim="$(tr -d '[:space:]' < GEMINI.md)"
-  if [ "$_gemini_trim" = "@AGENTS.md" ]; then
-    skip "GEMINI.md already imports @AGENTS.md"
-  else
-    skip "GEMINI.md exists with custom content — left alone"
-  fi
-else
-  echo "@AGENTS.md" > GEMINI.md
-  CC_SUITE_CREATED_GEMINI=1
-  ok "GEMINI.md created (@AGENTS.md import)"
-fi
+# --- 3. (removed) GEMINI.md ------------------------------------------------
+# Consumer Gemini CLI access moved to Antigravity CLI (`agy`) on 2026-06-18;
+# enterprise/API users may still retain legacy files. A GEMINI.md pointer is
+# not needed by agy and is no longer created for new projects.
+# unbridge.sh still removes a legacy GEMINI.md left by older cc-suite versions.
 
 # Record provenance so unbridge.sh can know whether to delete files it didn't create.
 mkdir -p .codex
@@ -133,12 +125,11 @@ PROVENANCE=".codex/.cc-suite.provenance"
   echo "# cc-suite provenance — used by unbridge.sh"
   [ -n "${CLAUDE_MIGRATED:-}" ]         && [ "$CLAUDE_MIGRATED" = "1" ]         && echo "CLAUDE_MIGRATED=1"
   [ -n "${CC_SUITE_CREATED_CLAUDE:-}" ] && echo "CC_SUITE_CREATED_CLAUDE=1"
-  [ -n "${CC_SUITE_CREATED_GEMINI:-}" ] && echo "CC_SUITE_CREATED_GEMINI=1"
 } >> "$PROVENANCE"
 
-# --- 4. Codex / Gemini scaffolding -----------------------------------------
-mkdir -p .codex/prompts .gemini/skills .gemini/commands
-for d in .codex/prompts .gemini/skills .gemini/commands; do
+# --- 4. Codex scaffolding ---------------------------------------------------
+mkdir -p .codex/prompts
+for d in .codex/prompts; do
   if [ ! -e "$d/.gitkeep" ]; then
     touch "$d/.gitkeep"
     ok "$d/.gitkeep"

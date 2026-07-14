@@ -70,8 +70,9 @@ For each `.cc-suite/agents/*.md`, extract from frontmatter:
 ### Status
 
 - Bridge script: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/bridge_agents.py` — run after editing any file above
-- Registrations live in: `.mcp.json` (Claude side) and `.codex/config.toml` (Codex side)
+- Registrations live in: `.mcp.json` (Claude side), `.codex/config.toml` (Codex side), and the generated `.agents/mcp_config.json` projection for agy
 - Restart Claude Code if you just added or removed an agent
+- Run `/cc-suite:bridge-mcp` after adding or editing an agent if agy should see it
 ```
 
 ### Step 4: Sanity-check registration

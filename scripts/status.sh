@@ -42,15 +42,15 @@ else
   mark "CLAUDE.md" miss
 fi
 
-# GEMINI.md
+# GEMINI.md — legacy compatibility only. Consumer Gemini CLI access moved to
+# Antigravity on 2026-06-18; enterprise/API users may still need this file.
+# cc-suite no longer creates it, but never deletes custom content automatically.
 if [ -f GEMINI.md ]; then
-  if grep -qE '^@AGENTS\.md\s*$' GEMINI.md; then
-    mark "GEMINI.md" ok "@AGENTS.md import"
+  if grep -qE '^@AGENTS\.md\s*$' GEMINI.md && [ "$(tr -d '[:space:]' < GEMINI.md)" = "@AGENTS.md" ]; then
+    mark "GEMINI.md" warn "legacy @AGENTS.md import — remove with /cc-suite:unbridge"
   else
-    mark "GEMINI.md" warn "substantive content (not @import)"
+    mark "GEMINI.md" warn "legacy/custom Google instructions — review or migrate manually"
   fi
-else
-  mark "GEMINI.md" miss
 fi
 
 # .agents/skills symlink
@@ -93,9 +93,35 @@ fi
 [ -f .codex/config.toml ] && mark ".codex/config.toml" ok "" \
                            || mark ".codex/config.toml" miss "(run /cc-suite:init)"
 
-# .gemini
-[ -d .gemini/skills ]   && mark ".gemini/skills/"   ok "" || mark ".gemini/skills/"   miss
-[ -d .gemini/commands ] && mark ".gemini/commands/" ok "" || mark ".gemini/commands/" miss
+# .gemini — legacy project config. Agy uses .agents/ for workspace assets.
+[ -d .gemini ] && mark ".gemini/" warn "legacy Google project dir — migrate skills/config to .agents/"
+
+# Antigravity workspace MCP configuration.
+if [ -f .agents/mcp_config.json ]; then
+  if [ -f .agents/.cc-suite-mcp.provenance.json ]; then
+    _agy_mcp_count=$(python3 -c '
+import json
+try:
+    print(len(json.load(open(".agents/mcp_config.json")).get("mcpServers", {})))
+except Exception:
+    print(0)
+' 2>/dev/null || echo 0)
+    mark ".agents/mcp_config.json → agy" ok "${_agy_mcp_count} workspace server(s), cc-suite-managed"
+  else
+    mark ".agents/mcp_config.json → agy" warn "user-managed config — cc-suite will not overwrite it"
+  fi
+else
+  mark ".agents/mcp_config.json → agy" miss "run /cc-suite:bridge-mcp"
+fi
+
+# Fast local check only; /cc-suite:google-preflight performs the live model/auth
+# probe with a deadline.
+if command -v agy >/dev/null 2>&1; then
+  _agy_version=$(agy --version 2>/dev/null | head -1 | tr -d '\r')
+  mark "agy CLI" ok "${_agy_version:-version unknown}"
+else
+  mark "agy CLI" warn "not found — install: curl -fsSL https://antigravity.google/cli/install.sh | bash"
+fi
 
 # .mcp.json — distinguish canonical, stale (legacy npm), missing, or invalid
 if [ -f .mcp.json ]; then
@@ -208,18 +234,49 @@ if not servers:
     print("  · no additional servers in .mcp.json to check")
     raise SystemExit(0)
 config = Path(".codex/config.toml").read_text()
-def _toml_key(name: str) -> str:
-    # Mirror bridge_mcp.sh's key-escaping policy.
-    if re.match(r'^[a-zA-Z0-9_-]+$', name):
+def _codex_name(name: str) -> str:
+    # Mirror bridge_mcp.sh's Codex-safe name normalization.
+    if re.fullmatch(r'[a-zA-Z0-9_-]+', name):
         return name
-    return '"' + name.replace('\\', '\\\\').replace('"', '\\"') + '"'
-mirrored = [s for s in servers if f"[mcp_servers.{_toml_key(s)}]" in config]
-missing  = [s for s in servers if s not in mirrored]
+    normalized = re.sub(r'[^a-zA-Z0-9_-]+', '-', name).strip('-_')
+    return normalized or 'mcp-server'
+
+# Track the original Claude name recorded by bridge_mcp.sh. This prevents a
+# normalization collision (e.g. `a.b` and `a-b`) from making both source names
+# appear healthy just because they share one Codex table.
+tables = {}
+current = None
+for line in config.splitlines():
+    match = re.match(r'^\[mcp_servers\.([a-zA-Z0-9_-]+)\]$', line.strip())
+    if match:
+        current = match.group(1)
+        tables.setdefault(current, None)
+        continue
+    if current is not None:
+        comment = re.match(r'^# Claude MCP name: (.*)$', line)
+        if comment:
+            tables[current] = comment.group(1)
+
+def _comment_name(name: str) -> str:
+    return name.replace('\\', '\\\\').replace('\r', '\\r').replace('\n', '\\n')
+
+def _is_mirrored(name: str) -> bool:
+    codex_name = _codex_name(name)
+    if codex_name not in tables:
+        return False
+    owner = tables[codex_name]
+    if owner is None:
+        return codex_name == name
+    return owner == _comment_name(name)
+
+mirrored = [f"{s} → {_codex_name(s)}" if _codex_name(s) != s else s
+            for s in servers if _is_mirrored(s)]
+missing  = [s for s in servers if not _is_mirrored(s)]
 if mirrored:
     print(f"  ✓ mirrored to .codex/config.toml   {mirrored}")
 if missing:
     print(f"  ! NOT mirrored to Codex config     {missing}")
-    print(f"    → run /cc-suite:bridge-mcp to sync")
+    print(f"    → run /cc-suite:sync-mcp to sync")
 PY
 fi
 

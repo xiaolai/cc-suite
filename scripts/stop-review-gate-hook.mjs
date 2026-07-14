@@ -10,6 +10,9 @@ import { binaryAvailable } from "./lib/process.mjs";
 import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
 
 const STOP_REVIEW_TIMEOUT_MS = 15 * 60 * 1000;
+// Use the user's configured Codex default unless an explicit override is
+// supplied. A plugin-wide model slug is not valid for every account.
+const STOP_REVIEW_MODEL = process.env.CC_SUITE_REVIEW_MODEL?.trim() || null;
 
 function readHookInput() {
   const raw = fs.readFileSync(0, "utf8").trim();
@@ -65,16 +68,15 @@ function runStopReview(cwd, input = {}) {
   // attach /dev/null to the child's fd 0 — equivalent to `codex exec ... <
   // /dev/null` from a shell. Required because this hook runs in a no-TTY
   // background context where `codex exec` can otherwise hang on stdin.
+  const codexArgs = ["exec"];
+  if (STOP_REVIEW_MODEL) codexArgs.push("--model", STOP_REVIEW_MODEL);
+  // Current Codex CLI releases do not support --approval-policy or
+  // --ask-for-approval. The read-only sandbox is sufficient for this review.
+  codexArgs.push("--sandbox", "read-only", "--color", "never", prompt);
+
   const result = spawnSync(
     "codex",
-    [
-      "exec",
-      "--model", "codex-mini",
-      "--sandbox", "read-only",
-      "--approval-policy", "never",
-      "--quiet",
-      prompt,
-    ],
+    codexArgs,
     {
       cwd,
       env: childEnv,

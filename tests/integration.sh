@@ -34,6 +34,10 @@ assert_dir() {
   if [ -d "$1" ]; then ok_msg "dir exists: $1"
   else                 fail_msg "MISSING dir: $1"; fi
 }
+assert_no_dir() {
+  if [ ! -d "$1" ]; then ok_msg "dir absent: $1"
+  else                   fail_msg "UNEXPECTED dir: $1"; fi
+}
 assert_symlink() {
   if [ -L "$1" ]; then ok_msg "symlink exists: $1"
   else                 fail_msg "NOT a symlink: $1"; fi
@@ -43,11 +47,11 @@ assert_no_symlink() {
   else                   fail_msg "UNEXPECTED symlink: $1"; fi
 }
 assert_contains() {
-  if grep -qF "$2" "$1" 2>/dev/null; then ok_msg "contains '$2': $1"
+  if grep -qF -- "$2" "$1" 2>/dev/null; then ok_msg "contains '$2': $1"
   else                                    fail_msg "MISSING '$2' in $1"; fi
 }
 assert_not_contains() {
-  if ! grep -qF "$2" "$1" 2>/dev/null; then ok_msg "absent '$2': $1"
+  if ! grep -qF -- "$2" "$1" 2>/dev/null; then ok_msg "absent '$2': $1"
   else                                      fail_msg "UNEXPECTED '$2' in $1"; fi
 }
 assert_symlink_target() {
@@ -100,18 +104,21 @@ bash "$SCRIPTS/init.sh" --description "Test Project" >/dev/null 2>&1
 assert_file "AGENTS.md"
 assert_contains "AGENTS.md" "Test Project"
 assert_file_content "CLAUDE.md" "@AGENTS.md"
-assert_file_content "GEMINI.md" "@AGENTS.md"
 assert_dir  ".codex/prompts"
 assert_file ".codex/prompts/.gitkeep"
 assert_file ".codex/config.toml"
-assert_dir  ".gemini/skills"
-assert_dir  ".gemini/commands"
 assert_file ".gitignore"
 assert_contains ".gitignore" "# >>> cc-suite >>>"
 assert_contains ".gitignore" "# <<< cc-suite <<<"
 assert_file ".codex/.cc-suite.provenance"
 assert_contains ".codex/.cc-suite.provenance" "CC_SUITE_CREATED_CLAUDE=1"
-assert_contains ".codex/.cc-suite.provenance" "CC_SUITE_CREATED_GEMINI=1"
+
+# Consumer Gemini CLI access moved to `agy` on 2026-06-18; agy reads AGENTS.md
+# natively. init must no longer create a GEMINI.md pointer or .gemini/ scaffolding.
+assert_no_file "GEMINI.md"
+assert_no_dir  ".gemini"
+assert_not_contains ".codex/.cc-suite.provenance" "CC_SUITE_CREATED_GEMINI"
+assert_not_contains ".gitignore" ".gemini/"
 
 cleanup
 
@@ -348,9 +355,9 @@ assert_contains     ".codex/config.toml" "# existing config"
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# T14  bridge_mcp.sh — TOML-quotes server names with special characters
+# T14  bridge_mcp.sh — normalizes names to Codex's server-name grammar
 # ═══════════════════════════════════════════════════════════════════════════════
-section "T14: bridge_mcp.sh — TOML-quotes names with dots/spaces"
+section "T14: bridge_mcp.sh — normalizes names with special characters"
 make_tmp
 mkdir -p .codex
 echo "# empty" > .codex/config.toml
@@ -358,17 +365,21 @@ echo "# empty" > .codex/config.toml
 cat > .mcp.json <<'JSON'
 {
   "mcpServers": {
-    "my.server":    {"type": "stdio", "command": "cmd1"},
-    "plain-server": {"type": "stdio", "command": "cmd2"}
+    "my.server":                         {"type": "stdio", "command": "cmd1"},
+    "@hypothesi/tauri-mcp-server":       {"type": "stdio", "command": "cmd2"},
+    "plain-server":                       {"type": "stdio", "command": "cmd3"}
   }
 }
 JSON
 
 assert_exit0 bash "$SCRIPTS/bridge_mcp.sh"
 
-assert_contains     ".codex/config.toml" '[mcp_servers."my.server"]'
+assert_contains     ".codex/config.toml" '[mcp_servers.my-server]'
+assert_contains     ".codex/config.toml" '[mcp_servers.hypothesi-tauri-mcp-server]'
 assert_contains     ".codex/config.toml" '[mcp_servers.plain-server]'
-assert_not_contains ".codex/config.toml" '[mcp_servers.my.server]'  # unquoted would be invalid
+assert_contains     ".codex/config.toml" '# Claude MCP name: my.server'
+assert_not_contains ".codex/config.toml" '[mcp_servers."my.server"]'
+assert_not_contains ".codex/config.toml" '[mcp_servers."@hypothesi/tauri-mcp-server"]'
 
 cleanup
 
@@ -1328,7 +1339,7 @@ git add -A; git commit -qm init >/dev/null 2>&1
 
 assert_exit0 git ls-files --error-unmatch .mcp.json      # tracked before fix
 bash "$SCRIPTS/ensure_gitignore.sh" >/dev/null 2>&1
-assert_contains ".gitignore" "cc-suite-schema: 3"
+assert_contains ".gitignore" "cc-suite-schema: 5"
 assert_exit_nonzero git ls-files --error-unmatch .mcp.json   # now untracked
 assert_exit0 git check-ignore .mcp.json                      # now ignored
 assert_file ".mcp.json"                                      # working file kept
@@ -1352,7 +1363,7 @@ assert_exit_nonzero git check-ignore .mcp.json          # not ignored
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# T50  ensure_gitignore.sh — schema-2 → schema-3 migration self-heals a leak
+# T50  ensure_gitignore.sh — old schema migration self-heals a leak
 # ═══════════════════════════════════════════════════════════════════════════════
 section "T50: ensure_gitignore.sh — schema migration untracks leaked .mcp.json"
 make_tmp
@@ -1365,10 +1376,310 @@ printf '# >>> cc-suite >>>\n# cc-suite-schema: 2\n.claude/settings.local.json\n#
 git add -A; git commit -qm init >/dev/null 2>&1
 
 bash "$SCRIPTS/ensure_gitignore.sh" >/dev/null 2>&1
-assert_contains ".gitignore" "cc-suite-schema: 3"
+assert_contains ".gitignore" "cc-suite-schema: 5"
 assert_count "# >>> cc-suite >>>" ".gitignore" 1   # single block, no duplication
 assert_exit_nonzero git ls-files --error-unmatch .mcp.json   # migrated + untracked
 assert_exit0 git check-ignore .mcp.json
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T51  agy-preflight.sh — agy absent → structured error, never a crash
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T51: agy-preflight.sh — agy not on PATH"
+make_tmp
+
+# Use only system binaries so a Homebrew directory containing both `node` and
+# `agy` cannot accidentally make the absent-binary fixture non-sterile.
+STERILE_PATH="/usr/bin:/bin"
+
+out="$(env PATH="$STERILE_PATH" AGY_PREFLIGHT_NO_CACHE=1 bash "$SCRIPTS/agy-preflight.sh" 2>/dev/null)"
+printf '%s' "$out" > preflight.json
+
+assert_contains "preflight.json" '"status":"error"'
+assert_contains "preflight.json" "antigravity-cli"
+# reasoning_efforts must be empty: agy encodes effort in the model name, so a
+# caller offering an effort picker for this backend would be wrong.
+assert_contains "preflight.json" '"reasoning_efforts":[]'
+# Must still be parseable JSON, not a shell error dump.
+assert_exit0 python3 -c "import json,sys; json.load(open('preflight.json'))"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T52  agy-runner.mjs — no prompt → exits non-zero
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T52: agy-runner.mjs — missing prompt is rejected"
+make_tmp
+
+assert_exit_nonzero node "$SCRIPTS/agy-runner.mjs" --kind agy
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T53  agy-runner.mjs — agy absent → status=failed with an actionable message
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T53: agy-runner.mjs — agy not on PATH"
+make_tmp
+
+mkdir -p node-bin
+ln -s "$(command -v node)" node-bin/node
+STERILE_PATH="$PWD/node-bin:/usr/bin:/bin"
+
+# Runner reports failure in-band (JSON on stdout) and exits 1; capture both.
+out="$(env PATH="$STERILE_PATH" node "$SCRIPTS/agy-runner.mjs" \
+        --kind agy --timeout-ms 10000 -- "smoke" 2>/dev/null || true)"
+printf '%s' "$out" > result.json
+
+assert_exit0 python3 -c "import json,sys; json.load(open('result.json'))"
+assert_contains "result.json" '"status":"failed"'
+assert_contains "result.json" "agy not found on PATH"
+# A failed spawn must still register a job so /cc-suite:status can see it.
+assert_contains "result.json" '"jobId"'
+
+cleanup
+
+# ══════════ T54  codex-preflight.sh — latest frontier model first ════════════
+section "T54: codex-preflight.sh — orders models with latest frontier first"
+make_tmp
+
+mkdir -p bin home/.codex cache
+cat > bin/codex <<'CODEX'
+#!/usr/bin/env bash
+case "$*" in
+  "--version") echo "codex-cli 0.144.4" ;;
+  "login status") echo "Logged in with ChatGPT" ;;
+  "cloud list") exit 1 ;;
+  *) exit 0 ;;
+esac
+CODEX
+chmod +x bin/codex
+
+cat > home/.codex/models_cache.json <<'JSON'
+{
+  "models": [
+    {
+      "slug": "gpt-5.5",
+      "display_name": "GPT-5.5",
+      "description": "Older frontier model",
+      "priority": 0,
+      "supported_reasoning_levels": [{"effort": "medium"}, {"effort": "high"}]
+    },
+    {
+      "slug": "gpt-5.6-sol",
+      "display_name": "GPT-5.6-Sol",
+      "description": "Latest frontier agentic coding model",
+      "priority": 1,
+      "supported_reasoning_levels": [{"effort": "low"}, {"effort": "medium"}, {"effort": "high"}, {"effort": "xhigh"}, {"effort": "max"}, {"effort": "ultra"}]
+    }
+  ]
+}
+JSON
+
+PYTHON_BIN_DIR="$(dirname "$(command -v python3)")"
+out="$(env HOME="$PWD/home" XDG_CACHE_HOME="$PWD/cache" CODEX_PREFLIGHT_NO_CACHE=1 \
+  PATH="$PWD/bin:$PYTHON_BIN_DIR:/usr/bin:/bin" bash "$SCRIPTS/codex-preflight.sh" 2>/dev/null)"
+printf '%s' "$out" > preflight.json
+
+assert_contains "preflight.json" '"default_model":"gpt-5.6-sol"'
+assert_contains "preflight.json" '"models":["gpt-5.6-sol","gpt-5.5"]'
+assert_contains "preflight.json" '"reasoning_efforts":["low","medium","high","xhigh","max","ultra"]'
+assert_exit0 python3 -c "import json; d=json.load(open('preflight.json')); assert d['preflight_schema'] == 3"
+
+cleanup
+
+# ══════════ T55  bridge_mcp.sh — Codex + Antigravity projections ═════════════
+section "T55: bridge_mcp.sh — writes Codex and agy workspace projections"
+make_tmp
+
+mkdir -p .codex
+printf '# base config\n' > .codex/config.toml
+cat > .mcp.json <<'JSON'
+{
+  "mcpServers": {
+    "codex-cli": {"type":"stdio","command":"codex","args":["mcp-server"]},
+    "workspace-tools": {"type":"stdio","command":"node","args":["server.mjs"],"env":{"TOKEN":"local-secret"}},
+    "remote-tools": {"type":"sse","url":"https://example.com/mcp"}
+  }
+}
+JSON
+
+assert_exit0 bash "$SCRIPTS/bridge_mcp.sh"
+assert_file ".agents/mcp_config.json"
+assert_file ".agents/.cc-suite-mcp.provenance.json"
+assert_contains ".agents/mcp_config.json" '"claude-code"'
+assert_contains ".agents/mcp_config.json" '"workspace-tools"'
+assert_contains ".agents/mcp_config.json" '"serverUrl": "https://example.com/mcp"'
+assert_not_contains ".agents/mcp_config.json" '"url": "https://example.com/mcp"'
+assert_exit0 python3 -c "import json; d=json.load(open('.agents/mcp_config.json')); assert set(['codex-cli','workspace-tools','remote-tools','claude-code']) <= set(d['mcpServers'])"
+
+agy_hash1="$(md5 -q .agents/mcp_config.json 2>/dev/null || md5sum .agents/mcp_config.json | awk '{print $1}')"
+assert_exit0 bash "$SCRIPTS/bridge_mcp.sh"
+agy_hash2="$(md5 -q .agents/mcp_config.json 2>/dev/null || md5sum .agents/mcp_config.json | awk '{print $1}')"
+if [ "$agy_hash1" = "$agy_hash2" ]; then ok_msg "agy MCP projection unchanged on re-run"
+else fail_msg "agy MCP projection changed on re-run"; fi
+
+assert_exit0 bash "$SCRIPTS/unbridge.sh"
+assert_no_file ".agents/mcp_config.json"
+assert_no_file ".agents/.cc-suite-mcp.provenance.json"
+assert_file ".mcp.json"
+
+cleanup
+
+# ══════════ T56  bridge_agy_mcp.py — refuses user-owned config conflicts ══════
+section "T56: bridge_agy_mcp.py — refuses user-owned config"
+make_tmp
+
+mkdir -p .agents
+cat > .agents/mcp_config.json <<'JSON'
+{"mcpServers":{"workspace-tools":{"type":"stdio","command":"user-server"}}}
+JSON
+cat > .mcp.json <<'JSON'
+{"mcpServers":{"workspace-tools":{"type":"stdio","command":"cc-suite-server"}}}
+JSON
+
+assert_exit_nonzero python3 "$SCRIPTS/bridge_agy_mcp.py"
+assert_contains ".agents/mcp_config.json" '"command":"user-server"'
+assert_no_file ".agents/.cc-suite-mcp.provenance.json"
+
+cleanup
+
+# ══════════ T57  agy-preflight.sh — bounded probe + workspace status ═════════
+section "T57: agy-preflight.sh — success and timeout are structured"
+make_tmp
+
+mkdir -p bin home .agents cache
+cat > bin/agy <<'AGY'
+#!/usr/bin/env bash
+case "$1" in
+  "--version") echo "agy 1.1.2" ;;
+  "models") echo "Gemini 3.1 Pro (High)"; echo "Gemini 3.5 Flash (Low)" ;;
+  *) exit 0 ;;
+esac
+AGY
+chmod +x bin/agy
+printf '{"mcpServers":{"claude-code":{"command":"npx","args":["claude-octopus@1.2.0"]}}}\n' > .agents/mcp_config.json
+
+PYTHON_BIN_DIR="$(dirname "$(command -v python3)")"
+out="$(env HOME="$PWD/home" XDG_CACHE_HOME="$PWD/cache" AGY_PREFLIGHT_NO_CACHE=1 \
+  PATH="$PWD/bin:$PYTHON_BIN_DIR:/usr/bin:/bin" bash "$SCRIPTS/agy-preflight.sh" 2>/dev/null)"
+printf '%s' "$out" > preflight.json
+assert_contains "preflight.json" '"backend":"agy"'
+assert_contains "preflight.json" '"status":"ok"'
+assert_contains "preflight.json" '"default_model":"Gemini 3.1 Pro (High)"'
+assert_contains "preflight.json" '"workspace_mcp_registered":true'
+assert_exit0 python3 -c "import json; d=json.load(open('preflight.json')); assert d['preflight_schema'] == 2"
+
+cat > bin/agy <<'AGY'
+#!/usr/bin/env bash
+case "$1" in
+  "--version") echo "agy 1.1.2" ;;
+  "models") sleep 3 ;;
+  *) exit 0 ;;
+esac
+AGY
+chmod +x bin/agy
+out="$(env HOME="$PWD/home" XDG_CACHE_HOME="$PWD/cache" AGY_PREFLIGHT_NO_CACHE=1 AGY_MODELS_TIMEOUT_SECONDS=1 \
+  PATH="$PWD/bin:$PYTHON_BIN_DIR:/usr/bin:/bin" bash "$SCRIPTS/agy-preflight.sh" 2>/dev/null)"
+printf '%s' "$out" > timeout.json
+assert_contains "timeout.json" '"error_code":"agy_probe_timeout"'
+assert_exit0 python3 -c "import json; json.load(open('timeout.json'))"
+
+cleanup
+
+# ══════════ T58  bridge_mcp.sh — removes stale Codex sentinel entries ═════════
+section "T58: bridge_mcp.sh — removes stale entries when source servers disappear"
+make_tmp
+
+mkdir -p .codex
+printf '# base config\n# >>> cc-suite-mcp >>>\n[mcp_servers.removed]\ncommand = "old"\n# <<< cc-suite-mcp <<<\n' > .codex/config.toml
+printf '{"mcpServers":{}}\n' > .mcp.json
+
+assert_exit0 bash "$SCRIPTS/bridge_mcp.sh"
+assert_not_contains ".codex/config.toml" "mcp_servers.removed"
+assert_contains ".codex/config.toml" "# base config"
+
+cleanup
+
+# ══════════ T59  status.sh — detects normalization collisions ════════════════
+section "T59: status.sh — does not mark a colliding source name as mirrored"
+make_tmp
+
+mkdir -p .codex
+printf '{"mcpServers":{"a.b":{"type":"stdio","command":"one"},"a-b":{"type":"stdio","command":"two"}}}\n' > .mcp.json
+printf '# >>> cc-suite-mcp >>>\n[mcp_servers.a-b]\n# Claude MCP name: a.b\ncommand = "one"\n# <<< cc-suite-mcp <<<\n' > .codex/config.toml
+
+bash "$SCRIPTS/status.sh" > status.txt 2>/dev/null
+assert_contains "status.txt" "a.b → a-b"
+assert_contains "status.txt" "NOT mirrored to Codex config"
+assert_contains "status.txt" "'a-b'"
+
+cleanup
+
+# ══════════ T60  agy-preflight.sh — stdout auth error is not a model ═════════
+section "T60: agy-preflight.sh — rejects agy auth errors printed on stdout"
+make_tmp
+
+mkdir -p bin cache home
+cat > bin/agy <<'AGY'
+#!/usr/bin/env bash
+case "$1" in
+  "--version") echo "agy 1.1.2" ;;
+  "models") echo "Error: Please sign in to view available models."; exit 1 ;;
+  *) exit 0 ;;
+esac
+AGY
+chmod +x bin/agy
+
+PYTHON_BIN_DIR="$(dirname "$(command -v python3)")"
+out="$(env HOME="$PWD/home" XDG_CACHE_HOME="$PWD/cache" AGY_PREFLIGHT_NO_CACHE=1 \
+  PATH="$PWD/bin:$PYTHON_BIN_DIR:/usr/bin:/bin" bash "$SCRIPTS/agy-preflight.sh" 2>/dev/null)"
+printf '%s' "$out" > preflight.json
+assert_contains "preflight.json" '"status":"error"'
+assert_contains "preflight.json" '"error_code":"agy_not_authenticated"'
+assert_contains "preflight.json" '"models":[]'
+assert_exit0 python3 -c "import json; d=json.load(open('preflight.json')); assert d['status'] == 'error'"
+
+cleanup
+
+# ══════════ T61  stop hook — uses current Codex CLI flags ════════════════════
+section "T61: stop-review-gate-hook.mjs — no removed approval flags"
+make_tmp
+
+mkdir -p bin state
+cat > bin/codex <<'CODEX'
+#!/bin/sh
+printf '%s\n' "$@" > "$CODEX_ARGS"
+printf 'ALLOW: test review passed\n'
+CODEX
+chmod +x bin/codex
+
+NODE_BIN="$(command -v node)"
+CLAUDE_PLUGIN_DATA="$PWD/state" "$NODE_BIN" --input-type=module -e \
+  "const {setConfig}=await import('$SCRIPTS/lib/state.mjs'); setConfig(process.cwd(),'stopReviewGate',true)"
+
+hook_input="{\"cwd\":\"$PWD\"}"
+env PATH="$PWD/bin:/usr/bin:/bin" CLAUDE_PLUGIN_DATA="$PWD/state" CODEX_ARGS="$PWD/codex-args" \
+  "$NODE_BIN" "$SCRIPTS/stop-review-gate-hook.mjs" <<< "$hook_input" > hook-output.txt
+
+assert_not_contains "codex-args" "--ask-for-approval"
+assert_not_contains "codex-args" "--approval-policy"
+assert_not_contains "codex-args" "--model"
+assert_contains "codex-args" "--sandbox"
+assert_contains "codex-args" "--color"
+
+cleanup
+
+# ══════════ T62  bridge_mcp.sh — removes stale entries when source is absent ══
+section "T62: bridge_mcp.sh — clears stale entries when .mcp.json is absent"
+make_tmp
+
+mkdir -p .codex
+printf '# base config\n# >>> cc-suite-mcp >>>\n[mcp_servers.removed]\ncommand = "old"\n# <<< cc-suite-mcp <<<\n' > .codex/config.toml
+
+assert_exit0 bash "$SCRIPTS/bridge_mcp.sh"
+assert_not_contains ".codex/config.toml" "mcp_servers.removed"
+assert_contains ".codex/config.toml" "# base config"
 
 cleanup
 

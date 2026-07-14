@@ -14,7 +14,7 @@ version: 0.1.0
 
 ## Scopes
 
-cc-suite has a single scope. Unlike NLPM (internal + auditor), cc-suite's artifacts all describe one system — the bridge between Claude Code, Codex CLI, and Gemini CLI.
+cc-suite has a single scope. Unlike NLPM (internal + auditor), cc-suite's artifacts all describe one system — the bridge between Claude Code, Codex CLI, and Antigravity CLI (`agy`).
 
 | Scope | Paths | Description |
 |-------|-------|-------------|
@@ -58,7 +58,7 @@ Used to establish the cc-suite verb vocabulary so new artifacts pick from this s
 | Canonical | Definition |
 |-----------|------------|
 | `advisor` | A project-scoped value-over-rules persona declared in `.cc-suite/agents/`, backed by `claude-octopus` as a separately-configured MCP server. |
-| `bridge` | The cc-suite-managed subsystem that wires Claude/Codex/Gemini together. |
+| `bridge` | The cc-suite-managed subsystem that wires Claude Code, Codex, and Antigravity (`agy`) together. |
 | `finding` | A single defect surfaced by an audit/review — file:line, severity, recommendation. Use in structured audit output (column headers, "Top Findings" sections, per-finding iteration in audit-fix/verify). |
 | `sentinel block` | The cc-suite-owned section in `.codex/config.toml` or `.gitignore`, delimited by sentinel comments. |
 | `thread` | The Codex execution-continuation handle (the `threadId` MCP parameter). |

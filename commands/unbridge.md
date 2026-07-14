@@ -15,10 +15,11 @@ This is a destructive operation. Follow these steps in order.
 Ask the user via AskUserQuestion before doing anything. List exactly what will be removed:
 
 - `AGENTS.md` (content will be restored to `CLAUDE.md` automatically — no manual copy needed)
-- `GEMINI.md` — only if it contains nothing but `@AGENTS.md` (bare import); hybrid files are left alone
+- Legacy `GEMINI.md` — only if it contains nothing but `@AGENTS.md` (bare import); hybrid files are left alone
 - `.agents/skills` symlink (not the `.claude/skills/` target it points to)
+- `.agents/mcp_config.json` only if it carries cc-suite provenance; user-managed entries are preserved
 - `.codex/prompts/` (if empty), `.codex/hooks.json`, `.codex/hooks.cc-suite.json`, `.codex/config.toml`
-- `.gemini/skills/`, `.gemini/commands/` (if empty)
+- Empty legacy `.gemini/skills/` and `.gemini/commands/` directories
 - the cc-suite sentinel block in `.gitignore`
 
 AGENTS.md restore behavior:
@@ -27,7 +28,7 @@ AGENTS.md restore behavior:
 - `CLAUDE.md` does not exist → `AGENTS.md` content is moved to a new `CLAUDE.md`
 
 What is **never** touched:
-- `.claude/`, `.mcp.json`
+- `.claude/`, `.mcp.json`, custom `GEMINI.md`, and non-empty legacy `.gemini/` content
 
 What is removed **only if cc-suite generated it**:
 - `.codex/hooks.json` — only if it was written by `bridge_hooks.py` (carries a `_cc_bridge_version` marker) AND contains only the five shared events; otherwise left alone

@@ -38,12 +38,16 @@ const COMMANDS = [
   "continue",
   "implement",
   "init",
+  "google-preflight",
+  "agy",
+  "migrate-google",
   "preflight",
   "refresh-knowledge",
   "result",
   "review-plan",
   "setup",
   "status",
+  "sync-mcp",
   "verify",
 ];
 
@@ -70,6 +74,20 @@ test("all commands have valid YAML frontmatter with description", () => {
       `Command ${name} has too short description: "${fm.description}"`
     );
   }
+});
+
+test("sync-mcp documents the Claude-to-Codex bridge", () => {
+  const content = readCommand("sync-mcp");
+  assert.ok(content.includes("scripts/bridge_mcp.sh"));
+  assert.ok(content.includes("^[a-zA-Z0-9_-]+$"));
+  assert.ok(content.includes("restart Codex"));
+});
+
+test("agy command uses the Antigravity runner without an effort picker", () => {
+  const content = readCommand("agy");
+  assert.ok(content.includes("scripts/agy-runner.mjs"));
+  assert.ok(content.includes("scripts/agy-preflight.sh"));
+  assert.ok(content.includes("Do not ask for a reasoning-effort setting"));
 });
 
 test("shared partials have user-invocable: false", () => {

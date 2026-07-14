@@ -2,23 +2,60 @@
 
 [![Validated by NLPM](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/xiaolai/cc-suite/main/nlpm-badge.json)](https://github.com/xiaolai/cc-suite/blob/main/nlpm-badge.json)
 
-One Claude Code plugin to synchronize **Claude Code**, **Codex CLI**, and **Gemini CLI** on the same project — and let them delegate work to each other.
+One Claude Code plugin to synchronize **Claude Code**, **Codex CLI**, and **Antigravity CLI** (`agy`) on the same project — and let them delegate work to each other.
 
 ## Why
 
-Each tool reads from its own files. `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` sit next to each other and drift. Skills written for Claude aren't visible to Codex. Hooks must be maintained in two places. MCP servers declared in `.mcp.json` are invisible to Codex's `.codex/config.toml`. And there's no built-in way to say "ask Codex for an adversarial review" from Claude, or "ask Claude to plan this" from Codex.
+Each tool reads from its own files. `CLAUDE.md` and `AGENTS.md` sit next to each other and drift. Skills written for Claude aren't visible to Codex. Hooks must be maintained in two places. MCP servers declared in `.mcp.json` are invisible to Codex's `.codex/config.toml`. And there's no built-in way to say "ask Codex for an adversarial review" from Claude, or "ask Claude to plan this" from Codex.
 
 `cc-suite` fixes all of this with a single plugin install:
 
 | Feature | What it does |
 |---------|--------------|
-| **Single-source instructions** | `AGENTS.md` is the source of truth. `CLAUDE.md` and `GEMINI.md` become thin `@AGENTS.md` imports. |
-| **Shared skills** | `.agents/skills/` is symlinked to `.claude/skills/`. Every Claude skill is automatically visible to Codex and Gemini. |
+| **Single-source instructions** | `AGENTS.md` is the source of truth. `CLAUDE.md` becomes a thin `@AGENTS.md` import. Codex and `agy` read `AGENTS.md` natively. |
+| **Shared skills** | `.agents/skills/` is symlinked to `.claude/skills/`. Claude, Codex, and `agy` can use the same workspace skills. |
 | **Mirrored hooks** | Syncs the five shared hook events from `.claude/settings.json` into `.codex/hooks.json`. Same scripts, both tools. |
-| **MCP parity** | Mirrors `.mcp.json` project servers into `.codex/config.toml` so Codex sees the same servers. |
+| **MCP parity** | Mirrors `.mcp.json` project servers into `.codex/config.toml` and `.agents/mcp_config.json` so Codex and `agy` see the same servers. |
 | **Claude → Codex delegation** | Registers the `codex-cli` MCP server in `.mcp.json`. Claude can call `/audit`, `/implement`, `/bug-analyze`, and more directly. Full Codex job tracking, background mode, and stop-time review gate included. |
 | **Codex → Claude delegation** | Registers the `claude-code` MCP server (claude-octopus) in `.codex/config.toml`. Codex skills `$claude-review`, `$claude-plan`, `$claude-implement`, `$claude-debug` delegate to Claude and return structured results. |
 | **Codex reads Claude session history** | The same `claude-code` MCP server exposes `claude_code_sessions` (list this repo's Claude Code sessions, or all projects with `all_projects: true`) and `claude_code_transcript` (read a session by id). Codex can enumerate and read past Claude conversations for the repo. |
+| **Claude → `agy` delegation** | `scripts/agy-runner.mjs` drives Antigravity CLI headlessly, with the same job tracking, background mode, deadline enforcement, and conversation resume as the Codex runner. |
+| **`agy` → Claude delegation** | The same claude-octopus MCP server, registered in `agy`'s workspace config. |
+
+## Antigravity CLI (`agy`)
+
+Google moved consumer Gemini CLI access to [Antigravity CLI](https://antigravity.google)
+(binary: `agy`) on **2026-06-18**. See Google's [transition announcement](https://developers.googleblog.com/en/an-important-update-transitioning-gemini-cli-to-antigravity-cli/)
+and the [official migration guide](https://antigravity.google/docs/gcli-migration).
+Enterprise Gemini CLI and paid API access remain available, so cc-suite treats
+Gemini files as an explicit legacy path rather than deleting custom content. New
+projects use `AGENTS.md` and `.agents/` workspace assets. Run
+`/cc-suite:migrate-google` for an existing Gemini setup; the command asks before
+running `agy plugin import gemini` and preserves custom legacy files by default.
+
+What works, and what does not:
+
+| | Status |
+|---|---|
+| `AGENTS.md` as shared context | ✅ native — no bridging needed |
+| Claude → `agy` delegation | ✅ `scripts/agy-runner.mjs` (job tracking, background, resume) |
+| `agy` → Claude delegation | ✅ register claude-octopus in `.agents/mcp_config.json` |
+| Project-scoped skills (`.agents/skills/`) | ✅ native workspace path |
+| Project-scoped MCP servers (`.agents/mcp_config.json`) | ✅ native workspace path |
+
+Current Antigravity documentation defines `.agents/skills/` and
+`.agents/mcp_config.json` as workspace paths. cc-suite uses those paths and keeps
+the generated MCP config ignored by default because server definitions may contain
+credentials or machine-specific paths. Global configuration remains supported for
+users who want servers or skills shared across every workspace.
+
+Two further `agy` limitations shape the runner: there is **no reasoning-effort flag**
+(effort is encoded in the model name, e.g. `Gemini 3.1 Pro (High)`), and there is
+**no machine-readable output** — `agy -p` prints prose, so there is no cost or
+turn accounting, and the conversation id must be recovered by diffing
+`~/.gemini/antigravity-cli/conversations/`. That recovery is best-effort: when two
+`agy` runs finish concurrently the diff is ambiguous, and the runner records no
+conversation id rather than attach the wrong one.
 
 ## Install
 
@@ -41,6 +78,7 @@ claude plugin install cc-suite@xiaolai --scope project
 ### Prerequisites
 
 - [Codex CLI](https://github.com/openai/codex) installed — required for Claude→Codex delegation commands
+- [Antigravity CLI](https://github.com/google-antigravity/antigravity-cli) (`agy`) installed — required for Google-backed delegation and `/cc-suite:google-preflight`
 - [claude-octopus](https://www.npmjs.com/package/claude-octopus) — required for Codex→Claude delegation. Delivered via `npx -y` at runtime, no pre-install needed. Uses the same credential store as Claude CLI (`~/.claude/.credentials.json`).
 
 ## Quick start
@@ -62,6 +100,8 @@ After init, edit `AGENTS.md` — all three tools pick up changes automatically.
 | `/cc-suite:init` | Full setup: bridge init, Codex MCP, Claude MCP, project config. Idempotent. |
 | `/cc-suite:bridge-skills` | Create `.agents/skills → .claude/skills` symlink. |
 | `/cc-suite:bridge-hooks` | Mirror `.claude/settings.json` hooks → `.codex/hooks.json`. |
+| `/cc-suite:sync-mcp` | Sync Claude's `.mcp.json` project servers → Codex and Antigravity workspace configs. Alias: `/cc-suite:bridge-mcp`. |
+| `/cc-suite:migrate-google` | Convert legacy Gemini CLI extensions/configuration and establish the agy workspace bridge. |
 | `/cc-suite:status` | Bridge health, MCP registration, and Codex runtime checks. |
 | `/cc-suite:unbridge` | Tear down bridge artifacts, restoring `CLAUDE.md` from `AGENTS.md`. |
 
@@ -87,6 +127,8 @@ All commands delegate to Codex via the `codex-cli` MCP server. Codex runs in a s
 | `/result` | Show the output of a completed Codex job |
 | `/status` | Show active and recent Codex jobs |
 | `/preflight` | Check Codex CLI availability and list available models |
+| `/cc-suite:google-preflight` | Check Antigravity CLI availability, authentication, models, and workspace MCP parity |
+| `/cc-suite:agy` | Delegate a bounded prompt directly to Antigravity CLI with shared job tracking |
 | `/setup` | Manage the stop-time review gate |
 | `/refresh-knowledge` | Update the Claude Code conventions skill from latest docs |
 
@@ -102,6 +144,11 @@ When Codex has `claude-code` registered in `.codex/config.toml`, it can invoke t
 | `claude-debug` | `$claude-debug` | Send a bug or failing test to Claude for root-cause analysis and fix. |
 
 All delegation calls include a provenance disclosure so Claude evaluates the work with full rigor rather than deferring to it.
+
+Codex model selection is dynamic: `/preflight` reads the local Codex model
+catalog, excludes review-only entries from the default, and prefers the catalog's
+latest marker followed by the newest model version. No model name is hardcoded in
+the plugin, so a Codex catalog refresh automatically moves the default forward.
 
 Beyond delegation, the `claude-code` MCP server also lets Codex **read Claude's session history** directly (no skill needed — these are plain MCP tools Codex discovers automatically):
 
@@ -130,27 +177,29 @@ The Codex→Claude path delivers `claude-octopus` via `npx -y` at runtime — no
 
 | What | How |
 |------|-----|
-| Instructions | `AGENTS.md` → `CLAUDE.md` (`@AGENTS.md`) + `GEMINI.md` (`@AGENTS.md`) |
-| Skills | `.agents/skills/ → ../.claude/skills/` symlink |
+| Instructions | `AGENTS.md` → `CLAUDE.md` (`@AGENTS.md`); Codex and `agy` read `AGENTS.md` directly |
+| Skills | `.agents/skills/ → ../.claude/skills/` symlink (Codex + agy workspace skills) |
 | Hooks | `.claude/settings.json` (5 shared events) → `.codex/hooks.json` |
-| MCP parity | `.mcp.json` entries → `.codex/config.toml [mcp_servers.*]` blocks |
+| MCP parity | `.mcp.json` entries → `.codex/config.toml [mcp_servers.*]` + `.agents/mcp_config.json` |
 | Codex MCP | `codex-cli` entry in `.mcp.json` (via `mcp_codex.sh`) |
-| Claude MCP | `claude-code` entry in `.codex/config.toml` (via `mcp_claude.sh`) |
+| Claude MCP | `claude-code` entry in `.codex/config.toml` (via `mcp_claude.sh`) and `.agents/mcp_config.json` (via `bridge_mcp.sh`) |
 
 **Not bridged:**
 
 - **Rules.** Claude's `.claude/rules/*.md` and Codex's `.codex/rules/*.rules` are semantically incompatible. Put shared intent in `AGENTS.md`.
 - **Subagents.** Schema and security fields differ per tool. Use Skills with explicit `$name` invocation for portability.
+- **Google legacy files.** Existing `GEMINI.md` and `.gemini/` content is not deleted automatically. Migrate it deliberately, then use `/cc-suite:unbridge` only for generated/bare legacy artifacts.
 
 ## Idempotency guarantees
 
 All scripts are safe to re-run:
 
 - `AGENTS.md` is never overwritten if it already exists.
-- `CLAUDE.md` and `GEMINI.md` are only rewritten when their current content is a bare `@AGENTS.md` import.
+- `CLAUDE.md` is only rewritten when its current content is a bare `@AGENTS.md` import.
 - `.agents/skills` symlink is only created if the path doesn't already exist as a real directory.
 - `.codex/hooks.json` is only modified when it carries the cc-suite marker; user-owned files are left alone.
 - `.codex/config.toml` MCP entries use sentinel blocks; manual entries outside are never touched.
+- `.agents/mcp_config.json` is refreshed only when its cc-suite provenance file is present; user-managed configs are refused rather than overwritten.
 
 ## Codex runtime requirements
 
@@ -166,7 +215,6 @@ All scripts are safe to re-run:
 your-repo/
 ├── AGENTS.md                         ← edit this; all tools pick it up
 ├── CLAUDE.md                         → @AGENTS.md
-├── GEMINI.md                         → @AGENTS.md
 ├── .cc-suite.md                 ← audit/implement settings
 ├── .mcp.json                         ← codex-cli MCP server + project servers
 ├── .gitignore                        ← includes cc-suite sentinel block
@@ -180,16 +228,17 @@ your-repo/
 │       │   └── claude-debug/             ← delegate debugging to Claude
 │       └── <your-skills>/
 ├── .agents/
-│   └── skills → ../.claude/skills/   ← symlink; Codex + Gemini read here
-├── .codex/
-│   ├── config.toml                   ← Codex config + project MCP servers
-│   │                                    including claude-code (claude-octopus)
-│   ├── prompts/.gitkeep
-│   └── hooks.json                    ← (if hooks were bridged)
-└── .gemini/
-    ├── skills/.gitkeep
-    └── commands/.gitkeep
+│   ├── skills → ../.claude/skills/   ← symlink; Codex + agy read here
+│   └── mcp_config.json               ← generated from .mcp.json; ignored by default
+└── .codex/
+    ├── config.toml                   ← Codex config + project MCP servers
+    │                                    including claude-code (claude-octopus)
+    ├── prompts/.gitkeep
+    └── hooks.json                    ← (if hooks were bridged)
 ```
+
+`agy` reads `AGENTS.md` natively. Workspace skills and MCP servers live under
+`.agents/`; global settings remain under `~/.gemini/` when intentionally shared.
 
 ## License
 

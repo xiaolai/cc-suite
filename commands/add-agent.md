@@ -1,6 +1,6 @@
 ---
 name: add-agent
-description: Create a new cc-suite advisor agent — a project-scoped value-over-rules persona registered as an MCP server in both .mcp.json and .codex/config.toml. Optional preset arg copies a curated template.
+description: Create a new cc-suite advisor agent — a project-scoped value-over-rules persona registered as an MCP server for Claude and Codex, then available to agy after the MCP projection is refreshed. Optional preset arg copies a curated template.
 argument-hint: "[preset-name | --custom]"
 ---
 
@@ -144,4 +144,6 @@ Show the user:
 - **Restart Claude Code** so the MCP loader picks up the new server.
 - After restart, invoke as: `Use the mcp__<name>__<tool_name> tool to ask...`
 - Codex picks up `.codex/config.toml` changes on next invocation — no restart needed.
+- Run `/cc-suite:bridge-mcp` if Antigravity should consult the advisor; it refreshes
+  the generated `.agents/mcp_config.json` projection.
 ```

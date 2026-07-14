@@ -1,6 +1,6 @@
 ---
 name: cc-suite
-description: "Project instructions for cc-suite — the Claude Code plugin that bridges Claude, Codex CLI, and Gemini CLI with single-source AGENTS.md, shared skills, mirrored hooks, and bidirectional MCP delegation."
+description: "Project instructions for cc-suite — the Claude Code plugin that bridges Claude Code, Codex CLI, and Antigravity CLI (agy) with single-source AGENTS.md, shared skills, mirrored hooks, and bidirectional MCP delegation."
 ---
 
 # Project Instructions
@@ -12,13 +12,14 @@ description: "Project instructions for cc-suite — the Claude Code plugin that 
 - Bump the version in `.claude-plugin/plugin.json` for every release (patch/minor/major per semver).
 - New commands go in `commands/`; new skills go in `skills/cc-suite/<name>/SKILL.md`.
 - All scripts in `scripts/` must be idempotent — running twice must produce the same result.
-- Write new project-level instructions into `AGENTS.md` only; never edit `CLAUDE.md` or `GEMINI.md` directly.
+- Write new project-level instructions into `AGENTS.md` only; never edit `CLAUDE.md` or legacy `GEMINI.md` directly.
 
 ## Prerequisites
 
 - **Claude Code** (≥ 2.0) — primary host for all commands and skills
 - **Codex CLI** (optional) — required for the `codex-cli` MCP delegation lane and `bridge_hooks.py`
-- **Python 3** — required by `scripts/bridge_hooks.py`
+- **Python 3** — required by `scripts/bridge_hooks.py`, MCP projections, and migration helpers
+- **Antigravity CLI (`agy`)** (optional) — required for the Google backend, `/cc-suite:google-preflight`, and headless agy delegation
 - **Bash** — required by all `scripts/*.sh` files
 - **`claude-octopus`** (npm, pinned) — the MCP server cc-suite registers in `.codex/config.toml` so Codex can delegate to Claude. cc-suite does not install it explicitly; `mcp_claude.sh` writes a `npx -y claude-octopus@<pin>` invocation and npm fetches it on first Codex start. The pin lives in `scripts/lib/claude-octopus-pin.txt` — single source of truth, read by `mcp_claude.sh`, the integration suite, and the boot-handshake test.
 
@@ -53,29 +54,31 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/init.sh"
 
 ## Tests
 
-Run the integration suite (47+ test sections, 240+ assertions):
+Run the integration suite (55+ test sections, 270+ assertions):
 
 ```bash
 bash tests/integration.sh
 ```
 
-Tests cover every `scripts/*.sh`, the `mcp_codex.sh` migration path, `status.sh` output, refresh semantics for `mcp_claude.sh` (T34–T38), a real boot-and-handshake against the pinned `claude-octopus` (T39, network-dependent — set `CC_SUITE_SKIP_BOOT_TEST=1` to skip), and the advisor-agent subsystem (T40–T47: registration, idempotency, removal, conflict refusal, refresh, TOML preservation, invalid-input rejection). Add a new `T<N>` section for any new behavior; the suite uses `make_tmp` / `cleanup` / `assert_*` helpers and tallies pass/fail counts in its summary.
+Tests cover every `scripts/*.sh`, the Codex and Antigravity MCP projection paths, legacy Gemini cleanup, `status.sh` output, refresh semantics for `mcp_claude.sh`, a real boot-and-handshake against the pinned `claude-octopus` (network-dependent — set `CC_SUITE_SKIP_BOOT_TEST=1` to skip), and the advisor-agent subsystem. Add a new `T<N>` section for any new behavior; the suite uses `make_tmp` / `cleanup` / `assert_*` helpers and tallies pass/fail counts in its summary.
 
 ## Shared Memory
 
 **Always write new instructions, rules, and memory to `AGENTS.md` only.**
 
-Never modify `CLAUDE.md` or `GEMINI.md` directly — they only import `AGENTS.md`.
-This keeps Claude Code, Codex CLI, and Gemini CLI on the same context.
+Never modify `CLAUDE.md` or legacy `GEMINI.md` directly — they only import `AGENTS.md`.
+This keeps Claude Code, Codex CLI, and Antigravity CLI (`agy`) on the same context.
 
 ## Project Structure
 
 - `.claude/` — Claude Code skills, agents, rules, hooks, commands
 - `.agents/skills/` — symlink to `.claude/skills/` (Codex skill scan path)
+- `.agents/mcp_config.json` — generated Antigravity workspace MCP projection (ignored by default)
 - `.codex/prompts/` — Codex slash-command prompts
 - `.codex/hooks.json` / `.codex/config.toml` — Codex hooks/config (optional)
-- `.gemini/skills/`, `.gemini/commands/` — Gemini skills and TOML commands
-- `.mcp.json` — MCP server registrations (shared by all three tools)
+- `.mcp.json` — MCP server registrations shared by Claude Code and Codex
+- `~/.gemini/config/` — Antigravity CLI's global MCP/plugin configuration
+- `~/.gemini/antigravity-cli/skills/` — Antigravity CLI's global skills configuration
 - `.cc-suite/agents/<name>.md` — declared advisor agents (see below)
 - `.cc-suite/agents/<name>/timeline/` — per-agent consultation history (gitignored by default)
 
