@@ -40,6 +40,12 @@ If any paths are returned, flag them as stale nested symlinks.
 which codex 2>/dev/null || echo "not-found"
 ```
 
+**Check B2 — Antigravity CLI availability**
+
+```bash
+which agy 2>/dev/null || echo "not-found"
+```
+
 **Check C — cache freshness**
 
 Read the active plugin version from the `.claude/skills/cc-suite` symlink target:
@@ -91,6 +97,9 @@ Group all findings into three buckets:
 | 10 | `.mcp.json → codex-cli` | stale | Project still has the legacy npm registration — Codex MCP server loads with the wrong API and every Codex call falls back | `/cc-suite:repair` |
 | 11 | `.codex/config.toml → Codex` | stale pin | Registered claude-octopus version doesn't match the plugin's expected pin — Codex may be running an older Claude bridge | `/cc-suite:update` |
 | 12 | claude-octopus boot test | failed | The pinned claude-octopus does not boot or respond to MCP on this machine — Codex delegation to Claude will fail | `/cc-suite:update` (refreshes registration + re-tests). If still failing, the pin may be broken; escalate to the cc-suite maintainer. |
+| 13 | `.agents/mcp_config.json → agy` | missing/stale | Antigravity cannot see the workspace MCP surface or delegate to Claude | `/cc-suite:bridge-mcp` |
+| 14 | `agy CLI` | not found | Google-backed delegation and Antigravity preflight are unavailable | Install with the command shown by `/cc-suite:google-preflight` |
+| 15 | legacy `GEMINI.md` / `.gemini/` | present | Legacy Google files need deliberate migration or may be retained for enterprise use | `/cc-suite:migrate-google` |
 
 Use the actual item names and details from the status output — the table above is a reference mapping, not a literal template.
 

@@ -153,7 +153,7 @@ nouns:
         - sub-agent
 
     - canonical: bridge
-      definition: The cc-suite-managed subsystem that wires Claude/Codex/Gemini together.
+      definition: The cc-suite-managed subsystem that wires Claude Code, Codex, and Antigravity (agy) together.
       deprecated: []
 
     - canonical: finding

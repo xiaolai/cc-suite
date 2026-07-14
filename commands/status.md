@@ -1,6 +1,6 @@
 ---
 name: status
-description: Show active and recent Codex jobs — background tasks, running audits, completed results
+description: Show active and recent Codex or Antigravity jobs — background tasks, running audits, completed results
 argument-hint: "[job-id] [--all] [--json]"
 ---
 
@@ -40,7 +40,7 @@ Parse `$ARGUMENTS`:
 #### Default view (no job-id)
 
 ```markdown
-# Codex Toolkit Status
+# CC-Suite Job Status
 
 Review gate: {enabled / disabled}
 
@@ -72,7 +72,7 @@ If no jobs exist: "No jobs recorded yet. Run /audit, /implement, or /bug-analyze
 # Codex Job Details
 
 **Job ID**: {id}
-**Kind**: {audit | implement | bug-analyze | review-plan | verify}
+**Kind**: {audit | implement | bug-analyze | review-plan | verify | agy}
 **Status**: {running | completed | failed | cancelled}
 **Started**: {ISO timestamp}
 **Elapsed**: {hh:mm:ss}

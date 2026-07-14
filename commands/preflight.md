@@ -28,6 +28,11 @@ Present the results in a clear, readable format:
 **Codex version**: {codex_version}
 **Auth mode**: {auth_mode}
 **Codex Cloud**: {codex_cloud}
+**Default model**: {default_model}
+
+The default is selected dynamically from the current Codex model catalog. The
+preflight prefers the latest-marked general-purpose model, then the newest
+version, and does not hardcode a model name or select review-only models.
 
 ### Available Models
 
@@ -43,7 +48,7 @@ Present the results in a clear, readable format:
 
 ### Options
 
-- **Reasoning efforts**: low, medium, high
+- **Reasoning efforts**: {reasoning_efforts from preflight}
 - **Sandbox levels**: read-only, workspace-write, danger-full-access
 ```
 

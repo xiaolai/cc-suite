@@ -41,9 +41,11 @@ Parse the JSON output. The structure is:
 ```json
 {
   "status": "ok",
+  "preflight_schema": 3,
   "codex_version": "...",
   "auth_mode": "...",
   "codex_cloud": false,
+  "default_model": "<latest-available-general-model>",
   "models": ["<slug1>", "<slug2>", ...],
   "models_detail": [
     {"slug": "<slug1>", "description": "<description>"},
@@ -76,7 +78,7 @@ Build the option list dynamically from the preflight results:
 
 **Determining the recommended model**:
 1. If `{config_default_model}` is set AND it's in the available list → use that
-2. Otherwise → use the **first model** in the `models` array (the preflight script returns models ordered newest-first, so the first entry is always the most capable)
+2. Otherwise → use `default_model` from preflight, or the **first model** in the `models` array as a backward-compatible fallback. Preflight orders general-purpose models by the catalog's `latest` marker, then descending model version, with Codex priority and catalog order as tie-breakers. Review-only models are excluded from the default choice.
 
 Do NOT hardcode any specific model name as "recommended" — always derive it from the preflight results or config.
 
@@ -84,11 +86,23 @@ Do NOT hardcode any specific model name as "recommended" — always derive it fr
 
 | Level | Best for |
 |-------|----------|
+| `minimal` | Smallest possible reasoning budget, when advertised by the selected model |
 | `low` | Simple/mechanical tasks, quick checks |
 | `medium` | Standard tasks — balanced speed and depth |
 | `high` | Complex tasks — thorough, catches subtle issues |
+| `xhigh` | Very complex tasks — extended reasoning |
+| `max` | Hardest tasks — maximum advertised reasoning depth |
+| `ultra` | Maximum reasoning with automatic task delegation, when advertised |
 
-Mark `{config_default_effort}` as "(Recommended)" if set, otherwise use the calling command's recommendation.
+After the model choice is made, look up that model in `models_detail` and use its
+`reasoning_efforts` list. Only offer levels present for the selected model. If the
+selected model has no per-model metadata (older preflight output), fall back to
+the top-level `reasoning_efforts` array for compatibility. Do not use the union
+of all models' efforts for a model-specific choice.
+
+Mark `{config_default_effort}` as "(Recommended)" only when it is supported by
+the selected model; otherwise choose the calling command's recommendation from
+the supported list and tell the user the configured effort was unavailable.
 
 **Question 3 — Sandbox level** (only if the calling command uses sandbox):
 

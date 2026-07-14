@@ -71,7 +71,10 @@ rm -rf ".cc-suite/agents/<name>/"
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_agents.py"
 ```
 
-The script will detect the agent file is gone and remove the corresponding entries from both `.mcp.json` and `.codex/config.toml`.
+The script will detect the agent file is gone and remove the corresponding
+entries from `.mcp.json` and `.codex/config.toml`. Run
+`/cc-suite:bridge-mcp` afterward if Antigravity should lose the advisor from its
+generated `.agents/mcp_config.json` projection as well.
 
 ### Step 6: Report
 
@@ -82,6 +85,7 @@ The script will detect the agent file is gone and remove the corresponding entri
 - Deleted `.cc-suite/agents/<name>/` (if chosen)
 - Cleaned up `.mcp.json` entry
 - Cleaned up `.codex/config.toml` sentinel block
+- Cleaned up the generated `.agents/mcp_config.json` entry (after `bridge-mcp`)
 
 ### Reminder
 

@@ -97,6 +97,37 @@ fi
 # Provenance file — remove after we've consumed it.
 [ -f "$PROVENANCE" ] && rm "$PROVENANCE" || true
 
+# .agents/mcp_config.json — remove only the cc-suite-managed entries. A user
+# config or user entries in a generated file are preserved.
+if [ -f .agents/.cc-suite-mcp.provenance.json ]; then
+  python3 - <<'PY'
+import json
+from pathlib import Path
+
+target = Path('.agents/mcp_config.json')
+provenance = Path('.agents/.cc-suite-mcp.provenance.json')
+try:
+    meta = json.loads(provenance.read_text())
+    managed = set(meta.get('managed_servers', []))
+    data = json.loads(target.read_text()) if target.exists() else {}
+    servers = data.get('mcpServers', {}) if isinstance(data, dict) else {}
+    if isinstance(servers, dict):
+        remaining = {k: v for k, v in servers.items() if k not in managed}
+        if remaining:
+            target.write_text(json.dumps({'mcpServers': remaining}, indent=2) + '\n')
+            print('✓ .agents/mcp_config.json: removed cc-suite-managed servers')
+        elif target.exists():
+            target.unlink()
+            print('✓ removed .agents/mcp_config.json (cc-suite generated)')
+    provenance.unlink()
+    print('✓ removed .agents/.cc-suite-mcp.provenance.json')
+except Exception as exc:
+    print(f'! could not safely remove Antigravity MCP bridge: {exc}')
+PY
+elif [ -f .agents/mcp_config.json ]; then
+  skip ".agents/mcp_config.json has no cc-suite provenance — left alone"
+fi
+
 # .agents/skills symlink only — never the .claude/skills/ target.
 if [ -L .agents/skills ]; then
   rm .agents/skills

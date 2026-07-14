@@ -3,7 +3,8 @@
 #
 # Skills are written to .claude/skills/ (Claude's native path), not .agents/skills/.
 # The .agents/skills → .claude/skills symlink created by bridge_skills.sh makes them
-# visible to Codex and Gemini CLI automatically.
+# visible to Codex and Antigravity CLI (`agy`) automatically. Both tools read
+# workspace skills from .agents/skills/.
 #
 # Each generated skill sets allow_implicit_invocation=false so users invoke
 # with $cmd-<name> in Codex rather than having it fire automatically.

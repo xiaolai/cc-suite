@@ -9,8 +9,10 @@
 #
 # How it works:
 #   Reads ~/.codex/models_cache.json (maintained by the codex CLI) to get the
-#   list of available models. Zero hardcoded model names — new models appear
-#   automatically after `codex login` refreshes the cache.
+#   list of available models. The cache is not guaranteed to be newest first
+#   (and includes special-purpose models such as codex-auto-review), so the
+#   preflight ranks general models by an explicit "latest" description marker,
+#   then model version, with Codex priority as a tie-breaker.
 #   If cache is missing, attempts to refresh it via `codex login --refresh`.
 
 set -euo pipefail
@@ -20,8 +22,11 @@ set -euo pipefail
 CLOUD_TIMEOUT=5          # seconds to wait for codex cloud list
 CACHE_TTL=300            # seconds (5 minutes) for our own preflight cache
 REFRESH_TIMEOUT=15       # seconds to wait for codex login --refresh
+PREFLIGHT_SCHEMA=3       # invalidate cached output when its model ordering changes
 
-# Static options (stable CLI flags — no need to probe).
+# Fallback options used only when an older/partial models cache has no
+# reasoning-level metadata. A current cache replaces these with the union of
+# the supported levels advertised by its models.
 REASONING_EFFORTS='["low","medium","high"]'
 SANDBOX_LEVELS='["read-only","workspace-write","danger-full-access"]'
 
@@ -79,7 +84,8 @@ CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/codex-toolkit"
 mkdir -p "$CACHE_DIR"
 CACHE_FILE="$CACHE_DIR/preflight-cache.json"
 
-if [[ -z "${CODEX_PREFLIGHT_NO_CACHE:-}" && -f "$CACHE_FILE" ]]; then
+if [[ -z "${CODEX_PREFLIGHT_NO_CACHE:-}" && -f "$CACHE_FILE" \
+      && "$(grep -c '"preflight_schema":$PREFLIGHT_SCHEMA' "$CACHE_FILE" 2>/dev/null || true)" -gt 0 ]]; then
   cache_age=$(file_age_seconds "$CACHE_FILE")
   if [[ $cache_age -lt $CACHE_TTL ]]; then
     info "Using cached results (${cache_age}s old, TTL ${CACHE_TTL}s)"
@@ -178,21 +184,44 @@ AVAILABLE=()
 MODELS_DETAIL="[]"
 
 if $USE_CACHE; then
-  # Extract model metadata from the cache using python3 (always available on macOS/Linux)
+  # Extract and order model metadata. Do not infer recency from the JSON array
+  # order: Codex's cache includes older and special-purpose models alongside
+  # the current frontier model.
   if command -v python3 &>/dev/null; then
     MODELS_DETAIL=$(python3 -c "
-import json, sys
+import json, re, sys
 try:
     with open('$MODELS_CACHE') as f:
         data = json.load(f)
     result = []
-    for m in data.get('models', []):
+    for index, m in enumerate(data.get('models', [])):
         slug = m.get('slug', '')
         if slug:
-            result.append({
+            try:
+                priority = float(m.get('priority', 0))
+            except (TypeError, ValueError):
+                priority = 0
+            description = m.get('description', slug)
+            model_text = ' '.join([slug, m.get('display_name', slug), description]).lower()
+            version = re.search(r'gpt-(\d+)(?:\.(\d+))?', slug.lower())
+            major = int(version.group(1)) if version else -1
+            minor = int(version.group(2) or 0) if version else -1
+            review_only = 1 if 'auto-review' in slug.lower() or 'automatic approval review' in model_text else 0
+            latest_marker = 0 if 'latest' in model_text else 1
+            metadata = {
                 'slug': slug,
-                'description': m.get('description', slug),
-            })
+                'display_name': m.get('display_name', slug),
+                'description': description,
+                'priority': m.get('priority', 0),
+                'reasoning_efforts': [
+                    level.get('effort')
+                    for level in m.get('supported_reasoning_levels', [])
+                    if level.get('effort')
+                ],
+            }
+            result.append((review_only, latest_marker, -major, -minor, priority, index, metadata))
+    result.sort(key=lambda item: item[:-1])
+    result = [item[-1] for item in result]
     print(json.dumps(result))
 except Exception:
     print('[]')
@@ -207,11 +236,28 @@ import json, sys
 for m in json.loads(sys.stdin.read()):
     print(m['slug'])
 " 2>/dev/null)
+
+    REASONING_EFFORTS=$(printf '%s' "$MODELS_DETAIL" | python3 -c "
+import json, sys
+preferred = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']
+seen = {effort for model in json.loads(sys.stdin.read()) for effort in model.get('reasoning_efforts', [])}
+print(json.dumps([effort for effort in preferred if effort in seen], separators=(',', ':')))
+" 2>/dev/null) || REASONING_EFFORTS='["low","medium","high"]'
   elif command -v jq &>/dev/null; then
-    MODELS_DETAIL=$(jq '[.models[] | {slug, description: (.description // .slug)}]' "$MODELS_CACHE" 2>/dev/null) || MODELS_DETAIL="[]"
+    MODELS_DETAIL=$(jq '[.models | to_entries[] | .value + {__index: .key}]
+      | map(. + {
+          __text: (((.slug // "") + " " + (.display_name // .slug // "") + " " + (.description // .slug // "")) | ascii_downcase),
+          __major: (try ((.slug // "") | capture("gpt-(?<major>[0-9]+)").major | tonumber) catch -1),
+          __minor: (try ((.slug // "") | capture("gpt-[0-9]+\\.(?<minor>[0-9]+)").minor | tonumber) catch -1),
+          __review_only: (if ((.slug // "" | ascii_downcase) | contains("auto-review")) or (((.description // "") | ascii_downcase) | contains("automatic approval review")) then 1 else 0 end),
+          __latest_marker: (if (. + {__text: (((.slug // "") + " " + (.display_name // .slug // "") + " " + (.description // .slug // "")) | ascii_downcase)} | .__text | contains("latest")) then 0 else 1 end)
+        })
+      | sort_by([.__review_only, .__latest_marker, -.__major, -.__minor, (.priority // 0), .__index])
+      | map({slug, display_name: (.display_name // .slug), description: (.description // .slug), priority: (.priority // 0), reasoning_efforts: ([.supported_reasoning_levels[]?.effort] // [])})' "$MODELS_CACHE" 2>/dev/null) || MODELS_DETAIL="[]"
     while IFS= read -r slug; do
       [[ -n "$slug" ]] && AVAILABLE+=("$slug")
     done < <(echo "$MODELS_DETAIL" | jq -r '.[].slug' 2>/dev/null)
+    REASONING_EFFORTS=$(echo "$MODELS_DETAIL" | jq -c '([.[].reasoning_efforts[]] | unique) as $seen | ["minimal","low","medium","high","xhigh","max","ultra"] | map(select(. as $effort | ($seen | index($effort)) != null))' 2>/dev/null) || REASONING_EFFORTS='["low","medium","high"]'
   else
     while IFS= read -r slug; do
       [[ -n "$slug" ]] && AVAILABLE+=("$slug")
@@ -265,7 +311,7 @@ CODEX_VERSION_SAFE=$(json_escape "$CODEX_VERSION")
 AUTH_MODE_SAFE=$(json_escape "$AUTH_MODE")
 
 OUTPUT=$(cat <<JSON
-{"status":"ok","codex_version":"$CODEX_VERSION_SAFE","auth_mode":"$AUTH_MODE_SAFE","codex_cloud":$CODEX_CLOUD,"models":$available_json,"models_detail":$MODELS_DETAIL,"unavailable":$unavailable_json,"reasoning_efforts":$REASONING_EFFORTS,"sandbox_levels":$SANDBOX_LEVELS}
+{"preflight_schema":$PREFLIGHT_SCHEMA,"status":"ok","codex_version":"$CODEX_VERSION_SAFE","auth_mode":"$AUTH_MODE_SAFE","codex_cloud":$CODEX_CLOUD,"default_model":"${AVAILABLE[0]}","models":$available_json,"models_detail":$MODELS_DETAIL,"unavailable":$unavailable_json,"reasoning_efforts":$REASONING_EFFORTS,"sandbox_levels":$SANDBOX_LEVELS}
 JSON
 )
 
