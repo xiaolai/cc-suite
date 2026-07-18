@@ -21,6 +21,34 @@ Each tool reads from its own files. `CLAUDE.md` and `AGENTS.md` sit next to each
 | **Codex reads Claude session history** | The same `claude-code` MCP server exposes `claude_code_sessions` (list this repo's Claude Code sessions, or all projects with `all_projects: true`) and `claude_code_transcript` (read a session by id). Codex can enumerate and read past Claude conversations for the repo. |
 | **Claude → `agy` delegation** | `scripts/agy-runner.mjs` drives Antigravity CLI headlessly, with the same job tracking, background mode, deadline enforcement, and conversation resume as the Codex runner. |
 | **`agy` → Claude delegation** | The same claude-octopus MCP server, registered in `agy`'s workspace config. |
+| **More coding agents (opt-in)** | `/cc-suite:bridge-tools` mirrors the project MCP surface into **Grok Build**, **opencode**, **Qwen Code**, and **Kimi CLI** — each selected in `.cc-suite.md`'s `## Enabled Tools` list. They read `AGENTS.md` and shared skills natively, so only MCP config is mirrored (per tool's native format). China-aware: Qwen/Kimi/opencode work natively in mainland China; Grok is VPN-only. |
+
+## More coding agents (opt-in)
+
+Beyond Claude / Codex / Antigravity, cc-suite can bridge additional agentic CLIs that read `AGENTS.md` and the shared skills paths natively. Enable them per project in `.cc-suite.md`:
+
+```markdown
+## Enabled Tools
+
+- [x] claude
+- [x] codex
+- [x] antigravity
+- [ ] grok
+- [x] opencode
+- [x] qwen
+- [x] kimi
+```
+
+Then run `/cc-suite:bridge-tools` (or `python3 scripts/bridge_tools.py`). Each enabled tool gets the project's `.mcp.json` servers plus the pinned `claude-octopus` server — so `claude_code_sessions` / delegation work everywhere — written to its own native MCP config:
+
+| Tool | MCP target | China tier |
+|------|-----------|:---:|
+| Grok Build (xAI) | `.grok/config.toml` (`[mcp_servers.*]`) | C — VPN-only |
+| opencode (SST) | `opencode.json` (`mcp`) | A — native |
+| Qwen Code (Alibaba) | `.qwen/settings.json` (`mcpServers`) + `.qwen/skills` symlink | A — native |
+| Kimi CLI (Moonshot) | `~/.kimi/mcp.json` | A — native |
+
+Env-var values and remote headers are never written into a mirrored config (potential secrets); the vars that need setting are reported instead. User-managed servers and sibling config keys are preserved; `--status` shows the enabled set, `--unbridge` tears it down. Design notes: `dev-docs/supporting-more-coding-agents.md`.
 
 ## Antigravity CLI (`agy`)
 

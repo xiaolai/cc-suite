@@ -1339,10 +1339,20 @@ git add -A; git commit -qm init >/dev/null 2>&1
 
 assert_exit0 git ls-files --error-unmatch .mcp.json      # tracked before fix
 bash "$SCRIPTS/ensure_gitignore.sh" >/dev/null 2>&1
-assert_contains ".gitignore" "cc-suite-schema: 5"
+assert_contains ".gitignore" "cc-suite-schema: 6"
 assert_exit_nonzero git ls-files --error-unmatch .mcp.json   # now untracked
 assert_exit0 git check-ignore .mcp.json                      # now ignored
 assert_file ".mcp.json"                                      # working file kept
+
+# Plugin-local consumer scaffolding is also ignored, but remains available for
+# local smoke tests when deliberately created.
+mkdir -p .codex/prompts .gemini/skills
+touch .codex/config.toml .codex/prompts/.gitkeep .gemini/skills/.gitkeep
+printf '@AGENTS.md\n' > GEMINI.md
+assert_exit0 git check-ignore .codex/config.toml
+assert_exit0 git check-ignore .codex/prompts/.gitkeep
+assert_exit0 git check-ignore .gemini/skills/.gitkeep
+assert_exit0 git check-ignore GEMINI.md
 
 cleanup
 
@@ -1376,7 +1386,7 @@ printf '# >>> cc-suite >>>\n# cc-suite-schema: 2\n.claude/settings.local.json\n#
 git add -A; git commit -qm init >/dev/null 2>&1
 
 bash "$SCRIPTS/ensure_gitignore.sh" >/dev/null 2>&1
-assert_contains ".gitignore" "cc-suite-schema: 5"
+assert_contains ".gitignore" "cc-suite-schema: 6"
 assert_count "# >>> cc-suite >>>" ".gitignore" 1   # single block, no duplication
 assert_exit_nonzero git ls-files --error-unmatch .mcp.json   # migrated + untracked
 assert_exit0 git check-ignore .mcp.json
@@ -1681,6 +1691,76 @@ assert_exit0 bash "$SCRIPTS/bridge_mcp.sh"
 assert_not_contains ".codex/config.toml" "mcp_servers.removed"
 assert_contains ".codex/config.toml" "# base config"
 
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T63: bridge_tools.py — emits per-tool MCP config; never writes secrets"
+# ═══════════════════════════════════════════════════════════════════════════════
+make_tmp
+cat > .mcp.json <<'JSON'
+{ "mcpServers": {
+    "codex-cli":  { "type": "stdio", "command": "codex", "args": ["mcp-server"] },
+    "secret-srv": { "type": "stdio", "command": "x", "env": { "API_KEY": "LEAKVALUE" } } } }
+JSON
+cat > .cc-suite.md <<'MD'
+## Enabled Tools
+- [x] grok
+- [x] opencode
+- [ ] qwen
+MD
+assert_exit0 python3 "$SCRIPTS/bridge_tools.py"
+assert_file      ".grok/config.toml"
+assert_contains  ".grok/config.toml" "[mcp_servers.codex-cli]"
+assert_contains  ".grok/config.toml" "[mcp_servers.claude-code]"    # claude-octopus auto-added
+assert_file      "opencode.json"
+assert_contains  "opencode.json" '"type": "local"'
+assert_no_file   ".qwen/settings.json"                              # not enabled
+assert_not_contains ".grok/config.toml" "LEAKVALUE"                 # env value never written
+assert_not_contains "opencode.json"     "LEAKVALUE"
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T64: bridge_tools.py — default selection bridges no registry tools"
+# ═══════════════════════════════════════════════════════════════════════════════
+make_tmp
+echo '{ "mcpServers": {} }' > .mcp.json         # no .cc-suite.md → default claude/codex/antigravity
+assert_exit0   python3 "$SCRIPTS/bridge_tools.py"
+assert_no_file ".grok/config.toml"
+assert_no_file "opencode.json"
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T65: bridge_tools.py — idempotent; preserves user entries; refuses conflicts"
+# ═══════════════════════════════════════════════════════════════════════════════
+make_tmp
+echo '{ "mcpServers": { "shared": { "type": "stdio", "command": "x" } } }' > .mcp.json
+printf '## Enabled Tools\n- [x] opencode\n' > .cc-suite.md
+assert_exit0 python3 "$SCRIPTS/bridge_tools.py"
+cp opencode.json opencode.json.bak
+assert_exit0 python3 "$SCRIPTS/bridge_tools.py"
+if diff -q opencode.json opencode.json.bak >/dev/null; then ok_msg "opencode.json unchanged on idempotent re-run"
+else fail_msg "opencode.json changed on idempotent re-run"; fi
+python3 -c "import json;d=json.load(open('opencode.json'));d['mcp']['mine']={'type':'local','command':['y'],'enabled':True};d['theme']='x';json.dump(d,open('opencode.json','w'),indent=2)"
+assert_exit0    python3 "$SCRIPTS/bridge_tools.py"
+assert_contains "opencode.json" '"mine"'                            # user server preserved
+assert_contains "opencode.json" '"theme"'                           # sibling key preserved
+python3 -c "import json;p=json.load(open('.cc-suite-opencode.json.provenance.json'));p['managed_servers']=[];json.dump(p,open('.cc-suite-opencode.json.provenance.json','w'))"
+assert_exit_nonzero python3 "$SCRIPTS/bridge_tools.py"              # 'shared' now user-owned → refuse
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T66: bridge_tools.py --unbridge — removes cc-suite artifacts, keeps user content"
+# ═══════════════════════════════════════════════════════════════════════════════
+make_tmp
+echo '{ "mcpServers": {} }' > .mcp.json
+printf '## Enabled Tools\n- [x] grok\n- [x] opencode\n' > .cc-suite.md
+assert_exit0 python3 "$SCRIPTS/bridge_tools.py"
+printf '\nmodel = "grok-build"\n' >> .grok/config.toml               # user setting outside the block
+assert_exit0 python3 "$SCRIPTS/bridge_tools.py" --unbridge
+assert_contains     ".grok/config.toml" "grok-build"                # user line kept
+assert_not_contains ".grok/config.toml" "cc-suite-mcp"              # cc-suite block removed
+assert_no_file      "opencode.json"                                 # was cc-suite-only → removed
+assert_no_file      ".cc-suite-opencode.json.provenance.json"       # provenance removed
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -3,6 +3,8 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 ok()   { printf '✓ %s\n' "$*"; }
 skip() { printf '· %s\n' "$*"; }
 warn() { printf '! %s\n' "$*" >&2; }
@@ -127,6 +129,11 @@ PY
 elif [ -f .agents/mcp_config.json ]; then
   skip ".agents/mcp_config.json has no cc-suite provenance — left alone"
 fi
+
+# Registry-bridged tools (grok / opencode / qwen / kimi) — remove cc-suite MCP
+# blocks/entries from each tool's config, preserving user-managed servers and
+# sibling keys. The engine owns the per-tool paths and provenance.
+python3 "${SCRIPT_DIR}/bridge_tools.py" --unbridge || warn "tool-profile unbridge reported an issue"
 
 # .agents/skills symlink only — never the .claude/skills/ target.
 if [ -L .agents/skills ]; then
