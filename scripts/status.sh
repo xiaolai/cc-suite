@@ -114,7 +114,7 @@ else
   mark ".agents/mcp_config.json → agy" miss "run /cc-suite:bridge-mcp"
 fi
 
-# Fast local check only; /cc-suite:google-preflight performs the live model/auth
+# Fast local check only; /cc-suite:agy-preflight performs the live model/auth
 # probe with a deadline.
 if command -v agy >/dev/null 2>&1; then
   _agy_version=$(agy --version 2>/dev/null | head -1 | tr -d '\r')

@@ -160,8 +160,10 @@ Ranked by integration effort (cheapest first). "Free" = handled by cc-suite's ex
 - **What it is:** xAI's official Rust CLI coding agent (`xai-org/grok-build`, Apache-2.0, binary `grok`), explicitly built for Claude-Code compatibility. **Not** the community `superagent-ai/grok-cli`, which has a different `.grok/` layout — do not conflate.
 - **Instructions / skills / hooks:** **free.** Reads `AGENTS.md`, `CLAUDE.md`, `.claude/rules`, `.claude/skills`, `.mcp.json`, and `~/.claude/settings.json` hooks out of the box.
 - **MCP (optional native mirror):** `.grok/config.toml` under `[mcp_servers.<name>]` — nearly identical to Codex's TOML. Reuse the `toml-mcp_servers` emitter with a different path. *Not strictly required* (Grok already reads `.mcp.json`); the mirror only adds project-trust semantics.
-- **Divergence:** subagents (`.grok/agents/` markdown or `[subagents.roles.*]` TOML) — leave unbridged.
+- **Divergence:** subagents (`.grok/agents/` markdown or `[subagents.roles.*]` TOML) — leave unbridged. (Note: Grok *does* read `.claude/agents/` as subagents natively, so Claude subagents come for free.)
 - **Profile:** `instructions=native-agents-md, skills=native-claude-path, mcp=toml-mcp_servers/.grok/config.toml, hooks=native-claude`.
+
+> **Also built (beyond this config bridge): a Claude → Grok *delegation* lane.** Separate from mirroring MCP config, `scripts/grok-runner.mjs` drives `grok agent stdio` as an **Agent Client Protocol (ACP) client** (`/cc-suite:grok`), with a fast local `/cc-suite:grok-preflight`. This parallels the codex/agy delegation runners, not the config-bridge registry this doc describes — see the README's "Claude → Grok delegation (ACP)" section.
 
 ### 6.2 opencode (SST) — low effort
 

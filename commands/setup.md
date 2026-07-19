@@ -65,7 +65,7 @@ Check each prerequisite:
 3. **Authentication**: `codex login status`
 
 Antigravity is an independent optional backend. When Google-backed delegation is
-needed, run `/cc-suite:google-preflight` separately; it checks `agy`, Google
+needed, run `/cc-suite:agy-preflight` separately; it checks `agy`, Google
 authentication, model discovery, and the workspace MCP projection. This setup
 command does not substitute the deprecated consumer Gemini CLI.
 
@@ -94,9 +94,9 @@ AskUserQuestion:
   question: "Codex is ready. What would you like to configure?"
   header: "Next step"
   options:
-    - label: "Run /preflight"
+    - label: "Run /cc-suite:codex-preflight"
       description: "Discover the latest available Codex model and test connectivity"
-    - label: "Run /cc-suite:google-preflight"
+    - label: "Run /cc-suite:agy-preflight"
       description: "Check the optional Antigravity backend and workspace MCP bridge"
     - label: "Run /init"
       description: "Generate a .cc-suite.md config for this project"

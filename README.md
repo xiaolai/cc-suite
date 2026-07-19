@@ -2,7 +2,7 @@
 
 [![Validated by NLPM](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/xiaolai/cc-suite/main/nlpm-badge.json)](https://github.com/xiaolai/cc-suite/blob/main/nlpm-badge.json)
 
-One Claude Code plugin to synchronize **Claude Code**, **Codex CLI**, and **Antigravity CLI** (`agy`) on the same project — and let them delegate work to each other.
+One Claude Code plugin to synchronize **Claude Code**, **Codex CLI**, and **Antigravity CLI** (`agy`) on the same project — and let them delegate work to each other. Adds a Claude→**Grok Build** delegation lane (ACP) and opt-in MCP bridging to more coding agents (**opencode**, **Qwen Code**, **Kimi CLI**).
 
 ## Why
 
@@ -21,6 +21,7 @@ Each tool reads from its own files. `CLAUDE.md` and `AGENTS.md` sit next to each
 | **Codex reads Claude session history** | The same `claude-code` MCP server exposes `claude_code_sessions` (list this repo's Claude Code sessions, or all projects with `all_projects: true`) and `claude_code_transcript` (read a session by id). Codex can enumerate and read past Claude conversations for the repo. |
 | **Claude → `agy` delegation** | `scripts/agy-runner.mjs` drives Antigravity CLI headlessly, with the same job tracking, background mode, deadline enforcement, and conversation resume as the Codex runner. |
 | **`agy` → Claude delegation** | The same claude-octopus MCP server, registered in `agy`'s workspace config. |
+| **Claude → Grok delegation** | `/cc-suite:grok` drives **Grok Build** over the Agent Client Protocol (`scripts/grok-runner.mjs` acts as the ACP client to `grok agent stdio`), with the same job tracking, background mode, deadline enforcement, and session resume as the Codex/agy runners. |
 | **More coding agents (opt-in)** | `/cc-suite:bridge-tools` mirrors the project MCP surface into **Grok Build**, **opencode**, **Qwen Code**, and **Kimi CLI** — each selected in `.cc-suite.md`'s `## Enabled Tools` list. They read `AGENTS.md` and shared skills natively, so only MCP config is mirrored (per tool's native format). China-aware: Qwen/Kimi/opencode work natively in mainland China; Grok is VPN-only. |
 
 ## More coding agents (opt-in)
@@ -49,6 +50,27 @@ Then run `/cc-suite:bridge-tools` (or `python3 scripts/bridge_tools.py`). Each e
 | Kimi CLI (Moonshot) | `~/.kimi/mcp.json` | A — native |
 
 Env-var values and remote headers are never written into a mirrored config (potential secrets); the vars that need setting are reported instead. User-managed servers and sibling config keys are preserved; `--status` shows the enabled set, `--unbridge` tears it down. Design notes: `dev-docs/supporting-more-coding-agents.md`.
+
+## Claude → Grok delegation (ACP)
+
+Beyond the config bridge, cc-suite can **drive Grok Build as an agent**. `/cc-suite:grok "<prompt>"` sends a task to Grok and returns its answer:
+
+```bash
+/cc-suite:grok "Review the changes on this branch for correctness bugs"
+/cc-suite:grok --sandbox workspace-write "Add a --json flag to the CLI"
+/cc-suite:grok --resume <session-id> "Now also update the tests"
+```
+
+`scripts/grok-runner.mjs` acts as an **Agent Client Protocol (ACP) client** to `grok agent stdio` (Grok is the agent, the runner is the client). The ACP handshake — `initialize` → `session/new` (or `session/load` on resume) → `session/prompt` — streams Grok's answer from `session/update` notifications. Because it's a structured protocol, the runner gets reliable session ids (resume carries full context), tool-call/thought visibility, and permission control — richer than a text-scraping CLI runner.
+
+| Flag | Meaning |
+|------|---------|
+| `--model <id>` | Grok model id (default: Grok's configured default; `grok models` lists them) |
+| `--effort <level>` | `none`…`max` reasoning effort (Grok takes an effort flag; agy does not) |
+| `--sandbox` | `read-only` (default) · `workspace-write` · `danger-full-access` |
+| `--background` / `--resume <id>` | Same job-tracking + resume as the Codex/agy runners |
+
+It shares the runner infrastructure (`/cc-suite:status`, `/result`, `/cancel`, `/continue`) with the other backends, and gates on `/cc-suite:grok-preflight` — a fast, **local** readiness check (binary + auth, no network round-trip) that fails fast with a `grok login` hint instead of hanging until the deadline. Pair it with the MCP bridge (`grok` enabled in `## Enabled Tools`) so Grok can call *back* into Claude via the `claude-code` server — a full round trip. Requires the `grok` binary on PATH ([install](https://x.ai/cli)).
 
 ## Antigravity CLI (`agy`)
 
@@ -106,7 +128,8 @@ claude plugin install cc-suite@xiaolai --scope project
 ### Prerequisites
 
 - [Codex CLI](https://github.com/openai/codex) installed — required for Claude→Codex delegation commands
-- [Antigravity CLI](https://github.com/google-antigravity/antigravity-cli) (`agy`) installed — required for Google-backed delegation and `/cc-suite:google-preflight`
+- [Antigravity CLI](https://github.com/google-antigravity/antigravity-cli) (`agy`) installed — required for Google-backed delegation and `/cc-suite:agy-preflight`
+- [Grok Build](https://x.ai/cli) (`grok`, xAI) installed — required for the Claude→Grok ACP delegation lane (`/cc-suite:grok`) and `/cc-suite:grok-preflight`
 - [claude-octopus](https://www.npmjs.com/package/claude-octopus) — required for Codex→Claude delegation. Delivered via `npx -y` at runtime, no pre-install needed. Uses the same credential store as Claude CLI (`~/.claude/.credentials.json`).
 
 ## Quick start
@@ -129,6 +152,7 @@ After init, edit `AGENTS.md` — all three tools pick up changes automatically.
 | `/cc-suite:bridge-skills` | Create `.agents/skills → .claude/skills` symlink. |
 | `/cc-suite:bridge-hooks` | Mirror `.claude/settings.json` hooks → `.codex/hooks.json`. |
 | `/cc-suite:sync-mcp` | Sync Claude's `.mcp.json` project servers → Codex and Antigravity workspace configs. Alias: `/cc-suite:bridge-mcp`. |
+| `/cc-suite:bridge-tools` | Mirror the project MCP surface into opt-in coding agents (Grok Build, opencode, Qwen Code, Kimi CLI) selected in `.cc-suite.md`'s `## Enabled Tools`. |
 | `/cc-suite:migrate-google` | Convert legacy Gemini CLI extensions/configuration and establish the agy workspace bridge. |
 | `/cc-suite:status` | Bridge health, MCP registration, and Codex runtime checks. |
 | `/cc-suite:unbridge` | Tear down bridge artifacts, restoring `CLAUDE.md` from `AGENTS.md`. |
@@ -154,9 +178,11 @@ All commands delegate to Codex via the `codex-cli` MCP server. Codex runs in a s
 | `/continue` | Continue a previous Codex thread by ID |
 | `/result` | Show the output of a completed Codex job |
 | `/status` | Show active and recent Codex jobs |
-| `/preflight` | Check Codex CLI availability and list available models |
-| `/cc-suite:google-preflight` | Check Antigravity CLI availability, authentication, models, and workspace MCP parity |
+| `/cc-suite:codex-preflight` | Check Codex CLI availability and list available models |
+| `/cc-suite:agy-preflight` | Check Antigravity CLI availability, authentication, models, and workspace MCP parity |
 | `/cc-suite:agy` | Delegate a bounded prompt directly to Antigravity CLI with shared job tracking |
+| `/cc-suite:grok-preflight` | Check Grok Build readiness (binary, auth, models) — fast and local, no network |
+| `/cc-suite:grok` | Delegate a bounded prompt to Grok Build over ACP with shared job tracking |
 | `/setup` | Manage the stop-time review gate |
 | `/refresh-knowledge` | Update the Claude Code conventions skill from latest docs |
 
@@ -173,7 +199,7 @@ When Codex has `claude-code` registered in `.codex/config.toml`, it can invoke t
 
 All delegation calls include a provenance disclosure so Claude evaluates the work with full rigor rather than deferring to it.
 
-Codex model selection is dynamic: `/preflight` reads the local Codex model
+Codex model selection is dynamic: `/cc-suite:codex-preflight` reads the local Codex model
 catalog, excludes review-only entries from the default, and prefers the catalog's
 latest marker followed by the newest model version. No model name is hardcoded in
 the plugin, so a Codex catalog refresh automatically moves the default forward.

@@ -32,7 +32,11 @@ bash    "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_claude.sh"
 bash    "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_mcp.sh"
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_hooks.py"
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_agents.py"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/migrate_config.py"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_tools.py"
 ```
+
+`migrate_config.py` tops up `.cc-suite.md` with any cc-suite-managed sections added since the project was initialized (e.g. `## Enabled Tools`), preserving existing settings — this is how an existing project picks up new config surfaces after a plugin update. `bridge_tools.py` then mirrors the project MCP surface into any coding agents enabled in that section (no-op when none are enabled).
 
 `bridge_skills.sh` is critical here: the `.claude/skills/cc-suite` symlink points at the plugin's version-stamped cache path (e.g. `~/.claude/plugins/cache/xiaolai/cc-suite/0.3.0/skills/cc-suite`). After `claude plugin update`, the new version lives at a different cache path, so the symlink is stale until re-pointed.
 

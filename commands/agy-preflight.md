@@ -1,14 +1,15 @@
 ---
-name: google-preflight
-description: Check Antigravity CLI availability, authentication, models, and workspace MCP parity
+name: agy-preflight
+description: Check Antigravity CLI (agy) availability, authentication, models, and workspace MCP parity
 allowed-tools:
   - Bash
 ---
 
-# Google Backend Preflight
+# Antigravity (agy) Preflight
 
 Check the supported Google terminal backend: Antigravity CLI (`agy`). This is
-separate from `/cc-suite:preflight`, which checks Codex.
+separate from `/cc-suite:codex-preflight` (Codex) and `/cc-suite:grok-preflight`
+(Grok Build).
 
 ## Step 1: Run the preflight script
 

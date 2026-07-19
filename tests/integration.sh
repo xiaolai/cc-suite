@@ -1764,6 +1764,71 @@ assert_no_file      ".cc-suite-opencode.json.provenance.json"       # provenance
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════
+section "T67: grok-runner.mjs — missing prompt is rejected"
+# ═══════════════════════════════════════════════════════════════════════════════
+make_tmp
+assert_exit_nonzero node "$SCRIPTS/grok-runner.mjs" --kind grok
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T68: grok-runner.mjs — grok absent → failed with an install hint"
+# ═══════════════════════════════════════════════════════════════════════════════
+make_tmp
+mkdir -p node-bin
+ln -s "$(command -v node)" node-bin/node
+STERILE_PATH="$PWD/node-bin:/usr/bin:/bin"
+
+# Runner reports failure in-band (JSON on stdout) and exits 1; capture both.
+out="$(env PATH="$STERILE_PATH" node "$SCRIPTS/grok-runner.mjs" \
+        --kind grok --timeout-ms 10000 -- "smoke" 2>/dev/null || true)"
+printf '%s' "$out" > result.json
+
+assert_exit0 python3 -c "import json,sys; json.load(open('result.json'))"
+assert_contains "result.json" '"status":"failed"'
+assert_contains "result.json" "grok not found on PATH"
+# A failed spawn must still register a job so /cc-suite:status can see it.
+assert_contains "result.json" '"jobId"'
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T69: grok-preflight.sh — grok absent → error JSON with install hint"
+# ═══════════════════════════════════════════════════════════════════════════════
+make_tmp
+# Sterile PATH: python3 available, grok (in ~/.local/bin) is not.
+STERILE_PATH="$(dirname "$(command -v python3)"):/usr/bin:/bin"
+out="$(env PATH="$STERILE_PATH" bash "$SCRIPTS/grok-preflight.sh" 2>/dev/null || true)"
+printf '%s' "$out" > pf.json
+
+assert_exit0 python3 -c "import json,sys; json.load(open('pf.json'))"
+assert_contains "pf.json" '"status":"error"'
+assert_contains "pf.json" '"error_code":"grok_not_found"'
+assert_contains "pf.json" "x.ai/cli/install.sh"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T70: migrate_config.py — tops up .cc-suite.md non-destructively"
+# ═══════════════════════════════════════════════════════════════════════════════
+make_tmp
+printf '# CC-Suite Configuration\n\n## Project\n\n- **Stack**: TypeScript\n' > .cc-suite.md
+assert_exit0    python3 "$SCRIPTS/migrate_config.py"
+assert_contains ".cc-suite.md" "## Enabled Tools"     # managed section appended
+assert_contains ".cc-suite.md" "[ ] grok"
+assert_contains ".cc-suite.md" "TypeScript"           # user content preserved
+
+cp .cc-suite.md before.md
+assert_exit0 python3 "$SCRIPTS/migrate_config.py"     # idempotent
+if diff -q .cc-suite.md before.md >/dev/null; then ok_msg "migrate_config.py idempotent on re-run"
+else fail_msg "migrate_config.py changed the file on idempotent re-run"; fi
+
+rm .cc-suite.md
+assert_exit0   python3 "$SCRIPTS/migrate_config.py"   # no config → no-op, exit 0
+assert_no_file ".cc-suite.md"                         # must NOT create the file itself
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Summary
 # ═══════════════════════════════════════════════════════════════════════════════
 echo

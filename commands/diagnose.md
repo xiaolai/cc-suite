@@ -98,7 +98,7 @@ Group all findings into three buckets:
 | 11 | `.codex/config.toml → Codex` | stale pin | Registered claude-octopus version doesn't match the plugin's expected pin — Codex may be running an older Claude bridge | `/cc-suite:update` |
 | 12 | claude-octopus boot test | failed | The pinned claude-octopus does not boot or respond to MCP on this machine — Codex delegation to Claude will fail | `/cc-suite:update` (refreshes registration + re-tests). If still failing, the pin may be broken; escalate to the cc-suite maintainer. |
 | 13 | `.agents/mcp_config.json → agy` | missing/stale | Antigravity cannot see the workspace MCP surface or delegate to Claude | `/cc-suite:bridge-mcp` |
-| 14 | `agy CLI` | not found | Google-backed delegation and Antigravity preflight are unavailable | Install with the command shown by `/cc-suite:google-preflight` |
+| 14 | `agy CLI` | not found | Google-backed delegation and Antigravity preflight are unavailable | Install with the command shown by `/cc-suite:agy-preflight` |
 | 15 | legacy `GEMINI.md` / `.gemini/` | present | Legacy Google files need deliberate migration or may be retained for enterprise use | `/cc-suite:migrate-google` |
 
 Use the actual item names and details from the status output — the table above is a reference mapping, not a literal template.

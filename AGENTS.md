@@ -1,6 +1,6 @@
 ---
 name: cc-suite
-description: "Project instructions for cc-suite — the Claude Code plugin that bridges Claude Code, Codex CLI, and Antigravity CLI (agy) with single-source AGENTS.md, shared skills, mirrored hooks, and bidirectional MCP delegation."
+description: "Project instructions for cc-suite — the Claude Code plugin that bridges Claude Code, Codex CLI, and Antigravity CLI (agy) with single-source AGENTS.md, shared skills, mirrored hooks, and bidirectional MCP delegation; adds a Claude→Grok delegation lane (ACP) and opt-in MCP bridging to more coding agents (Grok Build, opencode, Qwen Code, Kimi CLI)."
 ---
 
 # Project Instructions
@@ -19,7 +19,8 @@ description: "Project instructions for cc-suite — the Claude Code plugin that 
 - **Claude Code** (≥ 2.0) — primary host for all commands and skills
 - **Codex CLI** (optional) — required for the `codex-cli` MCP delegation lane and `bridge_hooks.py`
 - **Python 3** — required by `scripts/bridge_hooks.py`, MCP projections, and migration helpers
-- **Antigravity CLI (`agy`)** (optional) — required for the Google backend, `/cc-suite:google-preflight`, and headless agy delegation
+- **Antigravity CLI (`agy`)** (optional) — required for the Google backend, `/cc-suite:agy-preflight`, and headless agy delegation
+- **Grok Build (`grok`, xAI)** (optional) — required for the Claude→Grok ACP delegation lane (`/cc-suite:grok`) and `/cc-suite:grok-preflight`
 - **Bash** — required by all `scripts/*.sh` files
 - **`claude-octopus`** (npm, pinned) — the MCP server cc-suite registers in `.codex/config.toml` so Codex can delegate to Claude. cc-suite does not install it explicitly; `mcp_claude.sh` writes a `npx -y claude-octopus@<pin>` invocation and npm fetches it on first Codex start. The pin lives in `scripts/lib/claude-octopus-pin.txt` — single source of truth, read by `mcp_claude.sh`, the integration suite, and the boot-handshake test.
 
@@ -54,13 +55,13 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/init.sh"
 
 ## Tests
 
-Run the integration suite (55+ test sections, 270+ assertions):
+Run the integration suite (70+ test sections, 340+ assertions):
 
 ```bash
 bash tests/integration.sh
 ```
 
-Tests cover every `scripts/*.sh`, the Codex and Antigravity MCP projection paths, legacy Gemini cleanup, `status.sh` output, refresh semantics for `mcp_claude.sh`, a real boot-and-handshake against the pinned `claude-octopus` (network-dependent — set `CC_SUITE_SKIP_BOOT_TEST=1` to skip), and the advisor-agent subsystem. Add a new `T<N>` section for any new behavior; the suite uses `make_tmp` / `cleanup` / `assert_*` helpers and tallies pass/fail counts in its summary.
+Tests cover every `scripts/*.sh`, the Codex and Antigravity MCP projection paths, the multi-tool bridge (`bridge_tools.py` — grok/opencode/qwen/kimi emitters, selection, unbridge), the grok delegation runner and preflight (`grok-runner.mjs`, `grok-preflight.sh`), legacy Gemini cleanup, `status.sh` output, refresh semantics for `mcp_claude.sh`, a real boot-and-handshake against the pinned `claude-octopus` (network-dependent — set `CC_SUITE_SKIP_BOOT_TEST=1` to skip), and the advisor-agent subsystem. Add a new `T<N>` section for any new behavior; the suite uses `make_tmp` / `cleanup` / `assert_*` helpers and tallies pass/fail counts in its summary. Command-file frontmatter is validated separately by `tests/commands.test.mjs` (`node --test`).
 
 ## Shared Memory
 
@@ -77,10 +78,29 @@ This keeps Claude Code, Codex CLI, and Antigravity CLI (`agy`) on the same conte
 - `.codex/prompts/` — Codex slash-command prompts
 - `.codex/hooks.json` / `.codex/config.toml` — Codex hooks/config (optional)
 - `.mcp.json` — MCP server registrations shared by Claude Code and Codex
+- `.cc-suite.md` — per-project config, incl. the `## Enabled Tools` list that selects which agents the multi-tool bridge targets
+- `.grok/config.toml` / `opencode.json` / `.qwen/settings.json` / `~/.kimi/mcp.json` — MCP config mirrored into opt-in coding agents by `scripts/bridge_tools.py` (`/cc-suite:bridge-tools`); `.cc-suite-*.provenance.json` sidecars track cc-suite-owned entries and are gitignored
 - `~/.gemini/config/` — Antigravity CLI's global MCP/plugin configuration
 - `~/.gemini/antigravity-cli/skills/` — Antigravity CLI's global skills configuration
 - `.cc-suite/agents/<name>.md` — declared advisor agents (see below)
 - `.cc-suite/agents/<name>/timeline/` — per-agent consultation history (gitignored by default)
+
+## Delegation lanes & multi-tool bridge
+
+cc-suite connects agents two ways: **delegation runners** (drive another agent as a subprocess, with job tracking via `scripts/lib/state.mjs` and the shared `/cc-suite:status` / `/result` / `/cancel` / `/continue` surface) and the **config bridge** (mirror the shared MCP/skills/instruction surface into each agent's native files).
+
+Delegation lanes:
+
+| Lane | Mechanism | Preflight |
+|------|-----------|-----------|
+| Claude → Codex | `codex-runner.mjs` (`codex exec`) + `codex-cli` MCP server | `/cc-suite:codex-preflight` (`codex-preflight.sh`) |
+| Codex / agy → Claude | pinned `claude-octopus` MCP server (also exposes `claude_code_sessions` / `_transcript`) | — |
+| Claude → agy | `agy-runner.mjs` (`agy -p`, conversation recovered by dir-diff) | `/cc-suite:agy-preflight` (`agy-preflight.sh`) |
+| Claude → Grok | `grok-runner.mjs` — ACP client driving `grok agent stdio` (`initialize` → `session/new`/`load` → `session/prompt`); `threadId` is the ACP session id | `/cc-suite:grok-preflight` (`grok-preflight.sh`, fast/local) |
+
+All preflight scripts emit the same JSON shape (`status`, `default_model`, `models`, `reasoning_efforts`, `sandbox_levels`, `error_code`). New backend runner ⇒ mirror `agy-runner.mjs` (parseArgs / executeX / runForeground / runBackground / runBackgroundWorker) and add a `<backend>-preflight`.
+
+Multi-tool config bridge (`scripts/bridge_tools.py`, `/cc-suite:bridge-tools`): a declarative tool-profile registry that mirrors the project MCP surface into **Grok Build, opencode, Qwen Code, Kimi CLI** (three emitters: TOML `mcp_servers`, opencode nested `mcp`, JSON `mcpServers`). Tools are selected in `.cc-suite.md`'s `## Enabled Tools`; Claude/Codex/Antigravity keep their existing bridge scripts (`bridged_by: "existing"`). Env values and remote headers are never mirrored (secrets). Design: `dev-docs/supporting-more-coding-agents.md`.
 
 ## Advisor Agents (`.cc-suite/agents/`)
 

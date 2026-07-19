@@ -135,6 +135,6 @@ If Codex is unavailable (the runner returns failed/stalled):
 1. Inform the user: "Codex is not available."
 2. Offer alternatives via `AskUserQuestion`:
    - **"Implement with Claude (Recommended)"** — Claude reads the plan and executes each step directly using Read, Edit, Write, and Bash tools
-   - **"Check connectivity"** — Run `/preflight` to diagnose
+   - **"Check connectivity"** — Run `/cc-suite:codex-preflight` to diagnose
    - **"Cancel"** — Stop and try again later
 3. If "Implement with Claude": read the plan, break it into numbered steps, and execute each step sequentially — creating files, installing dependencies, running tests as specified. Report progress after each major step.
