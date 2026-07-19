@@ -23,7 +23,7 @@ set -euo pipefail
 
 SENTINEL_START="# >>> cc-suite >>>"
 SENTINEL_END="# <<< cc-suite <<<"
-SCHEMA_MARKER="# cc-suite-schema: 5"
+SCHEMA_MARKER="# cc-suite-schema: 6"
 
 GITIGNORE_FILE=".gitignore"
 PRIVATE="${PRIVATE:-0}"
@@ -98,6 +98,10 @@ CLAUDE.local.md
 # credentials or machine-specific paths.
 .agents/mcp_config.json
 .agents/.cc-suite-mcp.provenance.json
+
+# cc-suite tool-profile bridge (grok/opencode/qwen) — derived provenance
+# sidecars tracking which MCP servers cc-suite owns. Not authored.
+.cc-suite-*.provenance.json
 GI
   if [ "$IS_PLUGIN_REPO" = "1" ] && [ "$PRIVATE" != "1" ]; then
     cat <<'GI'
@@ -107,6 +111,14 @@ GI
 # would start `codex mcp-server` for every installer. Local dev use is fine;
 # the file just stays untracked.
 .mcp.json
+
+# cc-suite: plugin repo — these are consumer-workspace scaffolds created when
+# the plugin repository is used as its own local test target. They are not
+# plugin source files and must not appear in releases.
+.codex/config.toml
+.codex/prompts/
+.gemini/
+GEMINI.md
 GI
   fi
   if [ "$PRIVATE" = "1" ]; then
@@ -125,7 +137,7 @@ GI
 } >> "$GITIGNORE_FILE"
 
 mode_label=$([ "$PRIVATE" = "1" ] && echo private || echo public)
-ok ".gitignore: cc-suite block written ($mode_label mode, schema 5)"
+ok ".gitignore: cc-suite block written ($mode_label mode, schema ${SCHEMA_MARKER##*: })"
 
 # Self-heal an already-leaked plugin repo: if .mcp.json is now ignored but was
 # committed by an earlier cc-suite version, drop it from the index so the ignore

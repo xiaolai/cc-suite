@@ -71,6 +71,14 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_hooks.py"
 
 Mirrors `.claude/settings.json` hooks into `.codex/hooks.json`. Skips gracefully if nothing to bridge.
 
+### Step 6b: Bridge additional coding agents
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_tools.py"
+```
+
+Mirrors the project MCP surface into any registry-bridged tools (Grok Build, opencode, Qwen Code, Kimi CLI) enabled in `.cc-suite.md`'s `## Enabled Tools` section. No-op when none are enabled.
+
 ### Step 7: Status check
 
 ```bash

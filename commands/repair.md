@@ -71,9 +71,17 @@ Re-registers any cc-suite advisor agents declared in `.cc-suite/agents/*.md`. No
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_agents.py"
 ```
 
-If any script in Steps 1–7 exits non-zero, report the error output and the step that failed, then continue running the remaining steps. Collect all failures and surface them together in the final status below.
+### Step 8: Bridge additional coding agents (if any enabled)
 
-### Step 8: Final status
+Mirrors the project MCP surface into any registry-bridged tools (Grok Build, opencode, Qwen Code, Kimi CLI) enabled in `.cc-suite.md`. No-op when none are enabled — safe to run unconditionally.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_tools.py"
+```
+
+If any script in Steps 1–8 exits non-zero, report the error output and the step that failed, then continue running the remaining steps. Collect all failures and surface them together in the final status below.
+
+### Step 9: Final status
 
 Run the full status check and display the output:
 
