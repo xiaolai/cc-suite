@@ -14,6 +14,7 @@ Each tool reads from its own files. `CLAUDE.md` and `AGENTS.md` sit next to each
 |---------|--------------|
 | **Single-source instructions** | `AGENTS.md` is the source of truth. `CLAUDE.md` becomes a thin `@AGENTS.md` import. Codex and `agy` read `AGENTS.md` natively. |
 | **Shared skills** | `.agents/skills/` is symlinked to `.claude/skills/`. Claude, Codex, and `agy` can use the same workspace skills. |
+| **No circular delegation** | Because the skills tree is shared, an agent Claude delegates to can see cc-suite's own Claude-facing skills and hand the task straight back. Every outbound lane blocks that: implicit-invocation guards on the Codex side, and a delegation boundary prepended to the prompt on all lanes. |
 | **Mirrored hooks** | Syncs the five shared hook events from `.claude/settings.json` into `.codex/hooks.json`. Same scripts, both tools. |
 | **MCP parity** | Mirrors `.mcp.json` project servers into `.codex/config.toml` and `.agents/mcp_config.json` so Codex and `agy` see the same servers. |
 | **Claude → Codex delegation** | Registers the `codex-cli` MCP server in `.mcp.json`. Claude can call `/audit`, `/implement`, `/bug-analyze`, and more directly. Full Codex job tracking, background mode, and stop-time review gate included. |

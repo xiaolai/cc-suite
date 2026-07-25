@@ -1,0 +1,8 @@
+# Explicit-only. cc-suite exposes every skill in this directory to Codex via
+# .agents/skills -> ../.claude/skills, including Codex sessions that Claude Code
+# itself spawned. Left implicitly invocable, this skill can fire mid-task and
+# hand delegated work straight back to Claude Code — collapsing an independent
+# review into self-review — or mutate project setup unasked. Invoke it with an
+# explicit $<name> instead.
+policy:
+  allow_implicit_invocation: false

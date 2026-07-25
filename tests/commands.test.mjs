@@ -204,3 +204,25 @@ test("plugin.json exists and has required fields", () => {
   assert.ok(plugin.version);
   assert.ok(plugin.description);
 });
+
+test("package.json and plugin.json agree on name and version", () => {
+  // Nothing enforced this before, and the two drifted four releases apart
+  // (package.json 0.9.0 vs plugin.json 0.11.0). plugin.json is the release
+  // artifact and therefore the source of truth.
+  const plugin = JSON.parse(
+    fs.readFileSync(
+      path.join(PLUGIN_ROOT, ".claude-plugin", "plugin.json"),
+      "utf8"
+    )
+  );
+  const pkg = JSON.parse(
+    fs.readFileSync(path.join(PLUGIN_ROOT, "package.json"), "utf8")
+  );
+  assert.equal(pkg.name, plugin.name);
+  assert.equal(
+    pkg.version,
+    plugin.version,
+    "Bump package.json alongside .claude-plugin/plugin.json"
+  );
+  assert.match(plugin.version, /^\d+\.\d+\.\d+$/, "Version must be semver");
+});

@@ -1,10 +1,15 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import test, { before, after } from "node:test";
 import assert from "node:assert/strict";
 
-import { makeTempDir, cleanupDir } from "./helpers.mjs";
+import {
+  makeTempDir,
+  cleanupDir,
+  isolateEnv,
+  withIsolatedEnv,
+} from "./helpers.mjs";
 import {
   resolveStateDir,
   resolveStateFile,
@@ -21,6 +26,16 @@ import {
   readJobFile,
 } from "../scripts/lib/state.mjs";
 
+// State resolution reads the environment, so the whole file runs hermetically.
+// Tests that need a specific value declare it via withIsolatedEnv.
+let restoreEnv;
+before(() => {
+  restoreEnv = isolateEnv();
+});
+after(() => {
+  restoreEnv?.();
+});
+
 test("resolveStateDir uses a temp-backed per-workspace directory", () => {
   const workspace = makeTempDir();
   try {
@@ -35,18 +50,16 @@ test("resolveStateDir uses a temp-backed per-workspace directory", () => {
 test("resolveStateDir uses CLAUDE_PLUGIN_DATA when set", () => {
   const workspace = makeTempDir();
   const pluginDataDir = makeTempDir();
-  const prev = process.env.CLAUDE_PLUGIN_DATA;
-  process.env.CLAUDE_PLUGIN_DATA = pluginDataDir;
   try {
-    const stateDir = resolveStateDir(workspace);
-    assert.equal(
-      stateDir.startsWith(path.join(pluginDataDir, "state")),
-      true
-    );
-    assert.match(path.basename(stateDir), /.+-[a-f0-9]{16}$/);
+    withIsolatedEnv({ CLAUDE_PLUGIN_DATA: pluginDataDir }, () => {
+      const stateDir = resolveStateDir(workspace);
+      assert.equal(
+        stateDir.startsWith(path.join(pluginDataDir, "state")),
+        true
+      );
+      assert.match(path.basename(stateDir), /.+-[a-f0-9]{16}$/);
+    });
   } finally {
-    if (prev == null) delete process.env.CLAUDE_PLUGIN_DATA;
-    else process.env.CLAUDE_PLUGIN_DATA = prev;
     cleanupDir(workspace);
     cleanupDir(pluginDataDir);
   }

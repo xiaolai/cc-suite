@@ -89,6 +89,8 @@ This keeps Claude Code, Codex CLI, and Antigravity CLI (`agy`) on the same conte
 
 cc-suite connects agents two ways: **delegation runners** (drive another agent as a subprocess, with job tracking via `scripts/lib/state.mjs` and the shared `/cc-suite:status` / `/result` / `/cancel` / `/continue` surface) and the **config bridge** (mirror the shared MCP/skills/instruction surface into each agent's native files).
 
+**Outbound lanes must refuse the hand-back.** `.agents/skills/` exposes cc-suite's own Claude-facing skills (`audit`, `verify`, `claude-*`) to every agent we delegate to, so a delegated task can be routed straight back to Claude and the independent judgment is lost. Two levers, in `scripts/lib/delegation-boundary.mjs`: `allow_implicit_invocation: false` guards in `skills/cc-suite/*/agents/openai.yaml` (Codex only — Antigravity's skill schema has no equivalent), plus the boundary text prepended to the prompt. The agy and Grok runners inject it in code; the Codex lane carries it as part 3 of the `codex-call.md` preamble.
+
 Delegation lanes:
 
 | Lane | Mechanism | Preflight |

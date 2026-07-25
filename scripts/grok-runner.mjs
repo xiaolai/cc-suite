@@ -44,6 +44,7 @@ import {
   resolveJobLogFile,
 } from "./lib/state.mjs";
 import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
+import { withDelegationBoundary } from "./lib/delegation-boundary.mjs";
 
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes — matches the other runners
 const HEARTBEAT_MS = 30 * 1000;
@@ -272,9 +273,12 @@ function executeGrok(cwd, args, logFile) {
         answer.length = 0;
         toolCalls = 0;
 
+        // Grok reads AGENTS.md and the shared .agents/skills tree natively, so
+        // it can see cc-suite's Claude-facing skills too. Refuse the hand-back
+        // in the prompt. See lib/delegation-boundary.mjs.
         const result = await rpc("session/prompt", {
           sessionId: acpSessionId,
-          prompt: [{ type: "text", text: args.prompt }],
+          prompt: [{ type: "text", text: withDelegationBoundary(args.prompt) }],
         });
 
         if (timedOut) return; // the deadline path (close handler) finishes as stalled

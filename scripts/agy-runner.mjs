@@ -48,6 +48,7 @@ import {
   resolveJobLogFile,
 } from "./lib/state.mjs";
 import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
+import { withDelegationBoundary } from "./lib/delegation-boundary.mjs";
 
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes — matches codex-runner
 const HEARTBEAT_MS = 30 * 1000;
@@ -178,7 +179,12 @@ function buildAgyArgs(args) {
   // Let agy enforce the same deadline we do. Ours (SIGTERM) is the backstop for
   // the case where agy ignores its own timeout.
   agyArgs.push("--print-timeout", goDuration(args.timeoutMs));
-  agyArgs.push("-p", args.prompt);
+
+  // Antigravity reads the shared .agents/skills tree, which includes cc-suite's
+  // own skills for delegating to Claude Code. Its skill schema has no
+  // allow_implicit_invocation switch, so the prompt is the only place the
+  // hand-back can be refused. See lib/delegation-boundary.mjs.
+  agyArgs.push("-p", withDelegationBoundary(args.prompt));
 
   return agyArgs;
 }

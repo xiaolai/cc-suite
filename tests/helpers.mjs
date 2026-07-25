@@ -33,3 +33,59 @@ export function cleanupDir(dirPath) {
     fs.rmSync(dirPath, { recursive: true, force: true });
   }
 }
+
+// Environment variables that change where state lives or which jobs are
+// visible. Both are set inside a cc-suite-enabled Claude Code session — the
+// exact environment a maintainer runs the suite in — so a test that reads them
+// ambiently passes on CI and fails on a developer's machine:
+//
+//   CLAUDE_PLUGIN_DATA      reroutes resolveStateDir away from the temp fallback
+//   CODEX_TOOLKIT_SESSION_ID  makes job queries drop every job lacking that id
+//
+// Tests must declare the values they depend on rather than inherit them.
+export const AMBIENT_STATE_ENV = Object.freeze([
+  "CLAUDE_PLUGIN_DATA",
+  "CODEX_TOOLKIT_SESSION_ID",
+]);
+
+/**
+ * Clear every ambient var in AMBIENT_STATE_ENV, then apply `overrides`.
+ * Pass a string to set a var, undefined/null to keep it cleared.
+ * @param {Record<string, string | undefined | null>} [overrides]
+ * @returns {() => void} restores the previous environment exactly
+ */
+export function isolateEnv(overrides = {}) {
+  const keys = new Set([...AMBIENT_STATE_ENV, ...Object.keys(overrides)]);
+  const saved = new Map();
+
+  for (const key of keys) {
+    saved.set(key, Object.hasOwn(process.env, key) ? process.env[key] : null);
+    delete process.env[key];
+  }
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value != null) process.env[key] = value;
+  }
+
+  return function restore() {
+    for (const [key, value] of saved) {
+      if (value === null) delete process.env[key];
+      else process.env[key] = value;
+    }
+  };
+}
+
+/**
+ * Run `fn` with a hermetic environment, restoring it afterwards even on throw.
+ * @template T
+ * @param {Record<string, string | undefined | null>} overrides
+ * @param {() => T} fn
+ * @returns {T}
+ */
+export function withIsolatedEnv(overrides, fn) {
+  const restore = isolateEnv(overrides);
+  try {
+    return fn();
+  } finally {
+    restore();
+  }
+}

@@ -29,6 +29,7 @@ import {
   resolveJobLogFile,
 } from "./lib/state.mjs";
 import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
+import { extractErrorEvent, resolveFailureMessage } from "./lib/codex-errors.mjs";
 
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 const HEARTBEAT_MS = 30 * 1000;
@@ -134,6 +135,7 @@ function executeCodex(cwd, args, logFile) {
     let threadId = null;
     let stdoutBuf = "";
     let stderrTail = "";
+    let errorEvent = null; // highest-ranked error seen on the JSONL stream
     let settled = false;
     let timedOut = false;
 
@@ -181,6 +183,12 @@ function executeCodex(cwd, args, logFile) {
           appendLog(logFile, `Thread: ${threadId}`);
         }
       }
+      // Terminal failures arrive here, not on stderr. Keep the most
+      // authoritative one; ties go to the most recent event.
+      const failure = extractErrorEvent(line);
+      if (failure && (!errorEvent || failure.rank >= errorEvent.rank)) {
+        errorEvent = failure;
+      }
     }
 
     child.stdout.on("data", (chunk) => {
@@ -217,13 +225,14 @@ function executeCodex(cwd, args, logFile) {
         return;
       }
       if (code !== 0) {
-        const stderrMsg = stderrTail.trim();
         finish({
           status: "failed",
-          errorMessage:
-            code === null
-              ? `signal ${signal}${stderrMsg ? `: ${stderrMsg}` : ""}`
-              : stderrMsg || `exit ${code}`,
+          errorMessage: resolveFailureMessage({
+            event: errorEvent,
+            stderr: stderrTail,
+            code,
+            signal,
+          }),
           threadId,
           rawOutput,
         });

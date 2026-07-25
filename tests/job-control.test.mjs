@@ -1,8 +1,8 @@
 import fs from "node:fs";
-import test from "node:test";
+import test, { before, after } from "node:test";
 import assert from "node:assert/strict";
 
-import { makeTempDir, cleanupDir } from "./helpers.mjs";
+import { makeTempDir, cleanupDir, isolateEnv } from "./helpers.mjs";
 import { upsertJob } from "../scripts/lib/state.mjs";
 import {
   sortJobsNewestFirst,
@@ -12,6 +12,17 @@ import {
   resolveCancelableJob,
   readJobProgressPreview,
 } from "../scripts/lib/job-control.mjs";
+
+// buildStatusSnapshot and resolveResultJob filter jobs by the ambient session
+// id, and these tests create jobs with none. Without isolation an inherited
+// CODEX_TOOLKIT_SESSION_ID filters every fixture out and the queries look empty.
+let restoreEnv;
+before(() => {
+  restoreEnv = isolateEnv();
+});
+after(() => {
+  restoreEnv?.();
+});
 
 test("sortJobsNewestFirst sorts by updatedAt descending", () => {
   const jobs = [

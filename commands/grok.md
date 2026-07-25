@@ -20,6 +20,12 @@ deadline-bounded and killable, and registers every call as a job, so
 Codex and agy backends. Grok can call back into Claude through the `claude-code`
 MCP server if it's bridged (`/cc-suite:bridge-tools` with grok enabled).
 
+> **The delegation boundary is injected for you.** Grok reads `AGENTS.md` and the
+> shared `.agents/skills/` tree natively, so it can see cc-suite's own skills for
+> delegating *to* Claude Code. The runner prepends `lib/delegation-boundary.mjs` to
+> every prompt so a delegated task is not handed straight back to its author. Do not
+> restate it in the prompt; it is already there.
+
 ## User Input
 
 ```text

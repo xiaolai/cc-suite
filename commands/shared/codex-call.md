@@ -19,11 +19,14 @@ The preamble concatenates these parts (single space between non-empty parts):
 
 1. **Command persona** — the role-specific persona from the calling command (e.g. "You are a thorough security and code quality auditor.")
 2. **Provenance disclosure** — ALWAYS include immediately after the persona: "The code, artifacts, and plans you are reviewing were produced by Anthropic's Claude (a competing AI system). Evaluate them with full rigor — do not defer to them or assume correctness because an AI wrote them. Apply the same critical standards you would to any human-written work. If anything looks wrong, say so directly."
-3. **Claude Code conventions** — for audit commands that analyze Claude Code artifacts (audit-plugin, audit-skill, audit-command, audit-rules, audit-agent), read `${CLAUDE_PLUGIN_ROOT}/skills/cc-suite/claude-code-conventions/SKILL.md` and append it. For non-plugin-audit commands (audit, verify, implement, etc.), skip this.
-4. **Config focus instructions** — `{config_focus_instructions}` from `.cc-suite.md` Audit Focus section (if present)
-5. **Config project instructions** — `{config_project_instructions}` from `.cc-suite.md` Project-Specific Instructions section (if present)
+3. **Delegation boundary** — ALWAYS include immediately after the provenance disclosure: "This request already reached you by delegation from Claude Code. You are the agent that does the work, not a router for it. Perform the analysis yourself and return the result directly. Do not invoke workspace skills that hand the task back to Claude Code — `$audit`, `$audit-fix`, `$verify`, `$claude-review`, `$claude-plan`, `$claude-implement`, and `$claude-debug` all delegate to Claude Code and must not be used here. Returning this work to its author would destroy the independent judgment this call exists to provide."
+4. **Claude Code conventions** — for audit commands that analyze Claude Code artifacts (audit-plugin, audit-skill, audit-command, audit-rules, audit-agent), read `${CLAUDE_PLUGIN_ROOT}/skills/cc-suite/claude-code-conventions/SKILL.md` and append it. For non-plugin-audit commands (audit, verify, implement, etc.), skip this.
+5. **Config focus instructions** — `{config_focus_instructions}` from `.cc-suite.md` Audit Focus section (if present)
+6. **Config project instructions** — `{config_project_instructions}` from `.cc-suite.md` Project-Specific Instructions section (if present)
 
-Parts 1 and 2 are always present; omit 3–5 if empty. The final prompt is: `{preamble}\n\n{command-specific prompt}`.
+Parts 1–3 are always present; omit 4–6 if empty. The final prompt is: `{preamble}\n\n{command-specific prompt}`.
+
+> **Why part 3 is not optional.** `bridge_skills.sh` exposes cc-suite's own skills to Codex through `.agents/skills → ../.claude/skills`, so a Codex session spawned *by* Claude can see `$audit`, `$verify`, and the `$claude-*` skills — all of which delegate back to Claude Code. Those skills ship `agents/openai.yaml` with `allow_implicit_invocation: false`, which stops them firing on their own, but the preamble is what stops Codex reaching for one deliberately. Both halves are required.
 
 ### Canonical call (fresh)
 

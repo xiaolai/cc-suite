@@ -14,6 +14,16 @@ identically for `agy` and Codex jobs.
 `agy` exposes **no MCP server mode**, so there is no MCP path to fall back on. The CLI
 is the only channel.
 
+> **The delegation boundary is injected for you.** `agy` reads the shared
+> `.agents/skills/` tree, which contains cc-suite's own skills for delegating *to*
+> Claude Code (`audit`, `verify`, the `claude-*` set). Antigravity's skill schema
+> accepts only `name` and `description` — there is no `allow_implicit_invocation`
+> switch like the one that guards these skills on the Codex side — so the prompt is
+> the only place the hand-back can be refused. `scripts/agy-runner.mjs` prepends
+> `lib/delegation-boundary.mjs` to every prompt it sends, on the foreground,
+> background, and resume paths alike. Do not restate it in the command prompt; it is
+> already there.
+
 > **No availability ping.** Do not pre-probe `agy`. The first real runner call either
 > completes or fails fast (a missing `agy` binary errors in seconds with an install
 > hint). Model discovery through `scripts/agy-preflight.sh` is the intended exception
