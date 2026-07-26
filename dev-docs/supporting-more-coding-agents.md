@@ -53,20 +53,26 @@ These are orthogonal. Bridging Grok Build's config surface is trivial, yet Grok 
 
 ## 3. What's free vs what needs a per-tool adapter
 
-Native reads by the four target tools (all confirmed against their docs):
+Native reads by the four target tools:
 
 | Tool | Reads `AGENTS.md` | Reads `.claude/skills` + `.agents/skills` | Reads Claude hooks / MCP directly |
 |------|:---:|:---:|:---:|
-| **Grok Build** (xAI, official) | ✅ (+ `CLAUDE.md`, `.claude/rules`) | ✅ `.claude/skills` | ✅ reads `.mcp.json` **and** `~/.claude/settings.json` hooks |
+| **Grok Build** (xAI, official) | ✅ (+ `CLAUDE.md`, `.claude/rules`) | ✅ both paths | ✅ reads `.mcp.json` **and** `~/.claude/settings.json` hooks |
 | **opencode** (SST) | ✅ (+ `CLAUDE.md` fallback) | ✅ both paths | ❌ own format |
 | **Kimi CLI** (Moonshot) | ✅ | ✅ both paths | ❌ own format |
-| **Qwen Code** (Alibaba) | ✅ (v0.11.1+) | via symlink target | ❌ Claude-shaped, own path |
+| **Qwen Code** (Alibaba) | ❌ `QWEN.md` only — needs `context.fileName` | ❌ `.qwen/skills` only — needs the symlink | ❌ Claude-shaped, own path |
+
+Grok and opencode were verified against the installed binaries (`grok inspect`,
+`opencode debug skill`) with a probe skill behind a real
+`.agents/skills → ../.claude/skills` symlink; both also read `.claude/skills`
+directly. Kimi is from its published docs. Qwen was verified against
+qwen-code 0.21.0's own bundled source, **not** its docs — see the warning in §6.4.
 
 The **only** genuinely per-tool work that remains:
 
 | Surface | Effort per new tool | Notes |
 |---------|--------------------|-------|
-| Instructions | ~0 | `AGENTS.md` already written. |
+| Instructions | ~0 **for most** | `AGENTS.md` is already written — but confirm the tool actually reads it. Qwen does not, and needs `context.fileName` set. |
 | Skills | ~0 (or one symlink) | Existing symlink covers Grok/opencode/Kimi; Qwen wants its own `.qwen/skills → .claude/skills`. |
 | **MCP** | Low–medium | Pick one of 3 emit shapes + target path. |
 | **Hooks** | 0 → medium | Grok reads Claude's directly (0). Qwen/Kimi are Claude-shaped translations. opencode needs a generated TS plugin (defer). |
@@ -185,11 +191,26 @@ Ranked by integration effort (cheapest first). "Free" = handled by cc-suite's ex
 ### 6.4 Qwen Code (Alibaba) — low–medium effort
 
 - **What it is:** Apache-2.0 Gemini-CLI fork (`QwenLM/qwen-code`); everything lives under `.qwen/`, a near-clone of `.claude/`. China-native.
-- **Instructions:** **free** on v0.11.1+ (`AGENTS.md` is a default context filename). On older versions, add `AGENTS.md` to `context.fileName` via `settings-nudge`.
+- **Instructions:** **not free — this is the one tool that needs work.** `AGENTS.md`
+  is *not* a default context filename on any released version. Verified against
+  qwen-code **0.21.0**: `getContextFileNames()` returns `["QWEN.md"]` whenever the
+  setting is unset, and the settings schema defines `context.fileName` as
+  `string | string[]` defaulting to undefined. The bridge writes
+  `context.fileName: ["AGENTS.md", "QWEN.md"]` into `.qwen/settings.json`.
+
+  > **This bullet used to claim the opposite** — "free on v0.11.1+, `AGENTS.md` is a
+  > default context filename" — and the profile was built to match, so every bridged
+  > qwen project silently ignored its `AGENTS.md` until v0.12.0. The claim came from
+  > qwen's own docs and from PR [#2018](https://github.com/QwenLM/qwen-code/pull/2018),
+  > whose diff reads as though `AGENTS.md` became a default; it has not shipped that
+  > way. Issues [#727](https://github.com/QwenLM/qwen-code/issues/727) and
+  > [#2006](https://github.com/QwenLM/qwen-code/issues/2006) are both closed, which
+  > makes the docs look settled when they are not. **Check the installed bundle, not
+  > the docs, before recording a tool as reading `AGENTS.md` natively.**
 - **Skills:** own symlink `.qwen/skills → .claude/skills`.
 - **MCP + hooks:** both live in **one consolidated `.qwen/settings.json`** (`mcpServers` + `hooks`, Gemini/Claude-shaped). Emitter must **read-modify-write / merge** JSON, not overwrite. Note `httpUrl` (streamable HTTP) vs `url` (SSE).
 - **Divergence:** tool-name vocab (`read_file`/`run_shell_command` vs `Read`/`Bash`) and command injection syntax (`{{args}}`/`!{cmd}`/`@{file}` vs `$ARGUMENTS`) differ — matters only if mirroring subagent tool-lists or command bodies, both of which we skip/represent-as-skills.
-- **Profile:** `instructions=native-agents-md(≥0.11.1), skills=own-symlink(.qwen/skills), mcp=json-mcpServers(merge)/.qwen/settings.json, hooks=claude-json(merge)/.qwen/settings.json`.
+- **Profile:** `instructions=context-file-nudge(context.fileName), skills=own-symlink(.qwen/skills), mcp=json-mcpServers(merge)/.qwen/settings.json, hooks=claude-json(merge)/.qwen/settings.json`.
 
 ### 6.5 Already supported
 

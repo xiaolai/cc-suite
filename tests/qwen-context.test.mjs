@@ -62,6 +62,32 @@ test("qwen profile declares the AGENTS.md context fix", () => {
   );
 });
 
+test("the design doc does not claim qwen reads AGENTS.md natively", () => {
+  // This exact claim ("free on v0.11.1+, AGENTS.md is a default context
+  // filename") is why the qwen profile shipped without context-file handling
+  // and silently dropped every bridged project's AGENTS.md until v0.12.0. The
+  // upstream docs still read that way, so guard the correction.
+  const doc = fs.readFileSync(
+    path.join(PLUGIN_ROOT, "dev-docs", "supporting-more-coding-agents.md"),
+    "utf8"
+  );
+  const qwenSection = doc.slice(
+    doc.indexOf("### 6.4 Qwen Code"),
+    doc.indexOf("### 6.5")
+  );
+  assert.ok(qwenSection.length > 200, "the Qwen section should exist");
+  assert.match(
+    qwenSection,
+    /context\.fileName/,
+    "the Qwen section must name the setting the bridge writes"
+  );
+  assert.doesNotMatch(
+    qwenSection,
+    /^- \*\*Instructions:\*\* \*\*free\*\*/m,
+    "Qwen's instruction bridging is not free — it needs context.fileName"
+  );
+});
+
 test("a project with no qwen settings gets AGENTS.md first", () => {
   // qwen-code 0.21.0 defaults to ["QWEN.md"] when unset, so AGENTS.md would
   // otherwise never be read.
