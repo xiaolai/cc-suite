@@ -205,6 +205,68 @@ test("plugin.json exists and has required fields", () => {
   assert.ok(plugin.description);
 });
 
+test("tools needing a skills symlink are documented as exceptions", () => {
+  // bridge-tools.md used to claim all four registry tools read the shared
+  // skills tree natively, while its own table showed qwen getting a symlink.
+  // Any tool whose profile carries skills_symlink does NOT read the shared
+  // tree and must be called out, or users silently lose their skills.
+  const registry = fs.readFileSync(
+    path.join(PLUGIN_ROOT, "scripts", "bridge_tools.py"),
+    "utf8"
+  );
+  // Bound the slice at the dict's closing brace (a lone "}" at column 0).
+  // Running to end-of-file would sweep in the emitter code that *implements*
+  // skills_symlink and mark every trailing profile as needing one.
+  const profilesStart = registry.indexOf("PROFILES: dict[str, dict] = {");
+  assert.notEqual(profilesStart, -1, "Expected a PROFILES registry");
+  const rest = registry.slice(profilesStart);
+  const closeAt = rest.search(/^\}$/m);
+  assert.notEqual(closeAt, -1, "Expected PROFILES to be brace-terminated");
+  const profiles = rest.slice(0, closeAt);
+
+  // Profile keys sit at four-space indent; slice each one up to the next.
+  const keyRe = /^ {4}"([a-z0-9_-]+)": \{$/gm;
+  const marks = [...profiles.matchAll(keyRe)].map((m) => ({
+    name: m[1],
+    index: m.index,
+  }));
+  assert.ok(marks.length >= 4, "Expected to parse the tool-profile registry");
+
+  const needSymlink = marks.filter(({ index }, i) => {
+    const end = i + 1 < marks.length ? marks[i + 1].index : profiles.length;
+    return profiles.slice(index, end).includes("skills_symlink");
+  });
+  assert.ok(
+    needSymlink.length > 0,
+    "Expected at least one profile to declare skills_symlink"
+  );
+
+  const doc = fs.readFileSync(
+    path.join(PLUGIN_ROOT, "commands", "bridge-tools.md"),
+    "utf8"
+  );
+  // Check the body only. The frontmatter description also names the exception,
+  // and matching against it would let the body lose its explanation unnoticed.
+  const body = doc.replace(/^---\n[\s\S]*?\n---\n/, "");
+  assert.doesNotMatch(
+    body,
+    /All four read `AGENTS\.md`/,
+    "bridge-tools.md must not claim every tool reads the shared skills tree"
+  );
+  for (const { name } of needSymlink) {
+    assert.match(
+      body,
+      new RegExp(`\`\\.${name}/skills/?\``),
+      `bridge-tools.md must document the .${name}/skills symlink`
+    );
+    assert.match(
+      body,
+      new RegExp(`\\*\\*${name} [^*]*does not\\*\\*`, "i"),
+      `bridge-tools.md body must call out ${name} as not reading the shared tree`
+    );
+  }
+});
+
 test("package.json and plugin.json agree on name and version", () => {
   // Nothing enforced this before, and the two drifted four releases apart
   // (package.json 0.9.0 vs plugin.json 0.11.0). plugin.json is the release

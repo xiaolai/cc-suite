@@ -1,6 +1,6 @@
 ---
 name: bridge-tools
-description: Bridge the project MCP surface into additional coding agents (Grok Build, opencode, Qwen Code, Kimi CLI) selected in .cc-suite.md. They read AGENTS.md and shared skills natively; only MCP config is mirrored, each to its own native format.
+description: Bridge the project MCP surface into additional coding agents (Grok Build, opencode, Qwen Code, Kimi CLI) selected in .cc-suite.md. Grok, opencode, and Kimi read AGENTS.md and the shared skills tree natively, so only MCP config is mirrored, each to its own native format; Qwen Code also needs a skills symlink and does not read AGENTS.md by default.
 allowed-tools:
   - Bash
   - Read
@@ -21,7 +21,11 @@ Registry-bridged tools and their native MCP targets:
 | **Qwen Code** (Alibaba) | `.qwen/settings.json` (`mcpServers`, `httpUrl`) + `.qwen/skills` symlink | A — works natively |
 | **Kimi CLI** (Moonshot) | `~/.kimi/mcp.json` (`mcpServers`, global) | A — works natively |
 
-All four read `AGENTS.md` and the shared skills paths (`.claude/skills` / `.agents/skills`) natively, so instructions and skills need no mirroring. Claude Code, Codex CLI, and Antigravity keep their own bridges — this command never touches them.
+**Grok Build, opencode, and Kimi CLI** read `AGENTS.md` and the shared skills paths (`.claude/skills` / `.agents/skills`) natively, so instructions and skills need no mirroring for them.
+
+**Qwen Code does not**, on either count. Its skill scan covers only `~/.qwen/skills/` and `.qwen/skills/` — hence the symlink in the table above — and its default context file is `QWEN.md`, so it will not pick up `AGENTS.md` without `"contextFileName": "AGENTS.md"` in `.qwen/settings.json` (a setting with an open upstream bug). If a user enables qwen and expects `AGENTS.md` to apply, tell them to symlink `QWEN.md → AGENTS.md`; the bridge does not do this for them.
+
+Claude Code, Codex CLI, and Antigravity keep their own bridges — this command never touches them.
 
 **Security:** env-var values and remote headers are never written into a mirrored config (potential secrets; several targets are committed). Servers that carry them are still mirrored (command/args/url), and the missing vars are reported so you can add them out of band.
 

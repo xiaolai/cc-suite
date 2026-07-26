@@ -27,7 +27,7 @@ Each tool reads from its own files. `CLAUDE.md` and `AGENTS.md` sit next to each
 
 ## More coding agents (opt-in)
 
-Beyond Claude / Codex / Antigravity, cc-suite can bridge additional agentic CLIs that read `AGENTS.md` and the shared skills paths natively. Enable them per project in `.cc-suite.md`:
+Beyond Claude / Codex / Antigravity, cc-suite can bridge additional agentic CLIs. Most of them read `AGENTS.md` and the shared skills tree on their own, so the bridge only has to mirror MCP — but this is **not** uniform, and the exceptions are called out below. Enable them per project in `.cc-suite.md`:
 
 ```markdown
 ## Enabled Tools
@@ -51,6 +51,27 @@ Then run `/cc-suite:bridge-tools` (or `python3 scripts/bridge_tools.py`). Each e
 | Kimi CLI (Moonshot) | `~/.kimi/mcp.json` | A — native |
 
 Env-var values and remote headers are never written into a mirrored config (potential secrets); the vars that need setting are reported instead. User-managed servers and sibling config keys are preserved; `--status` shows the enabled set, `--unbridge` tears it down. Design notes: `dev-docs/supporting-more-coding-agents.md`.
+
+### What each tool picks up on its own
+
+The bridge only mirrors MCP config. Everything else depends on what the tool already discovers, which varies:
+
+| Tool | Reads `AGENTS.md` | Finds project `.agents/skills/` | cc-suite compensates |
+|------|:---:|:---:|---|
+| Grok Build | ✅ | ✅ (also `.claude/skills/`) | nothing needed |
+| opencode | ✅ | ✅ (also `.claude/skills/`) | nothing needed |
+| Kimi CLI | ✅ | ✅ (also `.claude/skills/`) | nothing needed |
+| Qwen Code | ⚠️ not by default | ❌ `.qwen/skills/` only | writes the `.qwen/skills` symlink |
+
+**Qwen Code is the exception on both axes.** Its skill scan covers only `~/.qwen/skills/` and `.qwen/skills/`, which is why its profile is the one that writes a skills symlink. Its default context file is `QWEN.md`, not `AGENTS.md` — pointing it at `AGENTS.md` needs `"contextFileName": "AGENTS.md"` in `.qwen/settings.json`, and that setting is [reported not to take effect](https://github.com/QwenLM/qwen-code/issues/727). Until that lands, a qwen session sees the mirrored MCP servers and the shared skills, but **not** `AGENTS.md`. Symlinking `QWEN.md → AGENTS.md` in the project is the reliable workaround.
+
+Grok and opencode were verified directly against the installed CLIs (`grok inspect`, `opencode debug skill`) with a probe skill behind the real `.agents/skills → ../.claude/skills` symlink. Kimi and Qwen are from their published docs — neither is installed here.
+
+### Local models (Ollama)
+
+Ollama is **not** a bridge target and has no profile. It is a model runner, not an agent: no MCP client or server ([still an open request](https://github.com/ollama/ollama/issues/7865)), no `AGENTS.md`, and a home-only `~/.ollama/skills/` with no project scope — so there is no config file for the bridge to write.
+
+It sits one layer below cc-suite instead. `ollama launch <tool>` starts an already-bridged CLI — `opencode`, `codex`, `qwen`, `kimi`, `claude`, and others — pointed at a local model, so the bridged MCP surface and shared skills still apply. It does not touch `opencode.json`, `.codex/config.toml`, or `.mcp.json`, so it will not disturb anything the bridge wrote.
 
 ## Claude → Grok delegation (ACP)
 
