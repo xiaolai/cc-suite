@@ -9,7 +9,8 @@ description: "Project instructions for cc-suite — the Claude Code plugin that 
 
 ## Guidelines
 
-- Bump the version in `.claude-plugin/plugin.json` for every release (patch/minor/major per semver).
+- Bump the version in `.claude-plugin/plugin.json` for every release (patch/minor/major per semver). `package.json` must carry the same version — a test enforces it.
+- **`main` always equals the newest tag.** Every commit pushed to `main` is a release: bump, commit, `git tag -a vX.Y.Z`, push both. Do not land a change and leave it untagged "until the next real release" — that includes docs-only and `dev-docs/` changes, which take a patch bump. If `git describe --exact-match HEAD` fails, the release is unfinished.
 - New commands go in `commands/`; new skills go in `skills/cc-suite/<name>/SKILL.md`.
 - All scripts in `scripts/` must be idempotent — running twice must produce the same result.
 - Write new project-level instructions into `AGENTS.md` only; never edit `CLAUDE.md` or legacy `GEMINI.md` directly.
@@ -55,7 +56,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/init.sh"
 
 ## Tests
 
-Run the integration suite (70+ test sections, 340+ assertions):
+Run the integration suite (72 test sections, 386 assertions):
 
 ```bash
 bash tests/integration.sh
