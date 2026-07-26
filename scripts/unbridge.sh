@@ -19,8 +19,17 @@ sys.exit(0 if c == "@AGENTS.md" else 1)
 ' "$1" 2>/dev/null
 }
 
-# Read provenance written by init.sh.
-PROVENANCE=".codex/.cc-suite.provenance"
+# Read provenance written by init.sh. cc-suite state moved from .codex/ into
+# .cc-suite/ so a project that bridges no Codex gets no .codex/ directory; the
+# legacy paths are still honoured for repos initialized before that move.
+PROVENANCE=".cc-suite/provenance"
+LEGACY_PROVENANCE=".codex/.cc-suite.provenance"
+[ -f "$PROVENANCE" ] || PROVENANCE="$LEGACY_PROVENANCE"
+
+ORIGINAL_CLAUDE=".cc-suite/original-claude.md"
+LEGACY_ORIGINAL_CLAUDE=".codex/.cc-suite-original-claude.md"
+[ -f "$ORIGINAL_CLAUDE" ] || ORIGINAL_CLAUDE="$LEGACY_ORIGINAL_CLAUDE"
+
 CLAUDE_MIGRATED=0
 CC_SUITE_CREATED_CLAUDE=0
 CC_SUITE_CREATED_GEMINI=0
@@ -42,10 +51,10 @@ if [ -f AGENTS.md ]; then
   if [ "$CC_SUITE_CREATED_CLAUDE" = "1" ]; then
     # init.sh created CLAUDE.md from scratch — there is nothing original to restore.
     skip "CLAUDE.md was created by cc-suite; will be removed (no content to restore)"
-  elif [ "$CLAUDE_MIGRATED" = "1" ] && [ -f .codex/.cc-suite-original-claude.md ]; then
+  elif [ "$CLAUDE_MIGRATED" = "1" ] && [ -f "$ORIGINAL_CLAUDE" ]; then
     # Restore the verbatim original CLAUDE.md, not the AGENTS.md scaffolding.
-    cp .codex/.cc-suite-original-claude.md CLAUDE.md
-    rm .codex/.cc-suite-original-claude.md
+    cp "$ORIGINAL_CLAUDE" CLAUDE.md
+    rm "$ORIGINAL_CLAUDE"
     ok "restored original CLAUDE.md content from cc-suite backup"
   elif [ -f CLAUDE.md ] && is_pure_import CLAUDE.md; then
     # No provenance and CLAUDE.md is a bare @import — fall back to copying
@@ -96,8 +105,18 @@ if [ -f CLAUDE.md ]; then
   fi
 fi
 
-# Provenance file — remove after we've consumed it.
-[ -f "$PROVENANCE" ] && rm "$PROVENANCE" || true
+# Provenance — remove after we've consumed it, from both the current and legacy
+# locations so a repo that predates the move is left fully clean.
+for _p in "$PROVENANCE" "$LEGACY_PROVENANCE" "$ORIGINAL_CLAUDE" "$LEGACY_ORIGINAL_CLAUDE"; do
+  if [ -f "$_p" ]; then
+    rm "$_p"
+  fi
+done
+# Drop .cc-suite/ only when nothing else lives there — declared advisor agents
+# under .cc-suite/agents/ are the user's, and outlive the bridge.
+if [ -d .cc-suite ]; then
+  rmdir .cc-suite 2>/dev/null || true
+fi
 
 # .agents/mcp_config.json — remove only the cc-suite-managed entries. A user
 # config or user entries in a generated file are preserved.

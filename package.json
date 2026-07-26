@@ -1,6 +1,6 @@
 {
   "name": "cc-suite",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "private": true,
   "type": "module",
   "description": "One plugin to bridge Claude Code and Codex CLI \u2014 shared AGENTS.md, mirrored hooks and MCP servers, bidirectional delegation \u2014 plus delegation to Antigravity CLI (agy)",

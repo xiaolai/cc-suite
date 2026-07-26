@@ -102,6 +102,12 @@ CLAUDE.local.md
 # cc-suite tool-profile bridge (grok/opencode/qwen) — derived provenance
 # sidecars tracking which MCP servers cc-suite owns. Not authored.
 .cc-suite-*.provenance.json
+
+# cc-suite local state — what init created, and the pre-bridge CLAUDE.md backup.
+# Machine-local bookkeeping, not shared. Listed file-by-file on purpose:
+# .cc-suite/agents/ holds declared advisors and IS meant to be committed.
+.cc-suite/provenance
+.cc-suite/original-claude.md
 GI
   if [ "$IS_PLUGIN_REPO" = "1" ] && [ "$PRIVATE" != "1" ]; then
     cat <<'GI'

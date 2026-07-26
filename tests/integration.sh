@@ -113,14 +113,14 @@ assert_file ".codex/config.toml"
 assert_file ".gitignore"
 assert_contains ".gitignore" "# >>> cc-suite >>>"
 assert_contains ".gitignore" "# <<< cc-suite <<<"
-assert_file ".codex/.cc-suite.provenance"
-assert_contains ".codex/.cc-suite.provenance" "CC_SUITE_CREATED_CLAUDE=1"
+assert_file ".cc-suite/provenance"
+assert_contains ".cc-suite/provenance" "CC_SUITE_CREATED_CLAUDE=1"
 
 # Consumer Gemini CLI access moved to `agy` on 2026-06-18; agy reads AGENTS.md
 # natively. init must no longer create a GEMINI.md pointer or .gemini/ scaffolding.
 assert_no_file "GEMINI.md"
 assert_no_dir  ".gemini"
-assert_not_contains ".codex/.cc-suite.provenance" "CC_SUITE_CREATED_GEMINI"
+assert_not_contains ".cc-suite/provenance" "CC_SUITE_CREATED_GEMINI"
 assert_not_contains ".gitignore" ".gemini/"
 
 cleanup
@@ -139,11 +139,11 @@ assert_contains "AGENTS.md" "# My Project"
 assert_contains "AGENTS.md" "Hello world."
 assert_file_content "CLAUDE.md" "@AGENTS.md"
 # Original saved verbatim for perfect restore
-assert_file ".codex/.cc-suite-original-claude.md"
-assert_contains ".codex/.cc-suite-original-claude.md" "# My Project"
-assert_contains ".codex/.cc-suite.provenance" "CLAUDE_MIGRATED=1"
+assert_file ".cc-suite/original-claude.md"
+assert_contains ".cc-suite/original-claude.md" "# My Project"
+assert_contains ".cc-suite/provenance" "CLAUDE_MIGRATED=1"
 # CLAUDE_MIGRATED migration means CC_SUITE_CREATED_CLAUDE should NOT be set
-assert_not_contains ".codex/.cc-suite.provenance" "CC_SUITE_CREATED_CLAUDE=1"
+assert_not_contains ".cc-suite/provenance" "CC_SUITE_CREATED_CLAUDE=1"
 
 cleanup
 
@@ -162,7 +162,7 @@ assert_not_contains "AGENTS.md" "Hello"   # no CLAUDE.md body leaked in
 # CLAUDE.md untouched
 assert_file_content "CLAUDE.md" "@AGENTS.md"
 # No migration flag
-assert_not_contains ".codex/.cc-suite.provenance" "CLAUDE_MIGRATED=1"
+assert_not_contains ".cc-suite/provenance" "CLAUDE_MIGRATED=1"
 
 cleanup
 
@@ -179,7 +179,7 @@ assert_exit0 bash "$SCRIPTS/init.sh"
 assert_contains "CLAUDE.md" "# Extra content that must survive"
 assert_contains "CLAUDE.md" "@AGENTS.md"
 # No migration
-assert_not_contains ".codex/.cc-suite.provenance" "CLAUDE_MIGRATED=1"
+assert_not_contains ".cc-suite/provenance" "CLAUDE_MIGRATED=1"
 
 cleanup
 
@@ -623,7 +623,8 @@ mkdir -p .codex
 
 echo "# AGENTS content" > AGENTS.md
 printf "@AGENTS.md\n" > CLAUDE.md
-printf "CC_SUITE_CREATED_CLAUDE=1\n" > .codex/.cc-suite.provenance
+mkdir -p .cc-suite
+printf "CC_SUITE_CREATED_CLAUDE=1\n" > .cc-suite/provenance
 
 assert_exit0 bash "$SCRIPTS/unbridge.sh"
 
@@ -635,7 +636,10 @@ cleanup
 # ═══════════════════════════════════════════════════════════════════════════════
 # T24  unbridge.sh — CLAUDE_MIGRATED: restores original CLAUDE.md verbatim
 # ═══════════════════════════════════════════════════════════════════════════════
-section "T24: unbridge.sh — restores original CLAUDE.md via provenance backup"
+section "T24: unbridge.sh — restores original CLAUDE.md from LEGACY .codex/ paths"
+# Deliberately uses the pre-0.14 locations: repos initialized before cc-suite
+# state moved into .cc-suite/ must still unbridge cleanly. T24b covers the
+# current paths.
 make_tmp
 mkdir -p .codex
 
@@ -656,6 +660,50 @@ assert_no_file ".codex/.cc-suite-original-claude.md"
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# T24b unbridge.sh — same restore via the current .cc-suite/ paths
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T24b: unbridge.sh — restores original CLAUDE.md from .cc-suite/ paths"
+make_tmp
+mkdir -p .cc-suite
+
+printf "# My Original Project\n\nWith real content.\n" > .cc-suite/original-claude.md
+echo "# AGENTS.md content + cc-suite scaffolding" > AGENTS.md
+printf "@AGENTS.md\n" > CLAUDE.md
+printf "CLAUDE_MIGRATED=1\n" > .cc-suite/provenance
+
+assert_exit0 bash "$SCRIPTS/unbridge.sh"
+
+assert_no_file  "AGENTS.md"
+assert_file     "CLAUDE.md"
+assert_contains "CLAUDE.md" "# My Original Project"
+assert_contains "CLAUDE.md" "With real content."
+assert_no_file  ".cc-suite/original-claude.md"
+assert_no_file  ".cc-suite/provenance"
+assert_no_dir   ".cc-suite"          # emptied by unbridge, so removed
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T24c unbridge.sh — keeps .cc-suite/ when the user has advisor agents there
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T24c: unbridge.sh — preserves .cc-suite/agents/ while clearing its own state"
+make_tmp
+mkdir -p .cc-suite/agents
+
+printf -- "---\nname: reviewer\n---\nBe critical.\n" > .cc-suite/agents/reviewer.md
+echo "# AGENTS content" > AGENTS.md
+printf "@AGENTS.md\n" > CLAUDE.md
+printf "CC_SUITE_CREATED_CLAUDE=1\n" > .cc-suite/provenance
+
+assert_exit0 bash "$SCRIPTS/unbridge.sh"
+
+assert_no_file ".cc-suite/provenance"     # cc-suite's own state: gone
+assert_file    ".cc-suite/agents/reviewer.md"  # the user's advisor: untouched
+assert_dir     ".cc-suite"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # T25  unbridge.sh — no provenance, CLAUDE.md has own content → backup AGENTS.md
 # ═══════════════════════════════════════════════════════════════════════════════
 section "T25: unbridge.sh — backup when CLAUDE.md has own content (no provenance)"
@@ -663,7 +711,7 @@ make_tmp
 
 printf "# Own content\nNot going anywhere.\n" > CLAUDE.md
 printf "# AGENTS content\n" > AGENTS.md
-# no .codex/.cc-suite.provenance
+# no .cc-suite/provenance
 
 assert_exit0 bash "$SCRIPTS/unbridge.sh"
 
@@ -705,7 +753,8 @@ mkdir -p .codex
 printf "@AGENTS.md\n" > GEMINI.md
 echo "# AGENTS" > AGENTS.md
 printf "@AGENTS.md\n" > CLAUDE.md
-printf "CC_SUITE_CREATED_CLAUDE=1\nCC_SUITE_CREATED_GEMINI=1\n" > .codex/.cc-suite.provenance
+mkdir -p .cc-suite
+printf "CC_SUITE_CREATED_CLAUDE=1\nCC_SUITE_CREATED_GEMINI=1\n" > .cc-suite/provenance
 
 assert_exit0 bash "$SCRIPTS/unbridge.sh"
 
@@ -724,7 +773,8 @@ mkdir -p .codex
 printf "@AGENTS.md\n\n# Custom Gemini instructions\n" > GEMINI.md
 echo "# AGENTS" > AGENTS.md
 printf "@AGENTS.md\n" > CLAUDE.md
-printf "CC_SUITE_CREATED_CLAUDE=1\n" > .codex/.cc-suite.provenance
+mkdir -p .cc-suite
+printf "CC_SUITE_CREATED_CLAUDE=1\n" > .cc-suite/provenance
 # Note: CC_SUITE_CREATED_GEMINI is NOT set — user added content manually
 
 assert_exit0 bash "$SCRIPTS/unbridge.sh"
@@ -743,7 +793,8 @@ mkdir -p .codex
 
 echo "# AGENTS" > AGENTS.md
 printf "@AGENTS.md\n" > CLAUDE.md
-printf "CC_SUITE_CREATED_CLAUDE=1\n" > .codex/.cc-suite.provenance
+mkdir -p .cc-suite
+printf "CC_SUITE_CREATED_CLAUDE=1\n" > .cc-suite/provenance
 
 cat > .codex/hooks.json <<'JSON'
 {"_cc_bridge_version": "1", "hooks": {"SessionStart": [], "PreToolUse": []}}
@@ -764,7 +815,8 @@ mkdir -p .codex
 
 echo "# AGENTS" > AGENTS.md
 printf "@AGENTS.md\n" > CLAUDE.md
-printf "CC_SUITE_CREATED_CLAUDE=1\n" > .codex/.cc-suite.provenance
+mkdir -p .cc-suite
+printf "CC_SUITE_CREATED_CLAUDE=1\n" > .cc-suite/provenance
 
 cat > .codex/hooks.json <<'JSON'
 {"hooks": {"SessionStart": [], "PreToolUse": []}}
@@ -785,7 +837,8 @@ mkdir -p .codex
 
 echo "# AGENTS" > AGENTS.md
 printf "@AGENTS.md\n" > CLAUDE.md
-printf "CC_SUITE_CREATED_CLAUDE=1\n" > .codex/.cc-suite.provenance
+mkdir -p .cc-suite
+printf "CC_SUITE_CREATED_CLAUDE=1\n" > .cc-suite/provenance
 
 cat > .codex/config.toml <<'TOML'
 # My hand-written config
@@ -1877,14 +1930,11 @@ assert_file    "AGENTS.md"
 assert_no_file ".codex/config.toml"
 assert_no_dir  ".codex/prompts"
 
-# Known residue: .codex/ is still created to hold cc-suite's own provenance
-# record (that it authored CLAUDE.md), which unbridge.sh reads from that path.
-# No *Codex* artifact is written — assert the directory holds nothing else.
-assert_exit0 python3 -c "
-import os
-entries = sorted(os.listdir('.codex')) if os.path.isdir('.codex') else []
-assert entries in ([], ['.cc-suite.provenance']), f'unexpected .codex contents: {entries}'
-"
+# A project that bridges no Codex gets no .codex/ at all. cc-suite's own
+# bookkeeping lives in .cc-suite/, so nothing needs the Codex directory.
+assert_no_dir ".codex"
+assert_file   ".cc-suite/provenance"
+assert_contains ".cc-suite/provenance" "CC_SUITE_CREATED_CLAUDE=1"
 
 cleanup
 

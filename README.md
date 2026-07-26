@@ -311,15 +311,23 @@ your-repo/
 │       │   ├── claude-implement/         ← delegate implementation to Claude
 │       │   └── claude-debug/             ← delegate debugging to Claude
 │       └── <your-skills>/
+├── .cc-suite/
+│   ├── agents/                       ← your advisor agents; commit these
+│   ├── provenance                    ← what init created; local, ignored
+│   └── original-claude.md            ← pre-bridge CLAUDE.md backup; ignored
 ├── .agents/
 │   ├── skills → ../.claude/skills/   ← symlink; Codex + agy read here
 │   └── mcp_config.json               ← generated from .mcp.json; ignored by default
-└── .codex/
+└── .codex/                           ← only when Codex is one of the bridges
     ├── config.toml                   ← Codex config + project MCP servers
     │                                    including claude-code (claude-octopus)
     ├── prompts/.gitkeep
     └── hooks.json                    ← (if hooks were bridged)
 ```
+
+Only the bridges you picked at `init` are written. A Claude-only project has no
+`.codex/` at all — cc-suite's own bookkeeping lives in `.cc-suite/`, never in
+another tool's directory.
 
 `agy` reads `AGENTS.md` natively. Workspace skills and MCP servers live under
 `.agents/`; global settings remain under `~/.gemini/` when intentionally shared.

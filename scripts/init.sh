@@ -39,6 +39,15 @@ ENABLED_TOOLS="$(python3 "${SCRIPT_DIR}/bridge_tools.py" --enabled 2>/dev/null |
 
 tool_enabled() { printf '%s\n' "$ENABLED_TOOLS" | grep -qx "$1"; }
 
+# cc-suite's own bookkeeping. It used to live under .codex/, which meant a
+# project that bridges no Codex still grew a .codex/ directory — misleading, and
+# the reason tool selection looked like it had not taken effect. This is
+# cc-suite state, so it belongs in cc-suite's namespace. unbridge.sh still reads
+# the legacy paths so repos initialized before the move keep working.
+STATE_DIR=".cc-suite"
+PROVENANCE="${STATE_DIR}/provenance"
+ORIGINAL_CLAUDE="${STATE_DIR}/original-claude.md"
+
 # Tracks whether CLAUDE.md content was migrated into AGENTS.md in this run.
 CLAUDE_MIGRATED=0
 
@@ -62,8 +71,8 @@ else
       CLAUDE_MIGRATED=1
       # Save the original CLAUDE.md verbatim so unbridge.sh can restore it
       # without the cc-suite scaffolding that AGENTS.md adds around the body.
-      mkdir -p .codex
-      cp CLAUDE.md .codex/.cc-suite-original-claude.md
+      mkdir -p "$STATE_DIR"
+      cp CLAUDE.md "$ORIGINAL_CLAUDE"
     fi
   fi
   {
@@ -128,24 +137,24 @@ fi
 # unbridge.sh still removes a legacy GEMINI.md left by older cc-suite versions.
 
 # Record provenance so unbridge.sh can know whether to delete files it didn't
-# create. Written lazily: a project that bridges neither Codex nor a migrated
-# CLAUDE.md has nothing to record, and should not get a .codex/ directory just
-# to hold an empty header. The path is unchanged so unbridge.sh and existing
-# repos keep working.
-PROVENANCE=".codex/.cc-suite.provenance"
-PROVENANCE_LINES=""
+# create. Written lazily: a project with nothing to record gets no file and no
+# directory at all.
+# Single entry point for provenance writes. Creates the state dir and the
+# header on first use, so later callers (the Codex config block below) cannot
+# append into a directory that the lazy path decided not to create.
+record_provenance() {
+  mkdir -p "$STATE_DIR"
+  if [ ! -f "$PROVENANCE" ]; then
+    echo "# cc-suite provenance — used by unbridge.sh" > "$PROVENANCE"
+  fi
+  printf '%s\n' "$1" >> "$PROVENANCE"
+}
+
 if [ "${CLAUDE_MIGRATED:-0}" = "1" ]; then
-  PROVENANCE_LINES="${PROVENANCE_LINES}CLAUDE_MIGRATED=1"$'\n'
+  record_provenance "CLAUDE_MIGRATED=1"
 fi
 if [ -n "${CC_SUITE_CREATED_CLAUDE:-}" ]; then
-  PROVENANCE_LINES="${PROVENANCE_LINES}CC_SUITE_CREATED_CLAUDE=1"$'\n'
-fi
-if [ -n "$PROVENANCE_LINES" ] || [ -f "$PROVENANCE" ]; then
-  mkdir -p .codex
-  if [ ! -f "$PROVENANCE" ]; then
-    echo "# cc-suite provenance — used by unbridge.sh" >> "$PROVENANCE"
-  fi
-  [ -n "$PROVENANCE_LINES" ] && printf '%s' "$PROVENANCE_LINES" >> "$PROVENANCE"
+  record_provenance "CC_SUITE_CREATED_CLAUDE=1"
 fi
 
 # --- 4. Codex scaffolding ---------------------------------------------------
@@ -178,7 +187,7 @@ elif [ ! -f .codex/config.toml ]; then
 # MCP servers mirrored from .mcp.json are added below by /cc-suite:bridge-mcp.
 CFG
   ok ".codex/config.toml created"
-  echo "CC_SUITE_CREATED_CODEX_CONFIG=1" >> "$PROVENANCE"
+  record_provenance "CC_SUITE_CREATED_CODEX_CONFIG=1"
 else
   skip ".codex/config.toml already exists"
 fi
