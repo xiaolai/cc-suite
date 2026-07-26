@@ -27,7 +27,9 @@ Each tool reads from its own files. `CLAUDE.md` and `AGENTS.md` sit next to each
 
 ## More coding agents (opt-in)
 
-Beyond Claude / Codex / Antigravity, cc-suite can bridge additional agentic CLIs. Most of them read `AGENTS.md` and the shared skills tree on their own, so the bridge only has to mirror MCP — but this is **not** uniform, and the exceptions are called out below. Enable them per project in `.cc-suite.md`:
+`/cc-suite:init` asks which agents to bridge. It probes `PATH`, pre-selects the ones you actually have installed, shows each tool's China tier, and only writes config for what you pick — a Claude-only project gets no `.codex/` tree. Nothing is forced on except Claude itself, which is the source of truth the others mirror from.
+
+Beyond Claude / Codex / Antigravity, cc-suite can bridge additional agentic CLIs. Most of them read `AGENTS.md` and the shared skills tree on their own, so the bridge only has to mirror MCP — but this is **not** uniform, and the exceptions are called out below. Change the selection any time by re-ticking `.cc-suite.md` and running `/cc-suite:bridge-tools`:
 
 ```markdown
 ## Enabled Tools

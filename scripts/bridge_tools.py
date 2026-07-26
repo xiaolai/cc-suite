@@ -65,34 +65,40 @@ DEFAULT_TOOLS = ["claude", "codex", "antigravity"]
 PROFILES: dict[str, dict] = {
     "claude": {
         "display_name": "Claude Code",
+        "binary": "claude",
         "bridged_by": "existing",
         "china_tier": "B",
     },
     "codex": {
         "display_name": "Codex CLI",
+        "binary": "codex",
         "bridged_by": "existing",
         "china_tier": "B",
     },
     "antigravity": {
         "display_name": "Antigravity (agy)",
+        "binary": "agy",
         "bridged_by": "existing",
         "china_tier": "C",
         "aliases": ["agy"],
     },
     "grok": {
         "display_name": "Grok Build (xAI)",
+        "binary": "grok",
         "bridged_by": "registry",
         "china_tier": "C",
         "mcp": {"format": "toml-mcp_servers", "path": ".grok/config.toml", "scope": "project"},
     },
     "opencode": {
         "display_name": "opencode (SST)",
+        "binary": "opencode",
         "bridged_by": "registry",
         "china_tier": "A",
         "mcp": {"format": "json-nested", "path": "opencode.json", "scope": "project"},
     },
     "qwen": {
         "display_name": "Qwen Code (Alibaba)",
+        "binary": "qwen",
         "bridged_by": "registry",
         "china_tier": "A",
         "mcp": {"format": "json-settings", "path": ".qwen/settings.json", "scope": "project"},
@@ -107,6 +113,7 @@ PROFILES: dict[str, dict] = {
     },
     "kimi": {
         "display_name": "Kimi CLI (Moonshot)",
+        "binary": "kimi",
         "bridged_by": "registry",
         "china_tier": "A",
         "mcp": {"format": "json-mcpServers", "path": "~/.kimi/mcp.json", "scope": "global"},
@@ -740,10 +747,95 @@ def print_status() -> int:
     return 0
 
 
+def detect_tools() -> list[dict]:
+    """Report which tool CLIs are actually on PATH, for the init picker.
+
+    Claude is always reported installed: cc-suite runs as a Claude Code plugin,
+    so the host is present by definition even when no `claude` binary is on the
+    PATH of this subprocess (npm-less installs, sandboxed shells)."""
+    import shutil
+
+    out = []
+    for tool_id, prof in PROFILES.items():
+        binary = prof.get("binary")
+        installed = tool_id == "claude" or bool(binary and shutil.which(binary))
+        out.append(
+            {
+                "id": tool_id,
+                "display_name": prof["display_name"],
+                "binary": binary,
+                "installed": installed,
+                "china_tier": prof.get("china_tier"),
+                "china_note": CHINA_TIER_NOTE.get(prof.get("china_tier", ""), ""),
+                "bridged_by": prof.get("bridged_by"),
+            }
+        )
+    return out
+
+
+def write_enabled_tools(selected: list[str], config_path: Path = CONFIG) -> str:
+    """Rewrite the `## Enabled Tools` task list to exactly `selected`.
+
+    Only the checkbox column changes — the section's prose is left as written so
+    the guidance stays in one place (migrate_config.MANAGED_SECTIONS)."""
+    chosen = {t for t in selected if t in PROFILES} | {"claude"}
+
+    if not config_path.exists():
+        err(f"{config_path.name} not found — run /cc-suite:init first")
+        raise SystemExit(2)
+    text = config_path.read_text(encoding="utf-8")
+
+    m = re.search(
+        r"^[ \t]*#{1,6}[ \t]*Enabled[ \t]+Tools[ \t]*$"
+        r"(.*?)(?=^[ \t]*#{1,6}[ \t]+(?![-*][ \t])|\Z)",
+        text,
+        re.IGNORECASE | re.MULTILINE | re.DOTALL,
+    )
+    if not m:
+        err("no '## Enabled Tools' section — run migrate_config.py first")
+        raise SystemExit(2)
+
+    def retick(line: str) -> str:
+        hit = re.match(r"^([ \t]*[-*][ \t]+)\[([ xX])\]([ \t]+)(\S+)(.*)$", line)
+        if not hit:
+            return line
+        tool_id = resolve_id(hit.group(4))
+        if tool_id is None:
+            return line
+        box = "x" if tool_id in chosen else " "
+        return f"{hit.group(1)}[{box}]{hit.group(3)}{hit.group(4)}{hit.group(5)}"
+
+    body = "\n".join(retick(ln) for ln in m.group(1).split("\n"))
+    updated = text[: m.start(1)] + body + text[m.end(1) :]
+    if updated != text:
+        config_path.write_text(updated, encoding="utf-8")
+    return ", ".join(sorted(chosen))
+
+
 def main(argv: list[str]) -> int:
     args = list(argv)
     if args and args[0] == "--status":
         return print_status()
+
+    if args and args[0] == "--detect":
+        print(json.dumps(detect_tools(), indent=2))
+        return 0
+
+    if args and args[0] == "--enabled":
+        # Plain-text query for shell callers (init.sh gates its per-tool steps
+        # on this). Falls back to DEFAULT_TOOLS exactly like the bridge does, so
+        # a project without the section keeps its current behaviour.
+        for tool_id in parse_enabled_tools():
+            print(tool_id)
+        return 0
+
+    if args and args[0] == "--set-enabled":
+        if len(args) < 2:
+            err("--set-enabled requires a comma-separated list")
+            return 2
+        picked = [resolve_id(t) or t for t in args[1].split(",") if t.strip()]
+        ok(f"enabled tools: {write_enabled_tools(picked)}")
+        return 0
 
     if args and args[0] == "--unbridge":
         for tool_id, prof in PROFILES.items():

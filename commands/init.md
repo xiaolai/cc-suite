@@ -206,9 +206,52 @@ single-source migration the update/re-init paths use, so the section never drift
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/migrate_config.py"
 ```
 
-Then display the generated `.cc-suite.md` settings. Note to the user that they can
-enable Grok / opencode / Qwen / Kimi by ticking them in `## Enabled Tools` and
-running `/cc-suite:bridge-tools`.
+Then display the generated `.cc-suite.md` settings.
+
+---
+
+### Step 5b: Choose which coding agents to bridge
+
+Nobody needs every bridge. Detect what is actually installed, then let the user
+confirm — a project that never runs Codex should not get a `.codex/` tree.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_tools.py" --detect
+```
+
+That prints one JSON object per tool with `id`, `display_name`, `installed`,
+`china_tier`, and `china_note`. Build a single multi-select from it:
+
+```
+AskUserQuestion:
+  question: "Which coding agents should cc-suite bridge in this project?"
+  header: "Bridges"
+  multiSelect: true
+  options:  # one per tool, in registry order
+    - label: "<display_name>"
+      description: "<installed ? 'Installed' : 'Not found on PATH'> · <china_note>"
+```
+
+Rules for building the options:
+
+- **Pre-select every tool whose `installed` is true.** That makes the common case
+  a single Enter, while still letting someone tick a tool they are about to install.
+- **Claude is always bridged** — it is the source of truth the others mirror from.
+  List it as pre-selected; if the user unticks it, keep it on and say so.
+- Surface `china_note` verbatim. Antigravity and Grok are VPN-only in mainland
+  China, and that should be visible at the moment of choosing, not discovered later.
+- Do not hide uninstalled tools. Someone bridging a repo before installing the CLI
+  is a legitimate case; showing them as "Not found on PATH" is enough.
+
+Record the answer:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_tools.py" --set-enabled <comma,separated,ids>
+```
+
+Every later step reads this selection, so get it right before continuing. To change
+it afterwards, re-tick `## Enabled Tools` in `.cc-suite.md` and run
+`/cc-suite:bridge-tools`.
 
 ---
 
@@ -238,6 +281,11 @@ If the script exits non-zero, report the error and stop.
 
 ### Step 8: Register Codex MCP server
 
+**Skip this whole step if the user did not select Codex in Step 5b.** Say so in the
+summary rather than silently omitting it. `bridge_mcp.sh` below also writes the
+Antigravity projection — run it if *either* Codex or Antigravity was selected, and
+skip it only when neither was.
+
 Add the `codex-cli` MCP server to `.mcp.json` so Claude can invoke Codex as an MCP tool:
 
 ```bash
@@ -258,6 +306,9 @@ If the script exits non-zero, report the error and stop.
 
 ### Step 9: Register Claude MCP server
 
+**Skip if Codex was not selected** — this writes into `.codex/config.toml`, which
+only exists when Codex is bridged.
+
 Add the `claude-code` MCP server (claude-octopus) to `.codex/config.toml` so Codex can invoke Claude as an MCP tool:
 
 ```bash
@@ -269,6 +320,8 @@ If the script exits non-zero, report the error and stop.
 ---
 
 ### Step 10: Bridge hooks
+
+**Skip if Codex was not selected** — the only target is `.codex/hooks.json`.
 
 Mirror `.claude/settings.json` hooks into `.codex/hooks.json` so Codex runs the same lifecycle hooks Claude Code does. This is a no-op when the project has no hooks yet — safe to run unconditionally:
 
@@ -303,7 +356,14 @@ Display a combined status report:
 
 {output of scripts/status.sh — show the Bridge artifacts section only}
 
+### Bridged agents
+
+{one line per tool the user selected in Step 5b}
+{then, if any were skipped: "Not bridged: <list> — re-tick in `.cc-suite.md` and run `/cc-suite:bridge-tools` to add them later."}
+
 ### MCP delegation
+
+{include only the lines for tools that were actually bridged}
 
 - **Claude → Codex**: `.mcp.json` has `codex-cli` registered ✓
 - **Codex → Claude**: `.codex/config.toml` has `claude-code` registered ✓
@@ -317,7 +377,10 @@ Display a combined status report:
 
 - Run `/cc-suite:status` to see full bridge health
 - Edit `AGENTS.md` to add project-specific conventions
+- Commit `AGENTS.md`, `.cc-suite.md`, `.mcp.json` to share with your team
+
+{include the next two only if Codex was bridged}
+
 - Run `/audit` to test Codex delegation
 - Have Codex call Claude with `$claude-review` or `$claude-plan`
-- Commit `AGENTS.md`, `.cc-suite.md`, `.mcp.json` to share with your team
 ```

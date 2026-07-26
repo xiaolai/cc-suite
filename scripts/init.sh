@@ -30,6 +30,15 @@ note() { printf '  %s\n' "$*"; }
 ok()   { printf '✓ %s\n' "$*"; }
 skip() { printf '· %s\n' "$*"; }
 
+# Which coding agents this project bridges. Single-sourced from the
+# `## Enabled Tools` section of .cc-suite.md via the bridge engine, which falls
+# back to claude/codex/antigravity when the file or section is absent — so a
+# project initialized before tool selection existed behaves exactly as before.
+ENABLED_TOOLS="$(python3 "${SCRIPT_DIR}/bridge_tools.py" --enabled 2>/dev/null || true)"
+[ -n "$ENABLED_TOOLS" ] || ENABLED_TOOLS=$'claude\ncodex\nantigravity'
+
+tool_enabled() { printf '%s\n' "$ENABLED_TOOLS" | grep -qx "$1"; }
+
 # Tracks whether CLAUDE.md content was migrated into AGENTS.md in this run.
 CLAUDE_MIGRATED=0
 
@@ -118,28 +127,46 @@ fi
 # not needed by agy and is no longer created for new projects.
 # unbridge.sh still removes a legacy GEMINI.md left by older cc-suite versions.
 
-# Record provenance so unbridge.sh can know whether to delete files it didn't create.
-mkdir -p .codex
+# Record provenance so unbridge.sh can know whether to delete files it didn't
+# create. Written lazily: a project that bridges neither Codex nor a migrated
+# CLAUDE.md has nothing to record, and should not get a .codex/ directory just
+# to hold an empty header. The path is unchanged so unbridge.sh and existing
+# repos keep working.
 PROVENANCE=".codex/.cc-suite.provenance"
-{
-  echo "# cc-suite provenance — used by unbridge.sh"
-  [ -n "${CLAUDE_MIGRATED:-}" ]         && [ "$CLAUDE_MIGRATED" = "1" ]         && echo "CLAUDE_MIGRATED=1"
-  [ -n "${CC_SUITE_CREATED_CLAUDE:-}" ] && echo "CC_SUITE_CREATED_CLAUDE=1"
-} >> "$PROVENANCE"
+PROVENANCE_LINES=""
+if [ "${CLAUDE_MIGRATED:-0}" = "1" ]; then
+  PROVENANCE_LINES="${PROVENANCE_LINES}CLAUDE_MIGRATED=1"$'\n'
+fi
+if [ -n "${CC_SUITE_CREATED_CLAUDE:-}" ]; then
+  PROVENANCE_LINES="${PROVENANCE_LINES}CC_SUITE_CREATED_CLAUDE=1"$'\n'
+fi
+if [ -n "$PROVENANCE_LINES" ] || [ -f "$PROVENANCE" ]; then
+  mkdir -p .codex
+  if [ ! -f "$PROVENANCE" ]; then
+    echo "# cc-suite provenance — used by unbridge.sh" >> "$PROVENANCE"
+  fi
+  [ -n "$PROVENANCE_LINES" ] && printf '%s' "$PROVENANCE_LINES" >> "$PROVENANCE"
+fi
 
 # --- 4. Codex scaffolding ---------------------------------------------------
-mkdir -p .codex/prompts
-for d in .codex/prompts; do
-  if [ ! -e "$d/.gitkeep" ]; then
-    touch "$d/.gitkeep"
-    ok "$d/.gitkeep"
-  else
-    skip "$d/.gitkeep"
-  fi
-done
+if ! tool_enabled codex; then
+  skip ".codex/prompts skipped — codex not enabled for this project"
+else
+  mkdir -p .codex/prompts
+  for d in .codex/prompts; do
+    if [ ! -e "$d/.gitkeep" ]; then
+      touch "$d/.gitkeep"
+      ok "$d/.gitkeep"
+    else
+      skip "$d/.gitkeep"
+    fi
+  done
+fi
 
 # --- 5. .codex/config.toml -------------------------------------------------
-if [ ! -f .codex/config.toml ]; then
+if ! tool_enabled codex; then
+  skip ".codex/config.toml skipped — codex not enabled for this project"
+elif [ ! -f .codex/config.toml ]; then
   cat > .codex/config.toml <<'CFG'
 # cc-suite: generated-by-init  (this comment is consumed by unbridge)
 # Codex CLI configuration for this project.

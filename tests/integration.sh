@@ -18,8 +18,11 @@ else
 fi
 
 # ── assert helpers ───────────────────────────────────────────────────────────
-ok_msg()   { ((PASS++));   printf "${G}  ✓${N} %s\n" "$*"; }
-fail_msg() { ((FAIL++));   ERRORS+=("$*"); printf "${R}  ✗${N} %s\n" "$*"; }
+# Arithmetic assignment, not ((PASS++)): under `set -e` a post-increment from 0
+# evaluates to 0, which bash reports as exit status 1 — so the suite aborted on
+# its first *passing* assertion and never reached T02.
+ok_msg()   { PASS=$((PASS + 1)); printf "${G}  ✓${N} %s\n" "$*"; }
+fail_msg() { FAIL=$((FAIL + 1)); ERRORS+=("$*"); printf "${R}  ✗${N} %s\n" "$*"; }
 section()  { printf "\n${B}%s${N}\n" "$*"; }
 
 assert_file() {
@@ -1825,6 +1828,76 @@ else fail_msg "migrate_config.py changed the file on idempotent re-run"; fi
 rm .cc-suite.md
 assert_exit0   python3 "$SCRIPTS/migrate_config.py"   # no config → no-op, exit 0
 assert_no_file ".cc-suite.md"                         # must NOT create the file itself
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T71  bridge_tools.py --detect / --set-enabled — the init tool picker
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T71: bridge_tools.py — detect and set enabled tools"
+make_tmp
+
+assert_exit0 python3 "$SCRIPTS/bridge_tools.py" --detect
+python3 "$SCRIPTS/bridge_tools.py" --detect > detect.json 2>/dev/null
+assert_contains "detect.json" '"id": "claude"'
+assert_contains "detect.json" '"installed"'
+assert_contains "detect.json" '"china_tier"'
+# Claude is the host: always reported present even without a binary on PATH.
+assert_exit0 python3 -c "
+import json
+d = {t['id']: t for t in json.load(open('detect.json'))}
+assert d['claude']['installed'] is True, 'claude must always be installed'
+assert set(d) == {'claude','codex','antigravity','grok','opencode','qwen','kimi'}, d.keys()
+"
+
+printf '# cc-suite\n\nSettings.\n' > .cc-suite.md
+python3 "$SCRIPTS/migrate_config.py" >/dev/null 2>&1
+assert_exit0 python3 "$SCRIPTS/bridge_tools.py" --set-enabled codex,opencode
+assert_contains     ".cc-suite.md" "- [x] codex"
+assert_contains     ".cc-suite.md" "- [x] opencode"
+assert_contains     ".cc-suite.md" "- [x] claude"     # always forced on
+assert_not_contains ".cc-suite.md" "- [x] antigravity"
+assert_not_contains ".cc-suite.md" "- [x] qwen"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T72  init.sh — honours the enabled-tools selection
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T72: init.sh — skips Codex scaffolding when codex is not enabled"
+make_tmp
+
+# Claude-only project: no .codex/ artifacts should be created at all.
+printf '# cc-suite\n\nSettings.\n' > .cc-suite.md
+python3 "$SCRIPTS/migrate_config.py" >/dev/null 2>&1
+python3 "$SCRIPTS/bridge_tools.py" --set-enabled claude >/dev/null 2>&1
+bash "$SCRIPTS/init.sh" --description "Claude Only" >/dev/null 2>&1
+
+assert_file    "AGENTS.md"
+assert_no_file ".codex/config.toml"
+assert_no_dir  ".codex/prompts"
+
+# Known residue: .codex/ is still created to hold cc-suite's own provenance
+# record (that it authored CLAUDE.md), which unbridge.sh reads from that path.
+# No *Codex* artifact is written — assert the directory holds nothing else.
+assert_exit0 python3 -c "
+import os
+entries = sorted(os.listdir('.codex')) if os.path.isdir('.codex') else []
+assert entries in ([], ['.cc-suite.provenance']), f'unexpected .codex contents: {entries}'
+"
+
+cleanup
+
+section "T72b: init.sh — still bridges Codex when enabled (and by default)"
+make_tmp
+
+printf '# cc-suite\n\nSettings.\n' > .cc-suite.md
+python3 "$SCRIPTS/migrate_config.py" >/dev/null 2>&1
+python3 "$SCRIPTS/bridge_tools.py" --set-enabled codex >/dev/null 2>&1
+bash "$SCRIPTS/init.sh" --description "With Codex" >/dev/null 2>&1
+
+assert_file ".codex/config.toml"
+assert_file ".codex/prompts/.gitkeep"
 
 cleanup
 
