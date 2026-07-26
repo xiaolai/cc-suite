@@ -97,6 +97,13 @@ PROFILES: dict[str, dict] = {
         "china_tier": "A",
         "mcp": {"format": "json-settings", "path": ".qwen/settings.json", "scope": "project"},
         "skills_symlink": {"link": ".qwen/skills", "target": ".claude/skills"},
+        # Qwen is the only registry tool that does not read AGENTS.md on its
+        # own. Verified against qwen-code 0.21.0: getContextFileNames() returns
+        # ["QWEN.md"] whenever the setting is unset, so without this a bridged
+        # project's AGENTS.md is silently ignored. `context.fileName` is the
+        # current key (settings.merged.context?.fileName); QWEN.md is kept in
+        # the list so a project that already has one kicks on working.
+        "context_files": {"key": ["context", "fileName"], "want": ["AGENTS.md", "QWEN.md"]},
     },
     "kimi": {
         "display_name": "Kimi CLI (Moonshot)",
@@ -476,6 +483,64 @@ def _write_provenance(path: Path, names: list[str]) -> None:
     )
 
 
+def _nested_get(doc: dict, key_path: list[str]):
+    cur = doc
+    for part in key_path:
+        if not isinstance(cur, dict) or part not in cur:
+            return None
+        cur = cur[part]
+    return cur
+
+
+def _nested_set(doc: dict, key_path: list[str], value) -> None:
+    cur = doc
+    for part in key_path[:-1]:
+        nxt = cur.get(part)
+        if not isinstance(nxt, dict):
+            nxt = {}
+            cur[part] = nxt
+        cur = nxt
+    cur[key_path[-1]] = value
+
+
+def ensure_context_files(path: Path, spec: dict) -> str:
+    """Point a tool at AGENTS.md when it will not find it by itself.
+
+    Additive by design: an existing user value is kept and only extended with
+    the missing entries, because the setting is a general context-file list and
+    the user may legitimately have their own files in it."""
+    key_path = spec["key"]
+    want = spec["want"]
+    dotted = ".".join(key_path)
+
+    raw = load_json(path)
+    if raw is not None and not isinstance(raw, dict):
+        err(f"{path}: top level must be an object — leaving it alone")
+        raise SystemExit(2)
+    doc: dict = raw if isinstance(raw, dict) else {}
+
+    current = _nested_get(doc, key_path)
+    if current is None:
+        merged = list(want)
+    elif isinstance(current, str):
+        merged = [*[w for w in want if w != current], current]
+    elif isinstance(current, list) and all(isinstance(x, str) for x in current):
+        missing = [w for w in want if w not in current]
+        if not missing:
+            return f"context: {dotted} already includes {want[0]}"
+        merged = [*missing, *current]
+    else:
+        return f"context: {dotted} has an unexpected shape — left alone"
+
+    _nested_set(doc, key_path, merged)
+    new_text = json.dumps(doc, indent=2) + "\n"
+    if path.exists() and path.read_text(encoding="utf-8") == new_text:
+        return f"context: {dotted} already current"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(new_text, encoding="utf-8")
+    return f"context: {dotted} = {json.dumps(merged)}"
+
+
 def link_skills(link_spec: dict) -> str:
     """Create/verify a relative skills symlink (Qwen: .qwen/skills → .claude/skills).
     Returns a short status string. No-op if the target does not exist."""
@@ -528,6 +593,9 @@ def bridge_tool(tool_id: str, servers: dict[str, dict]) -> None:
 
     if "skills_symlink" in prof:
         note(f"{name}: {link_skills(prof['skills_symlink'])}")
+
+    if "context_files" in prof:
+        note(f"{name}: {ensure_context_files(path, prof['context_files'])}")
 
 
 def _remove_symlink(link_spec: dict) -> None:
@@ -585,6 +653,42 @@ def _unbridge_json(path: Path, root_key: str) -> None:
     ok(f"removed {prov_path.name}")
 
 
+def _unbridge_context_files(path: Path, spec: dict) -> None:
+    """Undo ensure_context_files. Only strips the entries cc-suite adds, and
+    only while they still sit at the front in the order it wrote them — past
+    that the user has edited the list and it is theirs."""
+    raw = load_json(path)
+    if not isinstance(raw, dict):
+        return
+    key_path = spec["key"]
+    want = spec["want"]
+    current = _nested_get(raw, key_path)
+    if not isinstance(current, list):
+        return
+
+    if current == want:
+        rest = []
+    elif current[: len(want)] == want:
+        rest = current[len(want):]
+    elif current[:1] == want[:1]:
+        rest = current[1:]  # only the AGENTS.md entry was prepended
+    else:
+        return  # reordered or otherwise user-owned — leave it
+
+    parent = _nested_get(raw, key_path[:-1]) if len(key_path) > 1 else raw
+    if rest:
+        parent[key_path[-1]] = rest
+    else:
+        parent.pop(key_path[-1], None)
+        # Drop the wrapper object too if we emptied it.
+        if len(key_path) > 1 and not parent:
+            grand = _nested_get(raw, key_path[:-2]) if len(key_path) > 2 else raw
+            grand.pop(key_path[-2], None)
+
+    path.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
+    ok(f"removed {'.'.join(key_path)} from {path.name}")
+
+
 def unbridge_tool(tool_id: str) -> None:
     """Remove cc-suite-managed artifacts for one registry tool. Tears down
     regardless of current enabled-state, so disabling a tool then unbridging
@@ -598,6 +702,8 @@ def unbridge_tool(tool_id: str) -> None:
     if not mcp:
         return
     path = resolve_path(mcp)
+    if "context_files" in prof:
+        _unbridge_context_files(path, prof["context_files"])
     if mcp["format"] == "toml-mcp_servers":
         _unbridge_toml(path)
     else:

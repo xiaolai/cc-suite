@@ -58,14 +58,20 @@ The bridge only mirrors MCP config. Everything else depends on what the tool alr
 
 | Tool | Reads `AGENTS.md` | Finds project `.agents/skills/` | cc-suite compensates |
 |------|:---:|:---:|---|
-| Grok Build | ✅ | ✅ (also `.claude/skills/`) | nothing needed |
-| opencode | ✅ | ✅ (also `.claude/skills/`) | nothing needed |
-| Kimi CLI | ✅ | ✅ (also `.claude/skills/`) | nothing needed |
-| Qwen Code | ⚠️ not by default | ❌ `.qwen/skills/` only | writes the `.qwen/skills` symlink |
+| Grok Build | ✅ on its own | ✅ (also `.claude/skills/`) | nothing needed |
+| opencode | ✅ on its own | ✅ (also `.claude/skills/`) | nothing needed |
+| Kimi CLI | ✅ on its own | ✅ (also `.claude/skills/`) | nothing needed |
+| Qwen Code | ⚠️ only once bridged | ❌ `.qwen/skills/` only | `.qwen/skills` symlink **+** `context.fileName` |
 
-**Qwen Code is the exception on both axes.** Its skill scan covers only `~/.qwen/skills/` and `.qwen/skills/`, which is why its profile is the one that writes a skills symlink. Its default context file is `QWEN.md`, not `AGENTS.md` — pointing it at `AGENTS.md` needs `"contextFileName": "AGENTS.md"` in `.qwen/settings.json`, and that setting is [reported not to take effect](https://github.com/QwenLM/qwen-code/issues/727). Until that lands, a qwen session sees the mirrored MCP servers and the shared skills, but **not** `AGENTS.md`. Symlinking `QWEN.md → AGENTS.md` in the project is the reliable workaround.
+**Qwen Code needs help on both axes, and the bridge now provides both.** Its skill scan covers only `~/.qwen/skills/` and `.qwen/skills/`, hence the symlink. Its default context file is `QWEN.md`: `getContextFileNames()` in qwen-code 0.21.0 returns `["QWEN.md"]` whenever the setting is unset, so an unbridged project's `AGENTS.md` is silently ignored — no error, the instructions simply never load. `/cc-suite:bridge-tools` therefore also writes:
 
-Grok and opencode were verified directly against the installed CLIs (`grok inspect`, `opencode debug skill`) with a probe skill behind the real `.agents/skills → ../.claude/skills` symlink. Kimi and Qwen are from their published docs — neither is installed here.
+```json
+{ "context": { "fileName": ["AGENTS.md", "QWEN.md"] } }
+```
+
+into `.qwen/settings.json`. `QWEN.md` stays in the list so a project that already has one keeps working, and an existing user value is extended rather than replaced. `--unbridge` removes only the entries it added, and leaves the list alone once you have reordered it.
+
+Grok and opencode were verified directly against the installed CLIs (`grok inspect`, `opencode debug skill`) with a probe skill behind the real `.agents/skills → ../.claude/skills` symlink. The Qwen behaviour was verified against qwen-code 0.21.0's own bundled source — the settings schema defines `context.fileName` as `string | string[]` defaulting to undefined, and the resolver falls back to `["QWEN.md"]`. Kimi is from its published docs; it is not installed here.
 
 ### Local models (Ollama)
 

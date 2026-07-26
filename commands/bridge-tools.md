@@ -23,7 +23,9 @@ Registry-bridged tools and their native MCP targets:
 
 **Grok Build, opencode, and Kimi CLI** read `AGENTS.md` and the shared skills paths (`.claude/skills` / `.agents/skills`) natively, so instructions and skills need no mirroring for them.
 
-**Qwen Code does not**, on either count. Its skill scan covers only `~/.qwen/skills/` and `.qwen/skills/` — hence the symlink in the table above — and its default context file is `QWEN.md`, so it will not pick up `AGENTS.md` without `"contextFileName": "AGENTS.md"` in `.qwen/settings.json` (a setting with an open upstream bug). If a user enables qwen and expects `AGENTS.md` to apply, tell them to symlink `QWEN.md → AGENTS.md`; the bridge does not do this for them.
+**Qwen Code does not**, on either count — so the bridge compensates twice for it. Its skill scan covers only `~/.qwen/skills/` and `.qwen/skills/`, hence the symlink in the table above. Its default context file is `QWEN.md` (qwen-code 0.21.0 resolves `["QWEN.md"]` whenever the setting is unset), so the bridge also writes `context.fileName: ["AGENTS.md", "QWEN.md"]` into `.qwen/settings.json`. Both are automatic; do not tell the user to hand-symlink `QWEN.md`.
+
+If a user reports that qwen is ignoring `AGENTS.md`, check that `.qwen/settings.json` carries that `context.fileName` array — if it is missing, the project was bridged by an older cc-suite and needs a re-run of this command.
 
 Claude Code, Codex CLI, and Antigravity keep their own bridges — this command never touches them.
 
