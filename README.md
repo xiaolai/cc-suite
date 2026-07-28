@@ -17,13 +17,13 @@ Each tool reads from its own files. `CLAUDE.md` and `AGENTS.md` sit next to each
 | **No circular delegation** | Because the skills tree is shared, an agent Claude delegates to can see cc-suite's own Claude-facing skills and hand the task straight back. Every outbound lane blocks that: implicit-invocation guards on the Codex side, and a delegation boundary prepended to the prompt on all lanes. |
 | **Mirrored hooks** | Syncs the five shared hook events from `.claude/settings.json` into `.codex/hooks.json`. Same scripts, both tools. |
 | **MCP parity** | Mirrors `.mcp.json` project servers into `.codex/config.toml` and `.agents/mcp_config.json` so Codex and `agy` see the same servers. |
-| **Claude → Codex delegation** | Registers the `codex-cli` MCP server in `.mcp.json`. Claude can call `/audit`, `/implement`, `/bug-analyze`, and more directly. Full Codex job tracking, background mode, and stop-time review gate included. |
+| **Claude → Codex delegation** | `/cc-suite:audit`, `/cc-suite:implement`, `/cc-suite:bug-analyze`, and more delegate to Codex through the deadline-bounded CLI runner, with full job tracking, background mode, and the stop-time review gate. The `codex-cli` MCP server registered in `.mcp.json` is an additional direct tool surface. |
 | **Codex → Claude delegation** | Registers the `claude-code` MCP server (claude-octopus) in `.codex/config.toml`. Codex skills `$claude-review`, `$claude-plan`, `$claude-implement`, `$claude-debug` delegate to Claude and return structured results. |
 | **Codex reads Claude session history** | The same `claude-code` MCP server exposes `claude_code_sessions` (list this repo's Claude Code sessions, or all projects with `all_projects: true`) and `claude_code_transcript` (read a session by id). Codex can enumerate and read past Claude conversations for the repo. |
 | **Claude → `agy` delegation** | `scripts/agy-runner.mjs` drives Antigravity CLI headlessly, with the same job tracking, background mode, deadline enforcement, and conversation resume as the Codex runner. |
 | **`agy` → Claude delegation** | The same claude-octopus MCP server, registered in `agy`'s workspace config. |
 | **Claude → Grok delegation** | `/cc-suite:grok` drives **Grok Build** over the Agent Client Protocol (`scripts/grok-runner.mjs` acts as the ACP client to `grok agent stdio`), with the same job tracking, background mode, deadline enforcement, and session resume as the Codex/agy runners. |
-| **More coding agents (opt-in)** | `/cc-suite:bridge-tools` mirrors the project MCP surface into **Grok Build**, **opencode**, **Qwen Code**, and **Kimi CLI** — each selected in `.cc-suite.md`'s `## Enabled Tools` list. They read `AGENTS.md` and shared skills natively, so only MCP config is mirrored (per tool's native format). China-aware: Qwen/Kimi/opencode work natively in mainland China; Grok is VPN-only. |
+| **More coding agents (opt-in)** | `/cc-suite:bridge-tools` mirrors the project MCP surface into **Grok Build**, **opencode**, **Qwen Code**, and **Kimi CLI** — each selected in `.cc-suite.md`'s `## Enabled Tools` list. Grok, opencode, and Kimi read `AGENTS.md` and shared skills natively, so only MCP config is mirrored (per tool's native format); Qwen Code also gets a skills symlink and an instruction-file setting, since it reads neither by default. China-aware: Qwen/Kimi/opencode work natively in mainland China; Grok is VPN-only. |
 
 ## More coding agents (opt-in)
 
@@ -91,7 +91,7 @@ Beyond the config bridge, cc-suite can **drive Grok Build as an agent**. `/cc-su
 /cc-suite:grok --resume <session-id> "Now also update the tests"
 ```
 
-`scripts/grok-runner.mjs` acts as an **Agent Client Protocol (ACP) client** to `grok agent stdio` (Grok is the agent, the runner is the client). The ACP handshake — `initialize` → `session/new` (or `session/load` on resume) → `session/prompt` — streams Grok's answer from `session/update` notifications. Because it's a structured protocol, the runner gets reliable session ids (resume carries full context), tool-call/thought visibility, and permission control — richer than a text-scraping CLI runner.
+`scripts/grok-runner.mjs` acts as an **Agent Client Protocol (ACP) client** to `grok agent stdio` (Grok is the agent, the runner is the client). The ACP handshake — `initialize` → `session/new` (or `session/load` on resume) → `session/prompt` — streams Grok's answer from `session/update` notifications. Because it's a structured protocol, the runner gets reliable session ids (resume carries full context), tool-call visibility, and permission control — richer than a text-scraping CLI runner.
 
 | Flag | Meaning |
 |------|---------|
@@ -100,7 +100,7 @@ Beyond the config bridge, cc-suite can **drive Grok Build as an agent**. `/cc-su
 | `--sandbox` | `read-only` (default) · `workspace-write` · `danger-full-access` |
 | `--background` / `--resume <id>` | Same job-tracking + resume as the Codex/agy runners |
 
-It shares the runner infrastructure (`/cc-suite:status`, `/result`, `/cancel`, `/continue`) with the other backends, and gates on `/cc-suite:grok-preflight` — a fast, **local** readiness check (binary + auth, no network round-trip) that fails fast with a `grok login` hint instead of hanging until the deadline. Pair it with the MCP bridge (`grok` enabled in `## Enabled Tools`) so Grok can call *back* into Claude via the `claude-code` server — a full round trip. Requires the `grok` binary on PATH ([install](https://x.ai/cli)).
+It shares the runner infrastructure (`/cc-suite:status`, `/cc-suite:result`, `/cc-suite:cancel`) with the other backends — resume a Grok session via `/cc-suite:grok --resume <id>` (`/cc-suite:continue` resumes Codex threads only) — and gates on `/cc-suite:grok-preflight` — a fast, **local** readiness check (binary + auth, no network round-trip) that fails fast with a `grok login` hint instead of hanging until the deadline. Pair it with the MCP bridge (`grok` enabled in `## Enabled Tools`) so Grok can call *back* into Claude via the `claude-code` server — a full round trip. Requires the `grok` binary on PATH ([install](https://x.ai/cli)).
 
 ## Antigravity CLI (`agy`)
 
@@ -168,7 +168,7 @@ claude plugin install cc-suite@xiaolai --scope project
 /cc-suite:init
 ```
 
-Walks through the full setup: AGENTS.md bridge, MCP server registration, and project audit config. All steps are idempotent — safe to re-run.
+Walks through the full setup: AGENTS.md bridge, MCP server registration, and project audit config. All steps are idempotent — safe to re-run. Re-running with an existing `.cc-suite.md` tops up the config non-destructively and re-runs the non-interactive bridge steps, so missing artifacts (e.g. after a fresh clone) are recreated.
 
 After init, edit `AGENTS.md` — all three tools pick up changes automatically.
 
@@ -184,37 +184,37 @@ After init, edit `AGENTS.md` — all three tools pick up changes automatically.
 | `/cc-suite:sync-mcp` | Sync Claude's `.mcp.json` project servers → Codex and Antigravity workspace configs. Alias: `/cc-suite:bridge-mcp`. |
 | `/cc-suite:bridge-tools` | Mirror the project MCP surface into opt-in coding agents (Grok Build, opencode, Qwen Code, Kimi CLI) selected in `.cc-suite.md`'s `## Enabled Tools`. |
 | `/cc-suite:migrate-google` | Convert legacy Gemini CLI extensions/configuration and establish the agy workspace bridge. |
-| `/cc-suite:status` | Bridge health, MCP registration, and Codex runtime checks. |
+| `/cc-suite:status` | Show active and recent delegation jobs (Codex, agy, Grok). Bridge health and MCP registration checks live in `/cc-suite:diagnose`. |
 | `/cc-suite:unbridge` | Tear down bridge artifacts, restoring `CLAUDE.md` from `AGENTS.md`. |
 
 ### Claude → Codex (audit and implementation)
 
-All commands delegate to Codex via the `codex-cli` MCP server. Codex runs in a sandboxed subprocess; Claude tracks jobs, handles background mode, and can continue threads.
+Codex-backed commands delegate through the CLI runner (`scripts/codex-runner.mjs`, which shells out to `codex exec` — deadline-bounded, killable, with a streamed heartbeat); the `codex-cli` MCP server registered in `.mcp.json` is a separate, direct tool surface, not the delegation path. Codex runs in a sandboxed subprocess; Claude tracks jobs, handles background mode, and can continue threads. `/cc-suite:audit-plugin` is the local exception — it analyzes plugin artifacts without an external model call.
 
 | Command | What it does |
 |---------|--------------|
-| `/audit` | Run a mini (5-dimension) or full (9-dimension) audit via Codex |
-| `/audit-fix` | Audit → fix → verify loop. Iterates up to 3 rounds. |
-| `/audit-agent` | Multi-agent parallel audit (coordinator + specialists) |
-| `/audit-plugin` | Audit Claude Code plugin artifacts |
-| `/audit-skill` | Audit Codex SKILL.md files |
-| `/audit-rules` | Audit `.claude/rules/` files |
-| `/audit-nlp` | Audit natural-language programming artifacts |
-| `/implement` | Implement a feature or change via Codex |
-| `/review-plan` | Generate an implementation plan via Codex |
-| `/bug-analyze` | Root-cause analysis for a failing test or error |
-| `/verify` | Verify that a fix or implementation is correct |
-| `/cancel` | Cancel a running Codex job |
-| `/continue` | Continue a previous Codex thread by ID |
-| `/result` | Show the output of a completed Codex job |
-| `/status` | Show active and recent Codex jobs |
+| `/cc-suite:audit` | Run a mini (5-dimension) or full (9-dimension) audit via Codex |
+| `/cc-suite:audit-fix` | Audit → fix → verify loop. Iterates up to 3 rounds. |
+| `/cc-suite:audit-agent` | Audit Claude Code agent definitions (triggering, prompt quality, tools, examples) |
+| `/cc-suite:audit-plugin` | Audit Claude Code plugin artifacts (local analysis, no Codex call) |
+| `/cc-suite:audit-skill` | Audit Claude Code SKILL.md files |
+| `/cc-suite:audit-rules` | Audit `.claude/rules/` files |
+| `/cc-suite:audit-nlp` | Audit natural-language programming artifacts |
+| `/cc-suite:implement` | Implement a feature or change via Codex |
+| `/cc-suite:review-plan` | Send a plan to Codex for architectural review |
+| `/cc-suite:bug-analyze` | Root-cause analysis for a failing test or error |
+| `/cc-suite:verify` | Verify that a fix or implementation is correct |
+| `/cc-suite:cancel` | Cancel a running Codex job |
+| `/cc-suite:continue` | Continue a previous Codex thread by ID (Codex threads only — Grok/agy resume via their own commands' `--resume`) |
+| `/cc-suite:result` | Show the output of a completed job |
+| `/cc-suite:status` | Show active and recent delegation jobs |
 | `/cc-suite:codex-preflight` | Check Codex CLI availability and list available models |
 | `/cc-suite:agy-preflight` | Check Antigravity CLI availability, authentication, models, and workspace MCP parity |
 | `/cc-suite:agy` | Delegate a bounded prompt directly to Antigravity CLI with shared job tracking |
 | `/cc-suite:grok-preflight` | Check Grok Build readiness (binary, auth, models) — fast and local, no network |
 | `/cc-suite:grok` | Delegate a bounded prompt to Grok Build over ACP with shared job tracking |
-| `/setup` | Manage the stop-time review gate |
-| `/refresh-knowledge` | Update the Claude Code conventions skill from latest docs |
+| `/cc-suite:setup` | Manage the stop-time review gate |
+| `/cc-suite:refresh-knowledge` | Update the Claude Code conventions skill from latest docs |
 
 ### Codex → Claude (delegation skills)
 

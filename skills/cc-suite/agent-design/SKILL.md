@@ -157,11 +157,12 @@ These are starting points. Edit the values to match the project, narrow the scop
 
 ## After editing an agent
 
-Any edit to an agent file (creating, modifying, deleting) requires re-running the bridge:
+Any edit to an agent file (creating, modifying, deleting) requires re-running the bridge. The first line resolves the plugin root in both hosts — Claude Code sets `CLAUDE_PLUGIN_ROOT`; a Codex session resolves it from the bridged skills symlink:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/init.sh"     # or
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_agents.py"
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(dirname "$(dirname "$(readlink -f .claude/skills/cc-suite)")")}"
+bash "${PLUGIN_ROOT}/scripts/init.sh"     # or
+python3 "${PLUGIN_ROOT}/scripts/bridge_agents.py"
 ```
 
 `/cc-suite:add-agent` and `/cc-suite:remove-agent` do this automatically. `/cc-suite:repair` and `/cc-suite:update` re-bridge as part of their normal flow.

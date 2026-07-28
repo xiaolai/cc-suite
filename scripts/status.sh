@@ -155,10 +155,14 @@ _pin_file="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd
 _expected_pin="$(tr -d '[:space:]' < "$_pin_file" 2>/dev/null || echo unknown)"
 if [ -f .codex/config.toml ]; then
   if grep -qF ">>> cc-suite-claude-mcp >>>" .codex/config.toml; then
-    if grep -qF "claude-octopus@${_expected_pin}" .codex/config.toml; then
+    # Scope the pin comparison to the cc-suite-claude-mcp sentinel block:
+    # advisor-agent blocks also reference claude-octopus@<pin> and a whole-file
+    # grep would let a current-pin advisor mask a stale claude-code block.
+    _claude_block="$(sed -n '/>>> cc-suite-claude-mcp >>>/,/<<< cc-suite-claude-mcp <<</p' .codex/config.toml)"
+    if printf '%s' "$_claude_block" | grep -qF "claude-octopus@${_expected_pin}"; then
       mark ".codex/config.toml → Codex" ok   "claude-code pinned @${_expected_pin}"
     else
-      _live_pin=$(grep -oE 'claude-octopus@[0-9][^"]*' .codex/config.toml | head -1)
+      _live_pin=$(printf '%s' "$_claude_block" | grep -oE 'claude-octopus@[0-9][^"]*' | head -1)
       mark ".codex/config.toml → Codex" warn "claude-code pinned @${_live_pin:-?} but plugin expects @${_expected_pin} — run /cc-suite:update"
     fi
   elif grep -qE '^[[:space:]]*\[mcp_servers\.(claude-code|"claude-code")\][[:space:]]*$' .codex/config.toml; then

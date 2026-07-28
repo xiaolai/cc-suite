@@ -129,14 +129,8 @@ Mark `{config_default_sandbox}` as "(Recommended)" if set, otherwise use the cal
 
 ### Step D: Apply project config to Codex calls
 
-After the user makes their choices, when building the Codex runner call (see `commands/shared/codex-call.md`), you MUST apply config values as follows:
+The prompt preamble is built ONLY by the canonical recipe in `commands/shared/codex-call.md` (persona, provenance disclosure, delegation boundary, optional conventions, config parts). Do not rebuild or partially restate it here — this partial's job is to supply the config values that recipe consumes:
 
-1. **Prompt preamble**: Start with the command's role persona, then MUST append:
-   - `{config_focus_instructions}` (if non-empty)
-   - `{config_project_instructions}` (if non-empty)
-
-   These are NOT optional — if the config provides them, they MUST be folded into the prompt preamble on every Codex call (there is no separate developer-instructions channel in `codex exec`).
+1. **Preamble config parts**: `{config_focus_instructions}` and `{config_project_instructions}` feed parts 5 and 6 of the canonical preamble. They are NOT optional — when the config provides them, they MUST reach every Codex call's preamble (there is no separate developer-instructions channel in `codex exec`).
 
 2. **Skip patterns**: Before sending files to Codex, you MUST filter out any files matching `{config_skip_patterns}`. If all files are filtered out, report that and stop.
-
-See `commands/shared/codex-call.md` for the canonical call pattern that enforces these rules.

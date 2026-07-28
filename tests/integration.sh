@@ -1952,6 +1952,139 @@ assert_file ".codex/prompts/.gitkeep"
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# T73  bridge_mcp.sh — honours the enabled-tools selection
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T73: bridge_mcp.sh — codex disabled → no .codex/ created"
+make_tmp
+printf '## Enabled Tools\n- [x] claude\n- [x] antigravity\n' > .cc-suite.md
+echo '{ "mcpServers": { "my-server": { "type": "stdio", "command": "x" } } }' > .mcp.json
+assert_exit0 bash "$SCRIPTS/bridge_mcp.sh"
+assert_no_dir ".codex"
+assert_file   ".agents/mcp_config.json"          # antigravity still projected
+cleanup
+
+section "T73b: bridge_mcp.sh — codex disabled reconciles an existing config"
+make_tmp
+printf '## Enabled Tools\n- [x] claude\n' > .cc-suite.md
+echo '{ "mcpServers": { "my-server": { "type": "stdio", "command": "x" } } }' > .mcp.json
+mkdir -p .codex
+cat > .codex/config.toml <<'TOML'
+# user setting
+model = "gpt-5.6-sol"
+# >>> cc-suite-mcp >>>
+[mcp_servers.my-server]
+command = "x"
+# <<< cc-suite-mcp <<<
+TOML
+assert_exit0 bash "$SCRIPTS/bridge_mcp.sh"
+assert_contains     ".codex/config.toml" "# user setting"          # user TOML preserved
+assert_not_contains ".codex/config.toml" "[mcp_servers.my-server]" # cc-suite block removed
+assert_no_dir ".agents"                                            # antigravity disabled too
+cleanup
+
+section "T73c: bridge_mcp.sh — antigravity disabled → no .agents/ created, codex still projected"
+make_tmp
+printf '## Enabled Tools\n- [x] claude\n- [x] codex\n' > .cc-suite.md
+echo '{ "mcpServers": { "my-server": { "type": "stdio", "command": "x" } } }' > .mcp.json
+assert_exit0 bash "$SCRIPTS/bridge_mcp.sh"
+assert_contains ".codex/config.toml" "[mcp_servers.my-server]"
+assert_no_dir   ".agents"
+cleanup
+
+section "T73d: bridge_mcp.sh — no .cc-suite.md keeps legacy behavior (both projected)"
+make_tmp
+echo '{ "mcpServers": { "my-server": { "type": "stdio", "command": "x" } } }' > .mcp.json
+assert_exit0 bash "$SCRIPTS/bridge_mcp.sh"
+assert_contains ".codex/config.toml" "[mcp_servers.my-server]"
+assert_file     ".agents/mcp_config.json"
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T74  bridge_agents.py — honours the enabled-tools selection
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T74: bridge_agents.py — codex disabled → advisor registered in .mcp.json only"
+make_tmp
+printf '## Enabled Tools\n- [x] claude\n' > .cc-suite.md
+mkdir -p .cc-suite/agents
+cat > .cc-suite/agents/tester.md <<'MD'
+---
+description: Test advisor.
+---
+Be a test advisor.
+MD
+assert_exit0 python3 "$SCRIPTS/bridge_agents.py"
+assert_contains '.mcp.json' '"tester"'
+assert_no_dir   ".codex"
+cleanup
+
+section "T74b: bridge_agents.py — codex disabled clears advisor blocks in an existing config"
+make_tmp
+printf '## Enabled Tools\n- [x] claude\n' > .cc-suite.md
+mkdir -p .cc-suite/agents .codex
+cat > .cc-suite/agents/tester.md <<'MD'
+---
+description: Test advisor.
+---
+Be a test advisor.
+MD
+cat > .codex/config.toml <<'TOML'
+# user setting
+# >>> cc-suite-agent: stale_advisor >>>
+[mcp_servers.stale_advisor]
+command = "npx"
+# <<< cc-suite-agent: stale_advisor <<<
+TOML
+assert_exit0 python3 "$SCRIPTS/bridge_agents.py"
+assert_contains     ".codex/config.toml" "# user setting"
+assert_not_contains ".codex/config.toml" "stale_advisor"
+assert_not_contains ".codex/config.toml" "tester"        # disabled → no new advisor projected
+assert_contains     ".mcp.json" '"tester"'
+cleanup
+
+section "T74c: bridge_agents.py — codex enabled keeps projecting advisors"
+make_tmp
+printf '## Enabled Tools\n- [x] claude\n- [x] codex\n' > .cc-suite.md
+mkdir -p .cc-suite/agents
+cat > .cc-suite/agents/tester.md <<'MD'
+---
+description: Test advisor.
+---
+Be a test advisor.
+MD
+assert_exit0 python3 "$SCRIPTS/bridge_agents.py"
+assert_contains ".mcp.json" '"tester"'
+assert_contains ".codex/config.toml" "cc-suite-agent: tester"
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T75  status.sh — advisor block with the current pin must not mask a stale claude-code pin
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T75: status.sh — stale claude-code pin flagged despite current-pin advisor block"
+make_tmp
+_current_pin="$(tr -d '[:space:]' < "$SCRIPTS/lib/claude-octopus-pin.txt")"
+mkdir -p .codex
+cat > .codex/config.toml <<TOML
+# >>> cc-suite-claude-mcp >>>
+[mcp_servers.claude-code]
+command = "npx"
+args = ["-y", "claude-octopus@0.0.1"]
+# <<< cc-suite-claude-mcp <<<
+
+# >>> cc-suite-agent: advisor >>>
+[mcp_servers.advisor]
+command = "npx"
+args = ["-y", "claude-octopus@${_current_pin}"]
+# <<< cc-suite-agent: advisor <<<
+TOML
+_mask_out="$(bash "$SCRIPTS/status.sh" 2>&1)"
+if printf '%s' "$_mask_out" | grep -q 'claude-code pinned @claude-octopus@0.0.1\|but plugin expects'; then
+  ok_msg "status.sh: stale claude-code pin flagged (advisor block did not mask it)"
+else
+  fail_msg "status.sh: stale claude-code pin masked by advisor block"
+fi
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Summary
 # ═══════════════════════════════════════════════════════════════════════════════
 echo

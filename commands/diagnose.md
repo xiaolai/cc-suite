@@ -26,13 +26,13 @@ These are not covered by status.sh.
 
 **Check A — stale nested symlinks**
 
-Look for any symlinks inside `.claude/skills/` or `.agents/skills/` that resolve to a path containing another `cc-suite` directory (the macOS `ln -sf` bug artifact):
+Look for symlinks (not directories) inside `.claude/skills/` or `.agents/skills/` named `cc-suite` beyond the two legitimate ones (the macOS `ln -sf` bug artifact):
 
 ```bash
-find -L .claude/skills/ .agents/skills/ -maxdepth 3 -name "cc-suite" -type d 2>/dev/null | grep -v "^.claude/skills/cc-suite$" | grep -v "^.agents/skills/cc-suite$"
+find .claude/skills/ .agents/skills/ -maxdepth 3 -name "cc-suite" -type l 2>/dev/null | grep -vx ".claude/skills/cc-suite" | grep -vx ".agents/skills/cc-suite"
 ```
 
-If any paths are returned, flag them as stale nested symlinks.
+For each returned path, run `readlink` on it and flag it as stale residue **only if** its target points into a cc-suite skills tree (contains `skills/cc-suite`). A real directory or a symlink pointing elsewhere is not residue — report it as informational and do not offer deletion.
 
 **Check B — Codex CLI availability**
 
@@ -65,15 +65,20 @@ Compare to the version in `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json` (th
 [ -L .agents/skills ] && [ ! -d .agents/skills ] && echo "broken" || echo "ok"
 ```
 
-**Check E — pinned claude-octopus boots and handshakes**
+**Check E — registered claude-octopus boots and handshakes**
 
 This is the only check that catches "the registered claude-octopus@<version> is no longer reachable / no longer works on this machine." Network-dependent.
 
+Test the version **actually registered** in `.codex/config.toml`'s cc-suite-managed block, not the plugin's expected pin — a stale or hand-edited registration can differ from the pin and would otherwise pass untested:
+
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/lib/boot_test_claude_mcp.mjs"
+REGISTERED=$(sed -n '/>>> cc-suite-claude-mcp >>>/,/<<< cc-suite-claude-mcp <<</p' .codex/config.toml 2>/dev/null | grep -oE 'claude-octopus@[0-9][^"]*' | head -1 | cut -d@ -f2)
+node "${CLAUDE_PLUGIN_ROOT}/scripts/lib/boot_test_claude_mcp.mjs" ${REGISTERED:+"$REGISTERED"}
 ```
 
-Exit 0 = pin works. Non-zero = report verbatim and flag as a fixable issue (the fix is `/cc-suite:update`, which refreshes the registration and re-tests).
+When `REGISTERED` is empty (no cc-suite-managed registration), the script falls back to the expected pin — label the result "expected-pin smoke test" in that case, since it says nothing about a registration that doesn't exist.
+
+Exit 0 = the registered version works. Non-zero = report verbatim and flag as a fixable issue (the fix is `/cc-suite:update`, which refreshes the registration to the current pin and re-tests).
 
 **Check F — `.cc-suite.md` model pin freshness**
 
@@ -112,7 +117,7 @@ Group all findings into three buckets:
 | 5 | `plugin_hooks` | not set | Plugin-bundled Codex hooks are inert | Add `plugin_hooks = true` under `[features]` in `~/.codex/config.toml` |
 | 6 | `project trust` | not trusted | Codex hooks and rules are inert for this project | Run `codex` once in this directory and accept the trust prompt |
 | 7 | stale nested symlink | present | Duplicate skills visible in Codex | `rm {path}` then `/cc-suite:bridge-skills` |
-| 8 | cache stale | version mismatch | Skills symlink points to old cache | Run `claude plugin update cc-suite@xiaolai` then `/cc-suite:bridge-skills` |
+| 8 | cache stale | version mismatch | Skills symlink points to old cache | Run `claude plugin update cc-suite@xiaolai`, then restart Claude Code and run `/cc-suite:bridge-skills` in the new session |
 | 9 | Codex CLI | not found | `$audit`, `$audit-fix`, `$claude-*` skills require Codex CLI | Install from https://github.com/openai/codex |
 | 10 | `.mcp.json → codex-cli` | stale | Project still has the legacy npm registration — Codex MCP server loads with the wrong API and every Codex call falls back | `/cc-suite:repair` |
 | 11 | `.codex/config.toml → Codex` | stale pin | Registered claude-octopus version doesn't match the plugin's expected pin — Codex may be running an older Claude bridge | `/cc-suite:update` |
@@ -196,28 +201,43 @@ rm "{stale_path}"
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_skills.sh"
 ```
 
-**cache stale** — update the plugin and repoint skills:
+**cache stale** — update the plugin, then stop:
 ```bash
 claude plugin update cc-suite@xiaolai
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_skills.sh"
 ```
+Do NOT run `bridge_skills.sh` from this session afterwards: `${CLAUDE_PLUGIN_ROOT}` still points at the pre-update cache, and the old script resolves the symlink target from its own location — it would repoint the symlink right back at the old version. Tell the user to restart Claude Code and run `/cc-suite:bridge-skills` (or `/cc-suite:update`) in the new session.
 
 **model pin stale** — rewrite the `Default model` line in `.cc-suite.md` to the policy value `latest`. That is what "Fix all" writes — deterministic, tracks the catalog, cannot go stale again. Edit that single line only; leave the rest of the file untouched. Write a concrete slug (preflight's current `default_model`) only when the user explicitly asks for a fresh pin instead.
 
-**`plugin_hooks` not set** — write it directly:
+**`plugin_hooks` not set** — set it idempotently (replace an existing assignment rather than inserting a duplicate key, which would invalidate the TOML; refuse to write if the result does not parse):
 ```bash
 python3 -c "
-import pathlib, re
+import pathlib, re, sys
 f = pathlib.Path.home() / '.codex/config.toml'
-text = f.read_text()
-if '[features]' in text:
-    text = re.sub(r'(\[features\]\n)', r'\1plugin_hooks = true\n', text, count=1)
+text = f.read_text() if f.exists() else ''
+m = re.search(r'(?ms)^\[features\][ \t]*\$(.*?)(?=^\[|\Z)', text)
+if m:
+    body = m.group(1)
+    if re.search(r'(?m)^\s*plugin_hooks\s*=', body):
+        body = re.sub(r'(?m)^(\s*)plugin_hooks\s*=.*\$', r'\1plugin_hooks = true', body, count=1)
+    else:
+        body = '\nplugin_hooks = true' + body
+    text = text[:m.start(1)] + body + text[m.end(1):]
 else:
-    text += '\n[features]\nplugin_hooks = true\n'
+    text = text.rstrip('\n') + ('\n\n' if text.strip() else '') + '[features]\nplugin_hooks = true\n'
+try:
+    import tomllib
+    tomllib.loads(text)
+except ModuleNotFoundError:
+    pass
+except Exception as e:
+    sys.exit(f'refusing to write invalid TOML: {e}')
 f.write_text(text)
-print('plugin_hooks = true written to ~/.codex/config.toml')
+print('plugin_hooks = true set under [features] in ~/.codex/config.toml')
 "
 ```
+
+The edit is scoped to the `[features]` section: an existing assignment there is replaced, otherwise one is inserted there. A `plugin_hooks` key in some other table is a different key in TOML and is left alone. Where `tomllib` is unavailable (Python < 3.11) the parse-validation is skipped — the section-scoped edit is still structurally safe.
 
 Items that **cannot** be auto-fixed (flag and explain):
 - `project trust` — requires the user to run `codex` interactively and accept the trust prompt

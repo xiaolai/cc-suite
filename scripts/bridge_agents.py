@@ -41,6 +41,7 @@ sentinel), the script refuses to overwrite it and reports the conflict.
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -61,6 +62,26 @@ DEFAULT_ALLOWED_TOOLS = ["Read", "Grep", "Glob"]
 DEFAULT_MAX_TURNS = 5
 DEFAULT_PROMPT_MODE = "append"
 DEFAULT_MODEL = None  # let claude-octopus pick
+
+
+def enabled_tools() -> set:
+    """Enabled coding agents from .cc-suite.md, via bridge_tools.py --enabled.
+
+    Falls back to the pre-selection default (claude/codex/antigravity) when the
+    config, section, or helper is unavailable, matching init.sh's behavior.
+    """
+    script = Path(__file__).parent / "bridge_tools.py"
+    try:
+        out = subprocess.run(
+            [sys.executable, str(script), "--enabled"],
+            capture_output=True, text=True, timeout=10,
+        )
+        tools = {line.strip() for line in out.stdout.splitlines() if line.strip()}
+        if tools:
+            return tools
+    except Exception:
+        pass
+    return {"claude", "codex", "antigravity"}
 
 
 def read_pin() -> str:
@@ -472,12 +493,25 @@ def main() -> int:
         return 1
 
     conflicts_mcp = update_mcp_json(agents, pin)
-    conflicts_toml = update_codex_toml(agents, pin)
+
+    # Project advisors into Codex only when Codex is an enabled tool. When it
+    # is disabled, clean up managed blocks in an existing config, but never
+    # create .codex/ for a deselected tool.
+    codex_enabled = "codex" in enabled_tools()
+    if codex_enabled:
+        conflicts_toml = update_codex_toml(agents, pin)
+        codex_target = " + .codex/config.toml"
+    elif CODEX_FILE.exists():
+        conflicts_toml = update_codex_toml([], pin)
+        codex_target = " (codex not enabled — cleared its advisor blocks)"
+    else:
+        conflicts_toml = []
+        codex_target = " (codex not enabled — skipped)"
     ensure_timeline_layout(agents)
 
     conflict_set = set(conflicts_mcp) | set(conflicts_toml)
     registered = [a for a in agents if a["name"] not in conflict_set]
-    print(f"✓ bridged {len(registered)}/{len(agents)} advisor(s) into .mcp.json + .codex/config.toml")
+    print(f"✓ bridged {len(registered)}/{len(agents)} advisor(s) into .mcp.json{codex_target}")
     for a in registered:
         name = str(a["name"])
         tool = str(a.get("tool_name") or f"{name}_consult")

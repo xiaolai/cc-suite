@@ -1,7 +1,7 @@
 ---
 name: diagnose
 description: "Diagnose the cc-suite setup in the current project. Runs the full health check, explains every issue, and fixes what can be fixed automatically. Skill counterpart to /cc-suite:diagnose."
-version: 0.3.0
+version: 0.3.1
 ---
 
 # Diagnose
@@ -16,12 +16,23 @@ Run a full cc-suite health check and offer to auto-fix every issue found. Skill 
 
 ## Workflow
 
+### Step 0: Resolve the plugin root
+
+`CLAUDE_PLUGIN_ROOT` is set by Claude Code only — in a Codex or Antigravity session it is unset. Resolve the root from the bridged skills symlink (it points at `<plugin-root>/skills/cc-suite`):
+
+```bash
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(dirname "$(dirname "$(readlink -f .claude/skills/cc-suite 2>/dev/null)")")}"
+[ -d "${PLUGIN_ROOT}/scripts" ] || echo "! cannot resolve the cc-suite plugin root — run /cc-suite:bridge-skills from Claude Code first, or export CLAUDE_PLUGIN_ROOT"
+```
+
+Every command below uses `${PLUGIN_ROOT}`. Stop if it could not be resolved.
+
 ### Step 1: Status check
 
 Run the status script:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/status.sh"
+bash "${PLUGIN_ROOT}/scripts/status.sh"
 ```
 
 ### Step 2: Deep checks
@@ -29,11 +40,11 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/status.sh"
 **Stale nested symlinks** (macOS `ln -sf` residue):
 
 ```bash
-find -L .claude/skills/ .agents/skills/ -maxdepth 3 -name "cc-suite" -type d 2>/dev/null \
-  | grep -vE "^\.claude/skills/cc-suite$|^\.agents/skills/cc-suite$"
+find .claude/skills/ .agents/skills/ -maxdepth 3 -name "cc-suite" -type l 2>/dev/null \
+  | grep -vx ".claude/skills/cc-suite" | grep -vx ".agents/skills/cc-suite"
 ```
 
-Any output is a stale nested symlink that duplicates skills in Codex.
+For each returned path, `readlink` it: it is stale residue only if the target points into a cc-suite skills tree (contains `skills/cc-suite`). Real directories or symlinks pointing elsewhere are not residue — report informationally, never offer deletion.
 
 **Codex CLI binary**:
 
@@ -41,7 +52,7 @@ Any output is a stale nested symlink that duplicates skills in Codex.
 which codex 2>/dev/null || echo "not-found"
 ```
 
-**Cache freshness** — extract the version from the active symlink target and compare to the `version` field of `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json` (the installed plugin manifest). If they differ, the skills symlink points to an old cache. Skip when the symlink target contains no semver (e.g. a development checkout).
+**Cache freshness** — extract the version from the active symlink target and compare to the `version` field of `${PLUGIN_ROOT}/.claude-plugin/plugin.json` (the installed plugin manifest). If they differ, the skills symlink points to an old cache. Skip when the symlink target contains no semver (e.g. a development checkout).
 
 ```bash
 readlink .claude/skills/cc-suite 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "missing"
@@ -58,7 +69,7 @@ readlink .claude/skills/cc-suite 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+'
 
 ```bash
 grep -in '^\- \*\*Default model\*\*:' .cc-suite.md 2>/dev/null
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/codex-preflight.sh"
+bash "${PLUGIN_ROOT}/scripts/codex-preflight.sh"
 ```
 
 Pinned slug missing from the preflight `models` array → fixable issue (model-selecting commands warn and fall back to the preflight default on every call; the pinned line stays dead weight until fixed). Pinned slug present but no longer the catalog's `default_model` → informational line only, not an issue — emit it in the report even on the no-issues path, before reporting healthy. Preflight error → skip the check.
@@ -101,15 +112,15 @@ For each fixable issue, run the corresponding script:
 
 | Issue | Fix |
 |-------|-----|
-| `.agents/skills` missing or wrong | `bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_skills.sh"` |
-| `.claude/skills/cc-suite` missing or wrong | `bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_skills.sh"` |
-| `.codex/hooks.json` missing | `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_hooks.py"` |
-| `.mcp.json → codex-cli` missing | `bash "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_codex.sh"` |
-| `.codex/config.toml → claude-code` missing | `bash "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_claude.sh"` |
-| MCP parity gaps | `bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_mcp.sh"` |
-| stale nested symlink at `{path}` | `rm "{path}" && bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_skills.sh"` |
-| cache stale | `bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_skills.sh"` (repoints to current cache) |
-| `plugin_hooks` not set | Write `plugin_hooks = true` under `[features]` in `~/.codex/config.toml` |
+| `.agents/skills` missing or wrong | `bash "${PLUGIN_ROOT}/scripts/bridge_skills.sh"` |
+| `.claude/skills/cc-suite` missing or wrong | `bash "${PLUGIN_ROOT}/scripts/bridge_skills.sh"` |
+| `.codex/hooks.json` missing | `python3 "${PLUGIN_ROOT}/scripts/bridge_hooks.py"` |
+| `.mcp.json → codex-cli` missing | `bash "${PLUGIN_ROOT}/scripts/mcp_codex.sh"` |
+| `.codex/config.toml → claude-code` missing | `bash "${PLUGIN_ROOT}/scripts/mcp_claude.sh"` |
+| MCP parity gaps | `bash "${PLUGIN_ROOT}/scripts/bridge_mcp.sh"` |
+| stale nested symlink at `{path}` (target verified to point into a cc-suite skills tree) | `rm "{path}" && bash "${PLUGIN_ROOT}/scripts/bridge_skills.sh"` |
+| cache stale | `claude plugin update cc-suite@xiaolai`, then STOP — the current session's plugin root predates the update, so re-running its `bridge_skills.sh` would repoint to the old cache; restart and run `/cc-suite:bridge-skills` in the new session |
+| `plugin_hooks` not set | Set `plugin_hooks = true` idempotently in `~/.codex/config.toml`: replace an existing `plugin_hooks = …` assignment, otherwise insert once under `[features]`; parse-validate before writing (duplicate keys invalidate TOML) |
 | model pin stale | Rewrite the `Default model` line in `.cc-suite.md` to `latest` (the deterministic fix-all value; a concrete slug only on explicit user request) — edit that line only |
 
 Items that require manual action (flag, do not attempt to fix):
@@ -119,7 +130,7 @@ Items that require manual action (flag, do not attempt to fix):
 
 ### Step 6: Re-run status and summarise
 
-After all auto-fixes, run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/status.sh"` again.
+After all auto-fixes, run `bash "${PLUGIN_ROOT}/scripts/status.sh"` again.
 
 Report: N issues fixed, N remaining (with manual steps for those that remain).
 

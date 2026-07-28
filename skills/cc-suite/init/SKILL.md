@@ -1,7 +1,7 @@
 ---
 name: init
 description: "Initialize cc-suite for the current project — sets up the AGENTS.md bridge, registers Codex, Claude, and Antigravity MCP surfaces, and generates a .cc-suite.md config. Skill counterpart to /cc-suite:init."
-version: 0.3.0
+version: 0.3.1
 ---
 
 # Init
@@ -15,6 +15,17 @@ Bootstrap cc-suite in the current project.
 - Walks through the same setup flow as `/cc-suite:init` — useful when the agent should drive the steps in conversation rather than via a slash command
 
 ## Workflow
+
+### Step 0: Resolve the plugin root
+
+`CLAUDE_PLUGIN_ROOT` is set by Claude Code only — in a Codex or Antigravity session it is unset. Resolve the root from the bridged skills symlink (it points at `<plugin-root>/skills/cc-suite`):
+
+```bash
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(dirname "$(dirname "$(readlink -f .claude/skills/cc-suite 2>/dev/null)")")}"
+[ -d "${PLUGIN_ROOT}/scripts" ] || echo "! cannot resolve the cc-suite plugin root — run /cc-suite:bridge-skills from Claude Code first, or export CLAUDE_PLUGIN_ROOT"
+```
+
+Every command below uses `${PLUGIN_ROOT}`. Stop if it could not be resolved.
 
 ### Step 1: Check for existing config
 
@@ -58,7 +69,7 @@ Detect the test command:
 Run the shared Codex preflight before asking for configuration:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/codex-preflight.sh"
+bash "${PLUGIN_ROOT}/scripts/codex-preflight.sh"
 ```
 
 Use `default_model` and the per-model `reasoning_efforts` (from the
@@ -156,7 +167,7 @@ Focus-specific instructions:
 ### Step 6: Bridge init
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/init.sh"
+bash "${PLUGIN_ROOT}/scripts/init.sh"
 ```
 
 Creates `AGENTS.md`, `CLAUDE.md` (`@AGENTS.md`), Codex scaffolding, the
@@ -169,14 +180,14 @@ each artifact if already correct.
 ### Step 7: Expose skills
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_skills.sh"
+bash "${PLUGIN_ROOT}/scripts/bridge_skills.sh"
 ```
 
 ### Step 8: Register codex-cli MCP server
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_codex.sh"
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_mcp.sh"
+bash "${PLUGIN_ROOT}/scripts/mcp_codex.sh"
+bash "${PLUGIN_ROOT}/scripts/bridge_mcp.sh"
 ```
 
 The bridge writes the Codex projection and the generated agy workspace MCP
@@ -185,13 +196,13 @@ projection. It also registers the pinned `claude-code` server for agy → Claude
 ### Step 9: Register claude-code MCP server
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_claude.sh"
+bash "${PLUGIN_ROOT}/scripts/mcp_claude.sh"
 ```
 
 ### Step 10: Final status
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/status.sh"
+bash "${PLUGIN_ROOT}/scripts/status.sh"
 ```
 
 Report:

@@ -12,9 +12,23 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Honor the project's tool selection (.cc-suite.md `## Enabled Tools`). Falls
+# back to claude/codex/antigravity when the file or section is absent, so
+# pre-selection projects keep their old behavior.
+ENABLED_TOOLS="$(python3 "${SCRIPT_DIR}/bridge_tools.py" --enabled 2>/dev/null || true)"
+[ -n "$ENABLED_TOOLS" ] || ENABLED_TOOLS=$'claude\ncodex\nantigravity'
+tool_enabled() { printf '%s\n' "$ENABLED_TOOLS" | grep -qx "$1"; }
+
+if tool_enabled codex; then
+  CC_SUITE_CODEX_ENABLED=1
+else
+  CC_SUITE_CODEX_ENABLED=0
+fi
+export CC_SUITE_CODEX_ENABLED
+
 if python3 - <<'PY'
 from __future__ import annotations
-import json, re, sys
+import json, os, re, sys
 from pathlib import Path
 
 SENTINEL_START = "# >>> cc-suite-mcp >>>"
@@ -25,29 +39,42 @@ SKIP_SERVERS = {"codex-cli"}
 
 
 def main() -> int:
-    mcp_path = Path(".mcp.json")
-    if not mcp_path.exists():
-        print("· .mcp.json does not exist — clearing cc-suite-owned projections")
-        mcp = {}
+    # When Codex is not among the enabled tools, never create its tree. An
+    # existing config is still reconciled (the cc-suite sentinel block is
+    # removed) so a deselected Codex stops seeing the mirrored servers.
+    codex_enabled = os.environ.get("CC_SUITE_CODEX_ENABLED", "1") == "1"
+    if not codex_enabled:
+        # Reconciliation of a deselected Codex must not depend on .mcp.json
+        # being readable — the desired projection is empty either way.
+        if not Path(".codex/config.toml").exists():
+            print("· codex not enabled — skipping .codex/config.toml projection")
+            return 0
+        print("· codex not enabled — reconciling existing .codex/config.toml (cc-suite MCP block only)")
+        servers: dict = {}
     else:
-        try:
-            mcp = json.loads(mcp_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as e:
-            print(f"! .mcp.json is not valid JSON: {e}", file=sys.stderr)
-            return 1
+        mcp_path = Path(".mcp.json")
+        if not mcp_path.exists():
+            print("· .mcp.json does not exist — clearing cc-suite-owned projections")
+            mcp = {}
+        else:
+            try:
+                mcp = json.loads(mcp_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as e:
+                print(f"! .mcp.json is not valid JSON: {e}", file=sys.stderr)
+                return 1
 
-    if not isinstance(mcp, dict):
-        print(f"! .mcp.json top level must be an object (got {type(mcp).__name__})", file=sys.stderr)
-        return 2
-    servers = mcp.get("mcpServers")
-    if servers is None:
-        print("· .mcp.json has no mcpServers — clearing cc-suite-owned projections")
-        servers = {}
-    if not isinstance(servers, dict):
-        print(f"! .mcp.json mcpServers must be an object (got {type(servers).__name__})", file=sys.stderr)
-        return 2
+        if not isinstance(mcp, dict):
+            print(f"! .mcp.json top level must be an object (got {type(mcp).__name__})", file=sys.stderr)
+            return 2
+        servers = mcp.get("mcpServers")
+        if servers is None:
+            print("· .mcp.json has no mcpServers — clearing cc-suite-owned projections")
+            servers = {}
+        if not isinstance(servers, dict):
+            print(f"! .mcp.json mcpServers must be an object (got {type(servers).__name__})", file=sys.stderr)
+            return 2
 
-    Path(".codex").mkdir(exist_ok=True)
+        Path(".codex").mkdir(exist_ok=True)
     config_path = Path(".codex/config.toml")
     existing = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
 
@@ -215,11 +242,23 @@ fi
 
 # Keep the same project MCP surface available to Antigravity. This also adds
 # the cc-suite-managed claude-code server so agy can delegate back to Claude.
-if python3 "$SCRIPT_DIR/bridge_agy_mcp.py";
-then
-  AGY_RC=0
+# Skipped entirely when Antigravity is not enabled — never create its tree.
+# (Existing cc-suite-owned agy artifacts are left in place when deselected;
+# /cc-suite:unbridge or re-enabling the tool manages them.)
+if tool_enabled antigravity; then
+  if python3 "$SCRIPT_DIR/bridge_agy_mcp.py";
+  then
+    AGY_RC=0
+  else
+    AGY_RC=$?
+  fi
 else
-  AGY_RC=$?
+  if [ -f .agents/mcp_config.json ]; then
+    echo "· antigravity not enabled — leaving existing .agents/mcp_config.json alone (see /cc-suite:unbridge)"
+  else
+    echo "· antigravity not enabled — skipping .agents/mcp_config.json projection"
+  fi
+  AGY_RC=0
 fi
 
 if [ "$CODEX_RC" -ne 0 ]; then

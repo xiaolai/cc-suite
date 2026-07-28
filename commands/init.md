@@ -29,7 +29,7 @@ AskUserQuestion:
   header: "Config"
   options:
     - label: "Add missing sections (Recommended)"
-      description: "Non-destructively top up the config with any new cc-suite-managed sections (e.g. Enabled Tools), preserving your existing settings"
+      description: "Non-destructively top up the config with any new cc-suite-managed sections (e.g. Enabled Tools), preserving your existing settings, then re-run the non-interactive bridge steps so any missing artifacts are created"
     - label: "Show current config"
       description: "Display the current settings"
     - label: "Regenerate"
@@ -38,13 +38,13 @@ AskUserQuestion:
       description: "Keep the current config as-is"
 ```
 
-If "Add missing sections" → run the migration and report what it added, then STOP (do not re-run the interactive setup):
+If "Add missing sections" → run the migration and report what it added:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/migrate_config.py"
 ```
 
-If the script exits non-zero, report the error instead of claiming the migration succeeded.
+If the script exits non-zero, report the error and stop. Otherwise **skip the interactive config steps and continue with the non-interactive bridge pipeline** (bridge init through advisor registration and projection refresh, then the final summary): an existing `.cc-suite.md` commonly arrives via `git clone`, where the config is present but every derived bridge artifact is missing — and this command's contract is to leave them all in place. The bridge steps honor the `## Enabled Tools` selection already recorded in the config, so nothing is asked twice.
 
 If "Show current config" → display the file contents and STOP.
 If "Cancel" → STOP.
