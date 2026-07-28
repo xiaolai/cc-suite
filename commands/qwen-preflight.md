@@ -1,0 +1,54 @@
+---
+name: qwen-preflight
+description: Check local Qwen Code readiness for the bounded review runner without sending a model prompt or inspecting credentials.
+allowed-tools:
+  - Bash
+---
+
+# Qwen Review Preflight
+
+Run the local readiness check:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/qwen-preflight.sh"
+```
+
+Parse the single JSON object.
+
+## Success
+
+Display:
+
+```markdown
+## Qwen Review Preflight
+
+**Status**: {status}
+**Qwen version**: {qwen_version}
+**Minimum supported version**: {minimum_version}
+**Authentication**: not probed
+**Sandbox provider**: {sandbox_provider}
+
+### Runner guarantees
+
+- Safe Mode
+- Plan mode
+- Qwen sandbox
+- isolated temporary target copies
+- read-file tool allowlist and bounded tool calls
+- stream-json completion validation
+- exact-target read policy
+- bounded session resume
+```
+
+`auth_mode` is deliberately `"not_probed"`: authentication requires a real
+provider call, and preflight must not send an availability prompt. The first
+real review reports an authentication/provider failure through the job result.
+
+## Errors
+
+- `qwen_not_found` — install Qwen Code and ensure `qwen` is on `PATH`.
+- `qwen_version_unsupported` — upgrade to the reported minimum version or newer.
+- `qwen_version_unparseable` — the installed binary did not return a usable version.
+- `qwen_sandbox_unavailable` — install or configure sandbox-exec, Docker, or Podman.
+
+Do not run the review runner when preflight returns `status: "error"`.

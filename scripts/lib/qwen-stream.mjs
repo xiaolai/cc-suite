@@ -1,0 +1,429 @@
+import { createHash } from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { StringDecoder } from "node:string_decoder";
+
+export class QwenStreamError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = "QwenStreamError";
+    this.code = code;
+  }
+}
+
+function sha256File(filePath) {
+  const hash = createHash("sha256");
+  const buffer = Buffer.allocUnsafe(64 * 1024);
+  const fd = fs.openSync(filePath, "r");
+  try {
+    let bytesRead;
+    do {
+      bytesRead = fs.readSync(fd, buffer, 0, buffer.length, null);
+      if (bytesRead > 0) hash.update(buffer.subarray(0, bytesRead));
+    } while (bytesRead > 0);
+  } finally {
+    fs.closeSync(fd);
+  }
+  return hash.digest("hex");
+}
+
+function isInside(root, candidate) {
+  const rel = path.relative(root, candidate);
+  return rel === "" || (!rel.startsWith(`..${path.sep}`) && rel !== ".." && !path.isAbsolute(rel));
+}
+
+export function snapshotReviewTargets(cwd, targetArgs = []) {
+  const root = fs.realpathSync.native(cwd);
+  const seen = new Set();
+  const snapshots = [];
+
+  for (const rawTarget of targetArgs) {
+    const absolute = path.resolve(root, rawTarget);
+    let realPath;
+    try {
+      realPath = fs.realpathSync.native(absolute);
+    } catch {
+      throw new QwenStreamError("target_missing", `Review target does not exist: ${rawTarget}`);
+    }
+
+    if (!isInside(root, realPath)) {
+      throw new QwenStreamError(
+        "target_outside_workspace",
+        `Review target must stay inside the workspace: ${rawTarget}`
+      );
+    }
+    if (!fs.statSync(realPath).isFile()) {
+      throw new QwenStreamError("target_not_file", `Review target is not a file: ${rawTarget}`);
+    }
+    if (seen.has(realPath)) continue;
+    seen.add(realPath);
+    const stat = fs.statSync(realPath);
+    snapshots.push({
+      requestedPath: rawTarget,
+      displayPath: path.relative(root, realPath),
+      realPath,
+      sha256: sha256File(realPath),
+      size: stat.size,
+    });
+  }
+
+  return snapshots;
+}
+
+export function stageReviewTargets(sourceTargets, parent = os.tmpdir()) {
+  const stageParent = path.resolve(parent);
+  const root = fs.mkdtempSync(path.join(stageParent, "cc-suite-qwen-review-"));
+  fs.chmodSync(root, 0o700);
+
+  try {
+    const stagedPaths = [];
+    for (const source of sourceTargets) {
+      const stagedRelative = path.join("review-targets", source.displayPath);
+      const destination = path.join(root, stagedRelative);
+      fs.mkdirSync(path.dirname(destination), { recursive: true, mode: 0o700 });
+      fs.copyFileSync(source.realPath, destination, fs.constants.COPYFILE_EXCL);
+      fs.chmodSync(destination, 0o400);
+      stagedPaths.push(stagedRelative);
+    }
+
+    const targets = snapshotReviewTargets(root, stagedPaths);
+    for (let index = 0; index < targets.length; index += 1) {
+      if (targets[index].sha256 !== sourceTargets[index].sha256) {
+        throw new QwenStreamError(
+          "target_changed_during_stage",
+          `Review target changed while its isolated copy was created: ${sourceTargets[index].displayPath}`
+        );
+      }
+      targets[index].displayPath = sourceTargets[index].displayPath;
+    }
+    return { root, parent: stageParent, targets };
+  } catch (error) {
+    fs.rmSync(root, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+export function removeStagedReview(stage) {
+  const root = path.resolve(stage.root);
+  const parent = path.resolve(stage.parent);
+  if (
+    path.dirname(root) !== parent ||
+    !path.basename(root).startsWith("cc-suite-qwen-review-")
+  ) {
+    throw new QwenStreamError("invalid_stage_path", "Refusing to remove an invalid Qwen review stage");
+  }
+  fs.rmSync(root, { recursive: true, force: true });
+}
+
+export function verifyReviewTargets(snapshots) {
+  const changed = [];
+  for (const before of snapshots) {
+    try {
+      const stat = fs.statSync(before.realPath);
+      const sha256 = sha256File(before.realPath);
+      if (!stat.isFile() || sha256 !== before.sha256) {
+        changed.push(before.realPath);
+      }
+    } catch {
+      changed.push(before.realPath);
+    }
+  }
+  return { ok: changed.length === 0, changed };
+}
+
+export class JsonlDecoder {
+  constructor() {
+    this.decoder = new StringDecoder("utf8");
+    this.buffer = "";
+  }
+
+  push(chunk) {
+    this.buffer += this.decoder.write(chunk);
+    return this.#drain(false);
+  }
+
+  finish() {
+    this.buffer += this.decoder.end();
+    return this.#drain(true);
+  }
+
+  #drain(flush) {
+    const lines = [];
+    let newline;
+    while ((newline = this.buffer.indexOf("\n")) !== -1) {
+      const line = this.buffer.slice(0, newline).replace(/\r$/, "");
+      this.buffer = this.buffer.slice(newline + 1);
+      if (line.trim()) lines.push(line);
+    }
+    if (flush && this.buffer.trim()) {
+      lines.push(this.buffer.replace(/\r$/, ""));
+      this.buffer = "";
+    }
+    return lines;
+  }
+}
+
+export function parseQwenJsonLine(line) {
+  try {
+    const event = JSON.parse(line);
+    if (!event || typeof event !== "object" || Array.isArray(event)) {
+      throw new Error("event is not an object");
+    }
+    return event;
+  } catch (error) {
+    throw new QwenStreamError(
+      "invalid_json",
+      `Qwen emitted malformed stream-json: ${error.message}`
+    );
+  }
+}
+
+function eventSessionId(event) {
+  return event.session_id ?? event.sessionId ?? null;
+}
+
+function rememberSession(state, event) {
+  const sessionId = eventSessionId(event);
+  if (!sessionId) return;
+  if (state.sessionId && state.sessionId !== sessionId) {
+    throw new QwenStreamError(
+      "session_mismatch",
+      `Qwen changed session id from ${state.sessionId} to ${sessionId}`
+    );
+  }
+  state.sessionId = sessionId;
+}
+
+function toolPathFromArgs(args) {
+  if (!args || typeof args !== "object") return null;
+  return args.file_path ?? args.path ?? args.absolute_path ?? null;
+}
+
+function validateReadTool(state, call) {
+  const name = call?.name;
+  if (name !== "read_file") {
+    throw new QwenStreamError(
+      "forbidden_tool",
+      `Qwen attempted forbidden tool: ${name || "(unknown)"}`
+    );
+  }
+  if (state.allowedTargets.size === 0) {
+    throw new QwenStreamError(
+      "forbidden_tool",
+      "Qwen attempted read_file, but this review declared no file targets"
+    );
+  }
+
+  const suppliedPath = toolPathFromArgs(call.args);
+  if (typeof suppliedPath !== "string" || !suppliedPath.trim()) {
+    throw new QwenStreamError("invalid_tool_args", "Qwen read_file omitted file_path");
+  }
+
+  const absolute = path.resolve(state.cwd, suppliedPath);
+  let realPath;
+  try {
+    realPath = fs.realpathSync.native(absolute);
+  } catch {
+    throw new QwenStreamError(
+      "forbidden_tool_path",
+      `Qwen attempted to read an unavailable target: ${suppliedPath}`
+    );
+  }
+  if (!state.allowedTargets.has(realPath)) {
+    throw new QwenStreamError(
+      "forbidden_tool_path",
+      `Qwen attempted to read an undeclared target: ${suppliedPath}`
+    );
+  }
+
+  state.toolCalls.push({
+    id: call.id ?? null,
+    name,
+    realPath,
+    displayPath: state.allowedTargets.get(realPath).displayPath,
+  });
+}
+
+function toolCallFromBlock(block) {
+  if (!block || typeof block !== "object") return null;
+  if (block.type === "tool_use" || block.type === "tool_call") {
+    return {
+      id: block.id ?? block.tool_use_id ?? block.toolCallId ?? null,
+      name: block.name ?? block.tool_name ?? block.toolName,
+      args: block.input ?? block.args ?? block.arguments ?? {},
+    };
+  }
+  if (block.functionCall && typeof block.functionCall === "object") {
+    return {
+      id: block.functionCall.id ?? null,
+      name: block.functionCall.name,
+      args: block.functionCall.args ?? {},
+    };
+  }
+  return null;
+}
+
+function inspectAssistant(state, event) {
+  const message = event.message ?? {};
+  const blocks = Array.isArray(message.content)
+    ? message.content
+    : Array.isArray(message.parts)
+      ? message.parts
+      : [];
+
+  for (const block of blocks) {
+    const call = toolCallFromBlock(block);
+    if (call) {
+      validateReadTool(state, call);
+      continue;
+    }
+    if (typeof block === "string") {
+      state.assistantText.push(block);
+      continue;
+    }
+    if (!block || typeof block !== "object") continue;
+    if (block.type === "text" && typeof block.text === "string") {
+      state.assistantText.push(block.text);
+      continue;
+    }
+    if (typeof block.text === "string" && !block.thought) {
+      state.assistantText.push(block.text);
+      continue;
+    }
+    const kind = block.type ?? (block.thought ? "thinking" : null);
+    if (
+      kind === "thinking" ||
+      kind === "tool_result" ||
+      kind === "function_response" ||
+      block.functionResponse
+    ) {
+      continue;
+    }
+    if (kind) {
+      throw new QwenStreamError(
+        "unknown_content_block",
+        `Qwen emitted unsupported assistant content block: ${kind}`
+      );
+    }
+    throw new QwenStreamError(
+      "unknown_content_block",
+      "Qwen emitted an unclassified assistant content object"
+    );
+  }
+}
+
+function validateInit(state, event) {
+  const mode = event.permission_mode ?? event.permissionMode;
+  if (mode !== "plan") {
+    throw new QwenStreamError(
+      "wrong_permission_mode",
+      `Qwen did not confirm Plan mode (received ${mode ?? "no permission_mode"})`
+    );
+  }
+  state.initSeen = true;
+  state.permissionMode = mode;
+}
+
+function inspectResult(state, event) {
+  if (!state.initSeen) {
+    throw new QwenStreamError("result_before_init", "Qwen emitted a result before Plan mode was verified");
+  }
+  if (state.resultSeen) {
+    throw new QwenStreamError("duplicate_result", "Qwen emitted more than one terminal result event");
+  }
+  state.resultSeen = true;
+  state.resultSubtype = event.subtype ?? null;
+  state.isError = event.is_error ?? event.isError ?? null;
+  state.usage = event.usage ?? null;
+
+  if (state.resultSubtype !== "success" || state.isError !== false) {
+    state.terminalError =
+      typeof event.result === "string" && event.result.trim()
+        ? event.result.trim()
+        : `Qwen terminal result was ${state.resultSubtype ?? "unknown"} (is_error=${String(state.isError)})`;
+    return;
+  }
+  if (typeof event.result !== "string" || !event.result.trim()) {
+    state.emptyResult = true;
+    return;
+  }
+  state.result = event.result.trim();
+}
+
+export function createQwenStreamState({ cwd, targets = [] }) {
+  return {
+    cwd: fs.realpathSync.native(cwd),
+    allowedTargets: new Map(targets.map((target) => [target.realPath, target])),
+    initSeen: false,
+    permissionMode: null,
+    sessionId: null,
+    assistantText: [],
+    toolCalls: [],
+    resultSeen: false,
+    resultSubtype: null,
+    isError: null,
+    result: "",
+    emptyResult: false,
+    terminalError: null,
+    usage: null,
+    events: 0,
+  };
+}
+
+export function consumeQwenEvent(state, event) {
+  if (state.resultSeen) {
+    if (event.type === "result") {
+      throw new QwenStreamError("duplicate_result", "Qwen emitted more than one terminal result event");
+    }
+    throw new QwenStreamError(
+      "event_after_result",
+      `Qwen emitted ${event.type ?? "an unknown event"} after its terminal result`
+    );
+  }
+  rememberSession(state, event);
+  state.events += 1;
+
+  switch (event.type) {
+    case "system":
+      if (event.subtype === "init" || event.subtype === "session_start") {
+        validateInit(state, event);
+      }
+      return;
+    case "assistant":
+      if (!state.initSeen) {
+        throw new QwenStreamError("assistant_before_init", "Qwen emitted assistant output before init");
+      }
+      inspectAssistant(state, event);
+      return;
+    case "user":
+    case "tool_result":
+      if (!state.initSeen) {
+        throw new QwenStreamError("tool_result_before_init", "Qwen emitted tool output before init");
+      }
+      return;
+    case "result":
+      inspectResult(state, event);
+      return;
+    default:
+      throw new QwenStreamError(
+        "unknown_event",
+        `Qwen emitted unsupported stream-json event type: ${event.type ?? "(missing)"}`
+      );
+  }
+}
+
+export function describeQwenEvent(event) {
+  if (event.type === "system") return `event system/${event.subtype ?? "unknown"}`;
+  if (event.type === "result") {
+    return `event result/${event.subtype ?? "unknown"} is_error=${String(event.is_error ?? event.isError)}`;
+  }
+  if (event.type === "assistant") {
+    const blocks = event.message?.content ?? event.message?.parts ?? [];
+    const calls = Array.isArray(blocks)
+      ? blocks.map(toolCallFromBlock).filter(Boolean).map((call) => call.name || "unknown")
+      : [];
+    return calls.length ? `event assistant tool=${calls.join(",")}` : "event assistant";
+  }
+  return `event ${event.type ?? "unknown"}`;
+}
