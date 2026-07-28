@@ -1,7 +1,7 @@
 ---
 name: diagnose
 description: "Diagnose the cc-suite setup in the current project. Runs the full health check, explains every issue, and fixes what can be fixed automatically. Skill counterpart to /cc-suite:diagnose."
-version: 0.2.6
+version: 0.3.0
 ---
 
 # Diagnose
@@ -41,7 +41,7 @@ Any output is a stale nested symlink that duplicates skills in Codex.
 which codex 2>/dev/null || echo "not-found"
 ```
 
-**Cache freshness** — extract the version from the active symlink target and compare to `${CLAUDE_PLUGIN_ROOT}/../../.claude-plugin/plugin.json` (the installed plugin version). If they differ, the skills symlink points to an old cache.
+**Cache freshness** — extract the version from the active symlink target and compare to the `version` field of `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json` (the installed plugin manifest). If they differ, the skills symlink points to an old cache. Skip when the symlink target contains no semver (e.g. a development checkout).
 
 ```bash
 readlink .claude/skills/cc-suite 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "missing"
@@ -53,6 +53,15 @@ readlink .claude/skills/cc-suite 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+'
 [ -L .claude/skills/cc-suite ] && [ ! -d .claude/skills/cc-suite ] && echo "broken:claude-skills" || true
 [ -L .agents/skills ]          && [ ! -d .agents/skills ]          && echo "broken:agents-skills"  || true
 ```
+
+**`.cc-suite.md` model pin freshness** — extract the value of the `- **Default model**:` field in the `## Defaults` section (match that field exactly; trim whitespace; compare case-insensitively). Skip when the field is absent or reads `latest` (a policy value never goes stale); duplicate or empty fields → report as malformed config (informational) and skip the comparison. If it pins a concrete slug, compare against the catalog as preflight reports it:
+
+```bash
+grep -in '^\- \*\*Default model\*\*:' .cc-suite.md 2>/dev/null
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/codex-preflight.sh"
+```
+
+Pinned slug missing from the preflight `models` array → fixable issue (model-selecting commands warn and fall back to the preflight default on every call; the pinned line stays dead weight until fixed). Pinned slug present but no longer the catalog's `default_model` → informational line only, not an issue — emit it in the report even on the no-issues path, before reporting healthy. Preflight error → skip the check.
 
 ### Step 3: Diagnose and report
 
@@ -101,6 +110,7 @@ For each fixable issue, run the corresponding script:
 | stale nested symlink at `{path}` | `rm "{path}" && bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_skills.sh"` |
 | cache stale | `bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_skills.sh"` (repoints to current cache) |
 | `plugin_hooks` not set | Write `plugin_hooks = true` under `[features]` in `~/.codex/config.toml` |
+| model pin stale | Rewrite the `Default model` line in `.cc-suite.md` to `latest` (the deterministic fix-all value; a concrete slug only on explicit user request) — edit that line only |
 
 Items that require manual action (flag, do not attempt to fix):
 - **`project trust` not trusted** — run `codex` in this directory and accept the trust prompt

@@ -56,7 +56,7 @@ readlink .claude/skills/cc-suite 2>/dev/null || echo "missing"
 
 Extract the version from the path (e.g. `.../cc-suite/0.2.4/skills/cc-suite` → `0.2.4`).
 
-Compare to the version in `${CLAUDE_PLUGIN_ROOT}/../../.claude-plugin/plugin.json` (the installed plugin manifest). If they differ, flag as stale — the symlink points to an older cache.
+Compare to the version in `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json` (the installed plugin manifest). If they differ, flag as stale — the symlink points to an older cache. If the symlink target contains no semver (e.g. a development checkout), skip this check.
 
 **Check D — broken symlinks in skills chain**
 
@@ -75,11 +75,31 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/lib/boot_test_claude_mcp.mjs"
 
 Exit 0 = pin works. Non-zero = report verbatim and flag as a fixable issue (the fix is `/cc-suite:update`, which refreshes the registration and re-tests).
 
+**Check F — `.cc-suite.md` model pin freshness**
+
+Extract the value from the `- **Default model**:` line in the `## Defaults` section of `.cc-suite.md` (match that field exactly; trim whitespace; compare values case-insensitively):
+
+```bash
+grep -in '^\- \*\*Default model\*\*:' .cc-suite.md
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/codex-preflight.sh"
+```
+
+- Skip when `.cc-suite.md` does not exist, the field is absent, or its value is `latest` — a policy value never goes stale.
+- If the field appears more than once or its value is empty → report as malformed config (informational, with the line numbers) and skip the freshness comparison.
+- Preflight `status` is `"error"` → skip the check; staleness cannot be judged without a catalog. Note that preflight reports the catalog as Codex's local models cache sees it (plus preflight's own 5-minute result cache) — `codex login` refreshes the underlying cache if it looks outdated.
+
+If the field pins a concrete slug:
+
+- Pinned slug **not in** the preflight `models` array → flag as a fixable issue (**model pin stale**): every model-selecting command warns and falls back to the preflight default (see `commands/shared/model-selection.md`), and the config line stays dead weight until fixed.
+- Pinned slug present but different from preflight `default_model` → not an issue. Add one informational line to the report ("`.cc-suite.md` pins `X`; catalog latest is `Y`") so a deliberate pin stays visible without being nagged.
+
 ### Step 3: Build the diagnosis report
 
 Group all findings into three buckets:
 
 **Healthy** — list items that passed (one line each, `✓`).
+
+**Information** — non-issue observations that should stay visible: a deliberate model pin that is older than the catalog's latest (Check F), a malformed `Default model` field, or any other "worth knowing, nothing to fix" note. Include this bucket in the report even when there are no issues.
 
 **Issues** — for every `·` or `!` item and every failed deep check, produce a structured entry:
 
@@ -100,6 +120,7 @@ Group all findings into three buckets:
 | 13 | `.agents/mcp_config.json → agy` | missing/stale | Antigravity cannot see the workspace MCP surface or delegate to Claude | `/cc-suite:bridge-mcp` |
 | 14 | `agy CLI` | not found | Google-backed delegation and Antigravity preflight are unavailable | Install with the command shown by `/cc-suite:agy-preflight` |
 | 15 | legacy `GEMINI.md` / `.gemini/` | present | Legacy Google files need deliberate migration or may be retained for enterprise use | `/cc-suite:migrate-google` |
+| 16 | `.cc-suite.md → Default model` | stale pin | Pinned model no longer exists in the Codex catalog — model-selecting commands warn and fall back to the preflight default on every call | Rewrite the `Default model` line to `latest` |
 
 Use the actual item names and details from the status output — the table above is a reference mapping, not a literal template.
 
@@ -180,6 +201,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_skills.sh"
 claude plugin update cc-suite@xiaolai
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_skills.sh"
 ```
+
+**model pin stale** — rewrite the `Default model` line in `.cc-suite.md` to the policy value `latest`. That is what "Fix all" writes — deterministic, tracks the catalog, cannot go stale again. Edit that single line only; leave the rest of the file untouched. Write a concrete slug (preflight's current `default_model`) only when the user explicitly asks for a fresh pin instead.
 
 **`plugin_hooks` not set** — write it directly:
 ```bash
