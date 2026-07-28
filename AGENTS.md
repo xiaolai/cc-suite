@@ -103,7 +103,9 @@ Delegation lanes:
 
 All preflight scripts emit the same JSON shape (`status`, `default_model`, `models`, `reasoning_efforts`, `sandbox_levels`, `error_code`). New backend runner ⇒ mirror `agy-runner.mjs` (parseArgs / executeX / runForeground / runBackground / runBackgroundWorker) and add a `<backend>-preflight`.
 
-Multi-tool config bridge (`scripts/bridge_tools.py`, `/cc-suite:bridge-tools`): a declarative tool-profile registry that mirrors the project MCP surface into **Grok Build, opencode, Qwen Code, Kimi CLI** (three emitters: TOML `mcp_servers`, opencode nested `mcp`, JSON `mcpServers`). Tools are selected in `.cc-suite.md`'s `## Enabled Tools`; Claude/Codex/Antigravity keep their existing bridge scripts (`bridged_by: "existing"`). Env values and remote headers are never mirrored (secrets). Design: `dev-docs/supporting-more-coding-agents.md`.
+Multi-tool config bridge (`scripts/bridge_tools.py`, `/cc-suite:bridge-tools`): a declarative tool-profile registry that mirrors the project MCP surface into **Grok Build, opencode, Qwen Code, Kimi CLI** (three emitters: TOML `mcp_servers`, opencode nested `mcp`, JSON `mcpServers`). Tools are selected in `.cc-suite.md`'s `## Enabled Tools`; Claude/Codex/Antigravity keep their existing bridge scripts (`bridged_by: "existing"`). Env values and remote headers are never mirrored (secrets). `--health` emits a structured artifact-health report for the enabled registry tools. Design: `dev-docs/supporting-more-coding-agents.md`.
+
+Diagnostics are single-sourced in `scripts/diagnose.py` — the structured engine behind `/cc-suite:diagnose` and the diagnose skill (both are thin wrappers: run engine → render → apply `fix.auto` → re-run engine to verify). Every check classifies with the Enabled Tools selection in view (`expected_absent` ≠ issue) and carries its own repair mapping; new health checks belong in the engine, not in command/skill prose. `scripts/fix_plugin_hooks.py` is the engine's section-scoped TOML fixer. `status.sh` remains the lightweight human readout used by init's summary; behavior changes to checks must land in the engine first.
 
 ## Advisor Agents (`.cc-suite/agents/`)
 

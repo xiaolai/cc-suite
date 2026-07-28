@@ -63,11 +63,13 @@ Detect the project's technology stack automatically:
    - `pom.xml` / `build.gradle` → Java
    - `*.csproj` / `*.sln` → C#/.NET
 
-2. Check for test frameworks:
-   - `jest.config.*` / `vitest.config.*` → JS test runner
-   - `pytest.ini` / `conftest.py` → pytest
-   - `spec/` directory → RSpec
-   - `*_test.go` → Go tests
+2. Derive the test command from what the project actually declares — a framework marker alone does not establish the command:
+   - `package.json`: read `scripts.test`. If it is missing or the npm placeholder (`Error: no test specified`), the test command is **unknown**. Otherwise pick the runner from the lockfile: `pnpm-lock.yaml` → `pnpm test`, `yarn.lock` → `yarn test`, `bun.lock*` → `bun run test`, else `npm test`.
+   - `pytest.ini` / `conftest.py` / `[tool.pytest]` in `pyproject.toml` → `pytest`
+   - `go.mod` with `*_test.go` files → `go test ./...`
+   - `Cargo.toml` → `cargo test`
+   - `Gemfile` with a `spec/` directory → `bundle exec rspec`
+   - Nothing reliable detected → write `unknown` in the config rather than guessing; the user can fill it in.
 
 3. Check for project structure:
    - `src/` → source directory

@@ -1,18 +1,18 @@
 ---
 name: diagnose
 description: "Diagnose the cc-suite setup in the current project. Runs the full health check, explains every issue, and fixes what can be fixed automatically. Skill counterpart to /cc-suite:diagnose."
-version: 0.3.1
+version: 0.4.0
 ---
 
 # Diagnose
 
-Run a full cc-suite health check and offer to auto-fix every issue found. Skill counterpart to `/cc-suite:diagnose`.
+Run the structured diagnostic engine and act on its report. Skill counterpart to `/cc-suite:diagnose` — both are thin wrappers around the same engine, `scripts/diagnose.py`, which owns every check, its classification, and its repair mapping. Do not re-implement checks here.
 
 ## When to Use
 
 - At the start of a session when bridge artifacts may be missing or stale
 - After updating cc-suite to confirm the new version is wired as expected
-- When `/cc-suite:audit`, `/cc-suite:audit-fix`, or any `/cc-suite:claude-*` skill behaves unexpectedly
+- When `$audit`, `$audit-fix`, or any `$claude-*` skill behaves unexpectedly
 
 ## Workflow
 
@@ -25,113 +25,26 @@ PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(dirname "$(dirname "$(readlink -f .claude/s
 [ -d "${PLUGIN_ROOT}/scripts" ] || echo "! cannot resolve the cc-suite plugin root — run /cc-suite:bridge-skills from Claude Code first, or export CLAUDE_PLUGIN_ROOT"
 ```
 
-Every command below uses `${PLUGIN_ROOT}`. Stop if it could not be resolved.
+Stop if it could not be resolved.
 
-### Step 1: Status check
-
-Run the status script:
+### Step 1: Run the engine
 
 ```bash
-bash "${PLUGIN_ROOT}/scripts/status.sh"
+python3 "${PLUGIN_ROOT}/scripts/diagnose.py" --json
 ```
 
-### Step 2: Deep checks
+The JSON: `enabled_tools`, `checks[]` (`id`, `label`, `status`, `detail`, `fix{auto[], manual, restart_required}`), `summary`. Statuses: `healthy` / `issue` (fixable) / `info` / `expected_absent` / `manual` / `skipped`. The engine honors the Enabled Tools selection — a deselected tool's absent artifacts are `expected_absent`, never issues. Add `--boot-test` for the network-dependent claude-octopus handshake (tests the version actually registered in `.codex/config.toml`) when delegation misbehaves.
 
-**Stale nested symlinks** (macOS `ln -sf` residue):
+### Step 2: Report
 
-```bash
-find .claude/skills/ .agents/skills/ -maxdepth 3 -name "cc-suite" -type l 2>/dev/null \
-  | grep -vx ".claude/skills/cc-suite" | grep -vx ".agents/skills/cc-suite"
-```
+Render the buckets in order — Issues, Manual action needed, Information, Healthy, Expected absent/Skipped — emitting Information even on the no-issues path. If there are no issues and nothing manual: report healthy and stop.
 
-For each returned path, `readlink` it: it is stale residue only if the target points into a cc-suite skills tree (contains `skills/cc-suite`). Real directories or symlinks pointing elsewhere are not residue — report informationally, never offer deletion.
+### Step 3: Fix
 
-**Codex CLI binary**:
+Ask: "Fix all auto-fixable issues now? (yes / show commands only / cancel)". If yes, for each `issue` check run its `fix.auto` commands in order; a non-zero exit is reported verbatim and that check is NOT counted as fixed. The `model_pin` fix is an edit, not a command: rewrite the `- **Default model**:` line in `.cc-suite.md` to `latest` and touch nothing else. `fix.manual` and `manual`-status items go to the user's to-do list untouched.
 
-```bash
-which codex 2>/dev/null || echo "not-found"
-```
+### Step 4: Verify by re-running the engine
 
-**Cache freshness** — extract the version from the active symlink target and compare to the `version` field of `${PLUGIN_ROOT}/.claude-plugin/plugin.json` (the installed plugin manifest). If they differ, the skills symlink points to an old cache. Skip when the symlink target contains no semver (e.g. a development checkout).
+Run the same engine invocation again and diff per check `id`: fixed (issue → healthy/expected_absent), pending restart (fix applied with `restart_required: true`, still flagged — expected until the host restarts), remaining. Report the three counts. Never claim a fix worked from the fix command's exit code alone.
 
-```bash
-readlink .claude/skills/cc-suite 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "missing"
-```
-
-**Broken symlinks**:
-
-```bash
-[ -L .claude/skills/cc-suite ] && [ ! -d .claude/skills/cc-suite ] && echo "broken:claude-skills" || true
-[ -L .agents/skills ]          && [ ! -d .agents/skills ]          && echo "broken:agents-skills"  || true
-```
-
-**`.cc-suite.md` model pin freshness** — extract the value of the `- **Default model**:` field in the `## Defaults` section (match that field exactly; trim whitespace; compare case-insensitively). Skip when the field is absent or reads `latest` (a policy value never goes stale); duplicate or empty fields → report as malformed config (informational) and skip the comparison. If it pins a concrete slug, compare against the catalog as preflight reports it:
-
-```bash
-grep -in '^\- \*\*Default model\*\*:' .cc-suite.md 2>/dev/null
-bash "${PLUGIN_ROOT}/scripts/codex-preflight.sh"
-```
-
-Pinned slug missing from the preflight `models` array → fixable issue (model-selecting commands warn and fall back to the preflight default on every call; the pinned line stays dead weight until fixed). Pinned slug present but no longer the catalog's `default_model` → informational line only, not an issue — emit it in the report even on the no-issues path, before reporting healthy. Preflight error → skip the check.
-
-### Step 3: Diagnose and report
-
-Build an issues list from all `·` (missing) and `!` (warn) lines in the status output, plus any deep check failures.
-
-Exclude `.codex/hooks.json` from issues if the project has no `hooks` section in `.claude/settings.json` — that missing entry is expected.
-
-Display the diagnosis:
-
-```
-cc-suite diagnose — {cwd}
-
-Healthy: N items ✓
-
-Issues found: N
-
-  #  Item                           Status     Diagnosis
-  1  .agents/skills                 missing    Codex cannot see any skills
-  2  .mcp.json → codex-cli          missing    Claude cannot invoke Codex as MCP tool
-  3  plugin_hooks                   not set    Plugin-bundled hooks are inert in Codex
-  ...
-```
-
-If no issues: report healthy and stop.
-
-### Step 4: Offer to fix
-
-Ask:
-
-```
-Fix all auto-fixable issues now? (yes / show commands only / cancel)
-```
-
-### Step 5: Apply fixes
-
-For each fixable issue, run the corresponding script:
-
-| Issue | Fix |
-|-------|-----|
-| `.agents/skills` missing or wrong | `bash "${PLUGIN_ROOT}/scripts/bridge_skills.sh"` |
-| `.claude/skills/cc-suite` missing or wrong | `bash "${PLUGIN_ROOT}/scripts/bridge_skills.sh"` |
-| `.codex/hooks.json` missing | `python3 "${PLUGIN_ROOT}/scripts/bridge_hooks.py"` |
-| `.mcp.json → codex-cli` missing | `bash "${PLUGIN_ROOT}/scripts/mcp_codex.sh"` |
-| `.codex/config.toml → claude-code` missing | `bash "${PLUGIN_ROOT}/scripts/mcp_claude.sh"` |
-| MCP parity gaps | `bash "${PLUGIN_ROOT}/scripts/bridge_mcp.sh"` |
-| stale nested symlink at `{path}` (target verified to point into a cc-suite skills tree) | `rm "{path}" && bash "${PLUGIN_ROOT}/scripts/bridge_skills.sh"` |
-| cache stale | `claude plugin update cc-suite@xiaolai`, then STOP — the current session's plugin root predates the update, so re-running its `bridge_skills.sh` would repoint to the old cache; restart and run `/cc-suite:bridge-skills` in the new session |
-| `plugin_hooks` not set | Set `plugin_hooks = true` idempotently in `~/.codex/config.toml`: replace an existing `plugin_hooks = …` assignment, otherwise insert once under `[features]`; parse-validate before writing (duplicate keys invalidate TOML) |
-| model pin stale | Rewrite the `Default model` line in `.cc-suite.md` to `latest` (the deterministic fix-all value; a concrete slug only on explicit user request) — edit that line only |
-
-Items that require manual action (flag, do not attempt to fix):
-- **`project trust` not trusted** — run `codex` in this directory and accept the trust prompt
-- **Codex CLI not found** — install from https://github.com/openai/codex
-- **`AGENTS.md` missing** — run `/cc-suite:init` in a Claude Code session (requires Claude)
-
-### Step 6: Re-run status and summarise
-
-After all auto-fixes, run `bash "${PLUGIN_ROOT}/scripts/status.sh"` again.
-
-Report: N issues fixed, N remaining (with manual steps for those that remain).
-
-If issues persist after auto-fix, close with: "Issues remain. Next step: run `/cc-suite:repair` for a full non-interactive re-run of all setup scripts. If that also fails, run `/cc-suite:init` for a complete interactive re-initialization."
+If issues remain: "Next step: run `/cc-suite:repair` for a full non-interactive re-run of all setup scripts. If that also fails, run `/cc-suite:init` in a Claude Code session."

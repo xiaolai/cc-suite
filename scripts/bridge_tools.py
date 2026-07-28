@@ -747,6 +747,121 @@ def print_status() -> int:
     return 0
 
 
+def health_check() -> int:
+    """Structured artifact-health validation for the enabled registry tools.
+
+    Prints one JSON object: {"schema": 1, "enabled": [...], "tools": [
+      {"id", "display_name", "status": "healthy"|"issue", "problems": [...],
+       "fix": "/cc-suite:bridge-tools"}]}.
+    Unlike --status (which only lists targets), this verifies the artifacts:
+    config exists and parses, the cc-suite-managed entries are present, and
+    tool-specific extras (Qwen skills symlink, context files) are wired.
+    Read-only; exit 0 always (consumers read the JSON, not the exit code).
+    Claude/Codex/Antigravity are validated by their own scripts and the
+    diagnose engine, not here.
+    """
+    enabled = parse_enabled_tools()
+    try:
+        expected = set(desired_servers())
+    except SystemExit:
+        expected = set()  # pin file or .mcp.json unreadable — presence checks only
+    tools: list[dict] = []
+    for tool_id in enabled:
+        prof = PROFILES.get(tool_id)
+        if not prof or prof.get("bridged_by") != "registry":
+            continue
+        problems: list[str] = []
+        spec = prof["mcp"]
+        path = resolve_path(spec)
+        label = spec["path"]
+        if not path.exists():
+            problems.append(f"{label} missing — tool cannot see the project MCP surface")
+        elif spec["format"] == "toml-mcp_servers":
+            text = path.read_text(encoding="utf-8", errors="replace")
+            if TOML_SENTINEL_OPEN not in text or TOML_SENTINEL_CLOSE not in text:
+                problems.append(f"{label} exists but has no cc-suite sentinel block")
+            else:
+                try:
+                    import tomllib
+                    tomllib.loads(text)
+                except ModuleNotFoundError:
+                    pass
+                except Exception as exc:  # noqa: BLE001
+                    problems.append(f"{label} is invalid TOML: {exc}")
+                start, end = text.find(TOML_SENTINEL_OPEN), text.find(TOML_SENTINEL_CLOSE)
+                block = text[start:end] if end > start else ""
+                absent = sorted(n for n in expected
+                                if f"[mcp_servers.{_toml_key(n)}]" not in block)
+                if absent:
+                    problems.append(f"{label} sentinel block lost expected server(s): {', '.join(absent)}")
+        else:
+            root_key = "mcp" if spec["format"] == "json-nested" else "mcpServers"
+            try:
+                doc = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                doc = None
+                problems.append(f"{label} is not valid JSON: {exc}")
+            if isinstance(doc, dict):
+                section = doc.get(root_key)
+                if not isinstance(section, dict):
+                    problems.append(f"{label} has no {root_key} object")
+                else:
+                    prov_path = path.parent / f".cc-suite-{path.name}.provenance.json"
+                    try:
+                        managed = _read_provenance(prov_path)
+                    except SystemExit:
+                        managed = None
+                        problems.append(f"{prov_path.name} is present but invalid")
+                    if managed is None:
+                        if not problems:
+                            problems.append(f"{label} has no cc-suite provenance — not bridged by cc-suite")
+                    else:
+                        absent = sorted(managed - set(section))
+                        if absent:
+                            problems.append(f"{label} lost managed server(s): {', '.join(absent)}")
+                        # Stale provenance: the desired set moved (a server was
+                        # added to .mcp.json) but the bridge has not been re-run.
+                        behind = sorted(expected - managed)
+                        if behind:
+                            problems.append(f"{label} is behind the project MCP surface "
+                                            f"(not yet mirrored: {', '.join(behind)})")
+            elif doc is not None:
+                problems.append(f"{label} top level is not an object")
+
+        if "skills_symlink" in prof:
+            link = ROOT / prof["skills_symlink"]["link"]
+            target = ROOT / prof["skills_symlink"]["target"]
+            if not link.is_symlink():
+                problems.append(f"{prof['skills_symlink']['link']} symlink missing")
+            elif not link.exists():
+                problems.append(f"{prof['skills_symlink']['link']} symlink broken")
+            elif link.resolve() != target.resolve():
+                problems.append(
+                    f"{prof['skills_symlink']['link']} points at {os.readlink(link)}, "
+                    f"expected {prof['skills_symlink']['target']}")
+        if "context_files" in prof and path.exists():
+            try:
+                doc = load_json(path) if path.suffix == ".json" else None
+            except SystemExit:
+                doc = None  # invalid JSON already reported above
+            current = _nested_get(doc, prof["context_files"]["key"]) if isinstance(doc, dict) else None
+            wanted = prof["context_files"]["want"][0]
+            listed = current if isinstance(current, list) else [current] if isinstance(current, str) else []
+            if wanted not in listed:
+                problems.append(f"context files setting does not include {wanted} — AGENTS.md is ignored")
+
+        tools.append({
+            "id": tool_id,
+            "display_name": prof["display_name"],
+            "status": "issue" if problems else "healthy",
+            "problems": problems,
+            "fix": "/cc-suite:bridge-tools",
+        })
+
+    print(json.dumps({"schema": 1, "enabled": enabled, "tools": tools}, indent=2))
+    return 0
+
+
 def detect_tools() -> list[dict]:
     """Report which tool CLIs are actually on PATH, for the init picker.
 
@@ -820,6 +935,9 @@ def main(argv: list[str]) -> int:
     if args and args[0] == "--detect":
         print(json.dumps(detect_tools(), indent=2))
         return 0
+
+    if args and args[0] == "--health":
+        return health_check()
 
     if args and args[0] == "--enabled":
         # Plain-text query for shell callers (init.sh gates its per-tool steps

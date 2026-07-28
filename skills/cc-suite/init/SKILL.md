@@ -1,7 +1,7 @@
 ---
 name: init
 description: "Initialize cc-suite for the current project — sets up the AGENTS.md bridge, registers Codex, Claude, and Antigravity MCP surfaces, and generates a .cc-suite.md config. Skill counterpart to /cc-suite:init."
-version: 0.3.1
+version: 0.3.2
 ---
 
 # Init
@@ -57,12 +57,17 @@ ls *.csproj *.sln 2>/dev/null                         && echo "dotnet"
 [ -d app ]  && echo "app/"
 ```
 
-Detect the test command:
-- `package.json` with `"test"` script → `npm test`
+Detect the test command from what the project declares — a framework marker
+alone does not establish the command:
+- `package.json`: read `scripts.test`. Missing or the npm placeholder
+  (`Error: no test specified`) → **unknown**. Otherwise pick the runner from
+  the lockfile: `pnpm-lock.yaml` → `pnpm test`, `yarn.lock` → `yarn test`,
+  `bun.lock*` → `bun run test`, else `npm test`.
 - `pytest.ini` / `conftest.py` → `pytest`
-- `go.mod` → `go test ./...`
+- `go.mod` with `*_test.go` files → `go test ./...`
 - `Cargo.toml` → `cargo test`
 - `Gemfile` + `spec/` → `bundle exec rspec`
+- Nothing reliable → write `unknown` rather than guessing.
 
 ### Step 3: Discover the current Codex default
 

@@ -125,12 +125,14 @@ recommendation is not supported either, recommend the highest supported level.
 | `workspace-write` | Write only within the working directory |
 | `danger-full-access` | Full read/write/execute everywhere |
 
-Mark `{config_default_sandbox}` as "(Recommended)" if set, otherwise use the calling command's recommendation.
+Validate `{config_default_sandbox}` against the preflight `sandbox_levels` array. Mark it "(Recommended)" only when it is a supported level; if it is set but unsupported, tell the user the configured sandbox is invalid and recommend the calling command's recommendation instead. When unset, use the calling command's recommendation.
 
 ### Step D: Apply project config to Codex calls
 
 The prompt preamble is built ONLY by the canonical recipe in `commands/shared/codex-call.md` (persona, provenance disclosure, delegation boundary, optional conventions, config parts). Do not rebuild or partially restate it here — this partial's job is to supply the config values that recipe consumes:
 
-1. **Preamble config parts**: `{config_focus_instructions}` and `{config_project_instructions}` feed parts 5 and 6 of the canonical preamble. They are NOT optional — when the config provides them, they MUST reach every Codex call's preamble (there is no separate developer-instructions channel in `codex exec`).
+1. **Preamble config parts** (scoped by command kind — the generated config defines Audit Focus and Skip Patterns as audit-specific):
+   - `{config_project_instructions}` feeds part 6 of the canonical preamble on **every** Codex call. It is NOT optional — when the config provides it, it MUST reach the preamble (there is no separate developer-instructions channel in `codex exec`).
+   - `{config_focus_instructions}` feeds part 5 **only for audit and verification commands** (audit, audit-fix, verify, the audit-* family). Do not inject audit-focus text into implementation or planning calls.
 
-2. **Skip patterns**: Before sending files to Codex, you MUST filter out any files matching `{config_skip_patterns}`. If all files are filtered out, report that and stop.
+2. **Skip patterns** apply to commands that enumerate files (audits, verify): filter out any files matching `{config_skip_patterns}` before sending them to Codex, and if all files are filtered out, report that and stop. Autonomous commands with no bounded file list (implement, bug-analyze) instead state the patterns in the prompt as paths Codex must leave untouched.

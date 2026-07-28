@@ -2057,6 +2057,107 @@ assert_contains ".codex/config.toml" "cc-suite-agent: tester"
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# T76  diagnose.py — structured diagnostic engine
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T76: diagnose.py — empty project reports issues as JSON"
+make_tmp
+if mkdir -p "$TMP/fakehome"; HOME="$TMP/fakehome" python3 "$SCRIPTS/diagnose.py" --json --no-preflight > diag.json 2>/dev/null; then
+  fail_msg "diagnose.py should exit non-zero on an unbridged project"
+else
+  ok_msg "diagnose.py exits non-zero on an unbridged project"
+fi
+python3 - <<'PY' && ok_msg "empty project: agents_md + skills links are issues with auto fixes" || fail_msg "empty-project JSON assertions failed"
+import json
+d = json.load(open("diag.json"))
+checks = {c["id"]: c for c in d["checks"]}
+assert d["summary"]["issue"] > 0
+assert checks["agents_md"]["status"] == "issue"
+assert checks["agents_md"]["fix"]["auto"], "agents_md must carry an auto fix"
+assert checks["claude_skills_link"]["status"] == "issue"
+PY
+cleanup
+
+section "T76b: diagnose.py — disabled tools classify as expected_absent, not issues"
+make_tmp
+printf '## Enabled Tools\n- [x] claude\n' > .cc-suite.md
+mkdir -p "$TMP/fakehome"; HOME="$TMP/fakehome" python3 "$SCRIPTS/diagnose.py" --json --no-preflight > diag.json 2>/dev/null || true
+python3 - <<'PY' && ok_msg "codex/agy checks are expected_absent when disabled" || fail_msg "disabled-tools classification failed"
+import json
+d = json.load(open("diag.json"))
+checks = {c["id"]: c for c in d["checks"]}
+for cid in ("codex_artifacts", "mcp_codex_cli", "claude_code_reg", "mcp_parity", "agy_mcp", "codex_runtime", "agents_skills_link"):
+    assert checks[cid]["status"] == "expected_absent", f"{cid}: {checks[cid]['status']}"
+PY
+cleanup
+
+section "T76c: diagnose.py — initialized project is healthy on the hermetic checks"
+make_tmp
+printf '# X\n' > AGENTS.md
+bash "$SCRIPTS/init.sh"          >/dev/null 2>&1
+bash "$SCRIPTS/bridge_skills.sh" >/dev/null 2>&1
+bash "$SCRIPTS/mcp_codex.sh"     >/dev/null 2>&1
+bash "$SCRIPTS/mcp_claude.sh"    >/dev/null 2>&1
+bash "$SCRIPTS/bridge_mcp.sh"    >/dev/null 2>&1
+printf '## Enabled Tools\n- [x] claude\n- [x] codex\n- [x] antigravity\n\n## Defaults\n\n- **Default model**: latest\n' > .cc-suite.md
+mkdir -p "$TMP/fakehome"; HOME="$TMP/fakehome" python3 "$SCRIPTS/diagnose.py" --json --no-preflight > diag.json 2>/dev/null || true
+python3 - <<'PY' && ok_msg "initialized project: bridge checks healthy, latest policy healthy" || fail_msg "initialized-project assertions failed"
+import json
+d = json.load(open("diag.json"))
+checks = {c["id"]: c for c in d["checks"]}
+for cid in ("agents_md", "claude_md", "claude_skills_link", "agents_skills_link",
+            "codex_config", "mcp_codex_cli", "claude_code_reg", "agy_mcp", "gitignore", "model_pin"):
+    assert checks[cid]["status"] == "healthy", f"{cid}: {checks[cid]['status']} — {checks[cid]['detail']}"
+assert d["summary"].get("issue", 0) == 0, d["summary"]
+PY
+cleanup
+
+section "T76d: diagnose.py — malformed model field is informational, stale advisor parity is an issue"
+make_tmp
+printf '## Defaults\n\n- **Default model**: latest\n- **Default model**: gpt-old\n' > .cc-suite.md
+mkdir -p .cc-suite/agents
+printf -- '---\ndescription: t.\n---\nx\n' > .cc-suite/agents/ghost.md
+mkdir -p "$TMP/fakehome"; HOME="$TMP/fakehome" python3 "$SCRIPTS/diagnose.py" --json --no-preflight > diag.json 2>/dev/null || true
+python3 - <<'PY' && ok_msg "duplicate model field → info; unregistered advisor → issue" || fail_msg "T76d assertions failed"
+import json
+d = json.load(open("diag.json"))
+checks = {c["id"]: c for c in d["checks"]}
+assert checks["model_pin"]["status"] == "info", checks["model_pin"]
+assert checks["advisors"]["status"] == "issue", checks["advisors"]
+PY
+cleanup
+
+section "T76e: diagnose.py — unbridged enabled registry tool surfaces via --health"
+make_tmp
+printf '## Enabled Tools\n- [x] claude\n- [x] grok\n' > .cc-suite.md
+mkdir -p "$TMP/fakehome"; HOME="$TMP/fakehome" python3 "$SCRIPTS/diagnose.py" --json --no-preflight > diag.json 2>/dev/null || true
+python3 - <<'PY' && ok_msg "grok enabled but unbridged → tool_grok issue with bridge-tools fix" || fail_msg "T76e assertions failed"
+import json
+d = json.load(open("diag.json"))
+checks = {c["id"]: c for c in d["checks"]}
+assert checks["tool_grok"]["status"] == "issue", checks.get("tool_grok")
+assert any("bridge_tools" in cmd for cmd in checks["tool_grok"]["fix"]["auto"])
+PY
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T77  fix_plugin_hooks.py — section-scoped idempotent TOML edit
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T77: fix_plugin_hooks.py — replaces, inserts once, leaves other tables alone"
+make_tmp
+printf '[features]\nplugin_hooks = false\n[other]\nplugin_hooks = false\n' > cfg.toml
+export FIX="$SCRIPTS/fix_plugin_hooks.py"
+assert_exit0 python3 "$SCRIPTS/fix_plugin_hooks.py" cfg.toml
+python3 - <<'PY' && ok_msg "replaced in [features], [other] untouched, idempotent" || fail_msg "fix_plugin_hooks assertions failed"
+import subprocess, sys, tomllib
+d = tomllib.load(open("cfg.toml", "rb"))
+assert d["features"]["plugin_hooks"] is True and d["other"]["plugin_hooks"] is False
+subprocess.run([sys.executable, __import__("os").environ["FIX"], "cfg.toml"], check=True, capture_output=True)
+text = open("cfg.toml").read()
+assert text.count("plugin_hooks") == 2  # one per table, no duplicates added
+PY
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # T75  status.sh — advisor block with the current pin must not mask a stale claude-code pin
 # ═══════════════════════════════════════════════════════════════════════════════
 section "T75: status.sh — stale claude-code pin flagged despite current-pin advisor block"

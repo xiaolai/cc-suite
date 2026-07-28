@@ -80,10 +80,14 @@ IMPORTANT RULES:
 - If a step fails, debug and fix it before moving on.
 - After completing all steps, run a final verification (build, test, lint). Run the project's test suite if detected (`npm test`, `cargo test`, `pytest`, `go test ./...`, etc.).
 - Report a summary of: files created, files modified, commands run, and any issues encountered.
+{if config_skip_patterns is non-empty, add:}
+- Leave these paths untouched (do not create, modify, or delete anything matching them): {config_skip_patterns}
 
 THE PLAN:
 {plan_content}"
 ```
+
+(There is no bounded file list to filter for an autonomous implementation, so `{config_skip_patterns}` is enforced as the prompt-level leave-untouched rule above rather than by pre-filtering files.)
 
 **IMPORTANT**: Wait for Codex to fully complete before proceeding.
 
