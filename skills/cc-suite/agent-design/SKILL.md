@@ -62,6 +62,8 @@ The `description` field becomes the MCP tool description that Claude and Codex s
 
 Use a YAML literal block scalar (`description: |`) so newlines and `<example>` tags survive parsing. `bridge_agents.py` preserves the full multi-line value into `CLAUDE_DESCRIPTION` verbatim.
 
+> **This placement rule applies to advisor agent files only — it is the opposite of SKILL.md files.** An advisor's description becomes an MCP tool description, so examples belong inside it. A SKILL.md description is always-loaded trigger metadata that nlpm's R04 caps at 500 characters (-5) and 800 characters (-10); its `<example>` blocks go in a body section (this repo uses `## Example Invocations`), never in the frontmatter. Applying this section's advice to a SKILL.md file trades the missing-examples penalty for an oversized-description penalty.
+
 ## Writing the prompt: values, not procedures
 
 The point of an advisor is to bring a *value system* to the table that the caller doesn't have. If you write the prompt as a checklist, you've built a linter, not an advisor.

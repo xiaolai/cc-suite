@@ -23,25 +23,33 @@ Flag artifacts scoring below **80/100** for improvement.
 The audit-family commands (`audit-agent`, `audit-command`, `audit-nlp`,
 `audit-plugin`, `audit-rules`) name vague quantifiers as **data**, not as
 instructions — they are the literal strings the embedded Codex prompt is told to
-search for in *other* artifacts, and they appear inside backticks:
+search for in *other* artifacts:
 
 ```
 - **Ambiguous quantifiers**: Flag uses of `some`, `few`, `several`, `various` ... without concrete criteria
 ```
 
-Penalizing these would mean cc-suite could never document vague-language
-detection at all. Do not apply R01 to a flagged word when it appears inside
-backticks within a list of terms the artifact is instructing a reader to detect.
-Ordinary prose use of the same words is still penalized normally.
+Do not count a vague term when it is presented as a literal token and the
+containing clause explicitly instructs the reader or a tool to detect, flag,
+reject, replace, avoid, or report that term. **Backtick formatting alone does
+not qualify** — a term still modifying an action, criterion, or requirement is
+counted even when backticked (`` handle errors `properly` `` is still a
+violation). Ordinary prose use is penalized normally.
 
 ## Self-reference exemption (R51)
 
-`skills/cc-suite/vocabulary/SKILL.md` is the file that *declares* the enforced
-deprecation pairs. Its "Enforced deprecation pairs" table must name `pillar`,
-`sub-agent`, and `freshen` literally in order to deprecate them. R51 is
-mechanical and flags every occurrence regardless of context, so the registry's
-own file would otherwise be penalized for doing its job — the same carve-out
-NLPM applies to its own rules file quoting bad examples.
+`skills/cc-suite/vocabulary/SKILL.md` and `registry.yaml` *declare* the enforced
+deprecation pairs, so they must name `pillar`, `sub-agent`, and `freshen`
+literally in order to deprecate them.
 
-This exemption covers `skills/cc-suite/vocabulary/` only. Every other path in
-the `internal` scope is scored normally.
+Do not count a deprecated term when it occurs in the declaration that registers
+it or maps it to its replacement — the registry tables and `deprecated:` lists.
+This covers only the declaration term fields, **not** surrounding prose:
+deprecated terms used in ordinary sentences inside `skills/cc-suite/vocabulary/`
+are still counted, and every other path in the `internal` scope is scored
+normally.
+
+> Both exemptions restate the general mention-versus-use principle proposed
+> upstream for nlpm's rubric. Once the installed nlpm version carries that
+> principle natively, these two override entries become redundant and can be
+> dropped; the R31 and R51-enable entries above remain project-specific.
