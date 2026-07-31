@@ -1,9 +1,9 @@
 {
   "name": "cc-suite",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "type": "module",
-  "description": "One plugin to bridge Claude Code and Codex CLI \u2014 shared AGENTS.md, mirrored hooks and MCP servers, bidirectional delegation \u2014 plus delegation to Antigravity CLI (agy)",
+  "description": "One plugin to bridge Claude Code, Codex CLI, and Antigravity CLI with single-source project state and bidirectional delegation, plus Grok delegation and bounded Qwen review",
   "license": "ISC",
   "engines": {
     "node": ">=18.18.0"

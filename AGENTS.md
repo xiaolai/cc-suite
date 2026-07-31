@@ -1,6 +1,6 @@
 ---
 name: cc-suite
-description: "Project instructions for cc-suite — the Claude Code plugin that bridges Claude Code, Codex CLI, and Antigravity CLI (agy) with single-source AGENTS.md, shared skills, mirrored hooks, and bidirectional MCP delegation; adds a Claude→Grok delegation lane (ACP) and opt-in MCP bridging to more coding agents (Grok Build, opencode, Qwen Code, Kimi CLI)."
+description: "Project instructions for cc-suite — the Claude Code plugin that bridges Claude Code, Codex CLI, and Antigravity CLI (agy) with single-source AGENTS.md, shared skills, mirrored hooks, and bidirectional MCP delegation; adds Claude→Grok delegation, bounded Qwen review, and opt-in MCP bridging to more coding agents."
 ---
 
 # Project Instructions
@@ -22,6 +22,7 @@ description: "Project instructions for cc-suite — the Claude Code plugin that 
 - **Python 3** — required by `scripts/bridge_hooks.py`, MCP projections, and migration helpers
 - **Antigravity CLI (`agy`)** (optional) — required for the Google backend, `/cc-suite:agy-preflight`, and headless agy delegation
 - **Grok Build (`grok`, xAI)** (optional) — required for the Claude→Grok ACP delegation lane (`/cc-suite:grok`) and `/cc-suite:grok-preflight`
+- **Qwen Code (`qwen`, ≥ 0.21.0)** (optional) — required for the bounded, read-only `/cc-suite:qwen-review` lane and `/cc-suite:qwen-preflight`
 - **Bash** — required by all `scripts/*.sh` files
 - **`claude-octopus`** (npm, pinned) — the MCP server cc-suite registers in `.codex/config.toml` so Codex can delegate to Claude. cc-suite does not install it explicitly; `mcp_claude.sh` writes a `npx -y claude-octopus@<pin>` invocation and npm fetches it on first Codex start. The pin lives in `scripts/lib/claude-octopus-pin.txt` — single source of truth, read by `mcp_claude.sh`, the integration suite, and the boot-handshake test.
 
@@ -56,13 +57,13 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/init.sh"
 
 ## Tests
 
-Run the integration suite (72 test sections, 386 assertions):
+Run the integration suite (95 test sections, 426 assertions):
 
 ```bash
 bash tests/integration.sh
 ```
 
-Tests cover every `scripts/*.sh`, the Codex and Antigravity MCP projection paths, the multi-tool bridge (`bridge_tools.py` — grok/opencode/qwen/kimi emitters, selection, unbridge), the grok delegation runner and preflight (`grok-runner.mjs`, `grok-preflight.sh`), legacy Gemini cleanup, `status.sh` output, refresh semantics for `mcp_claude.sh`, a real boot-and-handshake against the pinned `claude-octopus` (network-dependent — set `CC_SUITE_SKIP_BOOT_TEST=1` to skip), and the advisor-agent subsystem. Add a new `T<N>` section for any new behavior; the suite uses `make_tmp` / `cleanup` / `assert_*` helpers and tallies pass/fail counts in its summary. Command-file frontmatter is validated separately by `tests/commands.test.mjs` (`node --test`).
+Tests cover every `scripts/*.sh`, the Codex and Antigravity MCP projection paths, the multi-tool bridge (`bridge_tools.py` — grok/opencode/qwen/kimi emitters, selection, unbridge), the Grok and Qwen runners/preflights, legacy Gemini cleanup, `status.sh` output, refresh semantics for `mcp_claude.sh`, a real boot-and-handshake against the pinned `claude-octopus` (network-dependent — set `CC_SUITE_SKIP_BOOT_TEST=1` to skip), and the advisor-agent subsystem. Add a new `T<N>` section for any new behavior; the suite uses `make_tmp` / `cleanup` / `assert_*` helpers and tallies pass/fail counts in its summary. Command-file frontmatter is validated separately by `tests/commands.test.mjs` (`node --test`).
 
 ## Shared Memory
 
@@ -100,6 +101,7 @@ Delegation lanes:
 | Codex / agy → Claude | pinned `claude-octopus` MCP server (also exposes `claude_code_sessions` / `_transcript`) | — |
 | Claude → agy | `agy-runner.mjs` (`agy -p`, conversation recovered by dir-diff) | `/cc-suite:agy-preflight` (`agy-preflight.sh`) |
 | Claude → Grok | `grok-runner.mjs` — ACP client driving `grok agent stdio` (`initialize` → `session/new`/`load` → `session/prompt`); `threadId` is the ACP session id | `/cc-suite:grok-preflight` (`grok-preflight.sh`, fast/local) |
+| Claude → Qwen critic | `qwen-runner.mjs` — Safe Mode + Plan mode + sandbox, isolated target copies, explicit tool denials plus init-surface verification, bounded `read_file`, strict terminal-result validation, verified hashes, and at most two same-session resumes | `/cc-suite:qwen-preflight` (`qwen-preflight.sh`, fast/local) |
 
 All preflight scripts emit the same JSON shape (`status`, `default_model`, `models`, `reasoning_efforts`, `sandbox_levels`, `error_code`). New backend runner ⇒ mirror `agy-runner.mjs` (parseArgs / executeX / runForeground / runBackground / runBackgroundWorker) and add a `<backend>-preflight`.
 

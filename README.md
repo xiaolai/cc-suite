@@ -2,7 +2,7 @@
 
 [![Validated by NLPM](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/xiaolai/cc-suite/main/nlpm-badge.json)](https://github.com/xiaolai/cc-suite/blob/main/nlpm-badge.json)
 
-One Claude Code plugin to synchronize **Claude Code**, **Codex CLI**, and **Antigravity CLI** (`agy`) on the same project — and let them delegate work to each other. Adds a Claude→**Grok Build** delegation lane (ACP) and opt-in MCP bridging to more coding agents (**opencode**, **Qwen Code**, **Kimi CLI**).
+One Claude Code plugin to synchronize **Claude Code**, **Codex CLI**, and **Antigravity CLI** (`agy`) on the same project — and let them delegate work to each other. Adds Claude→**Grok Build** delegation (ACP), bounded **Qwen Code** review, and opt-in MCP bridging to more coding agents (**opencode**, **Qwen Code**, **Kimi CLI**).
 
 ## Why
 
@@ -23,6 +23,7 @@ Each tool reads from its own files. `CLAUDE.md` and `AGENTS.md` sit next to each
 | **Claude → `agy` delegation** | `scripts/agy-runner.mjs` drives Antigravity CLI headlessly, with the same job tracking, background mode, deadline enforcement, and conversation resume as the Codex runner. |
 | **`agy` → Claude delegation** | The same claude-octopus MCP server, registered in `agy`'s workspace config. |
 | **Claude → Grok delegation** | `/cc-suite:grok` drives **Grok Build** over the Agent Client Protocol (`scripts/grok-runner.mjs` acts as the ACP client to `grok agent stdio`), with the same job tracking, background mode, deadline enforcement, and session resume as the Codex/agy runners. |
+| **Claude → Qwen review** | `/cc-suite:qwen-review` runs Qwen as a bounded critic: Safe Mode + Plan mode + sandbox, isolated target copies, explicit tool denials plus init-surface verification, a bounded `read_file` budget, strict terminal-result validation, verified file hashes, and at most two same-session resumes after incomplete output. |
 | **More coding agents (opt-in)** | `/cc-suite:bridge-tools` mirrors the project MCP surface into **Grok Build**, **opencode**, **Qwen Code**, and **Kimi CLI** — each selected in `.cc-suite.md`'s `## Enabled Tools` list. Grok, opencode, and Kimi read `AGENTS.md` and shared skills natively, so only MCP config is mirrored (per tool's native format); Qwen Code also gets a skills symlink and an instruction-file setting, since it reads neither by default. China-aware: Qwen/Kimi/opencode work natively in mainland China; Grok is VPN-only. |
 
 ## More coding agents (opt-in)
@@ -102,6 +103,44 @@ Beyond the config bridge, cc-suite can **drive Grok Build as an agent**. `/cc-su
 
 It shares the runner infrastructure (`/cc-suite:status`, `/cc-suite:result`, `/cc-suite:cancel`) with the other backends — resume a Grok session via `/cc-suite:grok --resume <id>` (`/cc-suite:continue` resumes Codex threads only) — and gates on `/cc-suite:grok-preflight` — a fast, **local** readiness check (binary + auth, no network round-trip) that fails fast with a `grok login` hint instead of hanging until the deadline. Pair it with the MCP bridge (`grok` enabled in `## Enabled Tools`) so Grok can call *back* into Claude via the `claude-code` server — a full round trip. Requires the `grok` binary on PATH ([install](https://x.ai/cli)).
 
+## Claude → Qwen review
+
+`/cc-suite:qwen-review` is deliberately narrower than the write-capable
+delegation lanes. It treats Qwen as an independent critic, never as a second
+editor:
+
+```bash
+/cc-suite:qwen-review "Challenge this architecture proposal"
+/cc-suite:qwen-review --target docs/design.md "Find unsupported assumptions"
+/cc-suite:qwen-review --target draft-en.md --target draft-zh.md "Check bilingual parity"
+```
+
+`scripts/qwen-runner.mjs` copies declared targets into a private temporary
+workspace, then starts Qwen with Safe Mode, Plan mode, Qwen's sandbox, and
+`stream-json`. A prompt-only review has a zero-call budget. A file review exposes
+only isolated copies and applies a bounded `read_file` call budget. Because Qwen
+versions 0.21.0 through 0.21.2 ignore `--core-tools` in Safe Mode, the runner
+instead passes explicit
+deny rules for every known non-review tool and then checks the real init event:
+prompt-only runs must expose no tools, while target runs must expose exactly
+`read_file`; both must expose no MCP servers. Any new or unexpected advertised
+tool fails closed before later stream events are accepted. The stream observer
+also rejects undeclared paths. Success requires this verified Plan-mode init,
+no policy violation, a non-empty terminal success result, exit code 0, and
+unchanged source and staged hashes.
+
+If Qwen exits without a terminal result, the runner resumes the same session at
+most twice. It never retries parsing, policy, terminal-error, exit-mismatch, or
+hash failures. Raw stdout/stderr capture is off by default because tool results
+can contain the complete reviewed file; `--debug-capture` enables private
+diagnostic files explicitly. Qwen's output remains critique, not evidence — the
+calling agent verifies findings and retains final judgment.
+
+These controls are defense in depth, not a promise of perfect OS isolation.
+Temporary copies are removed after a normal job and on `SIGHUP`, `SIGINT`, or
+`SIGTERM`; an uncatchable `SIGKILL` can still leave a private temporary
+directory behind. Never review secrets.
+
 ## Antigravity CLI (`agy`)
 
 Google moved consumer Gemini CLI access to [Antigravity CLI](https://antigravity.google)
@@ -160,6 +199,7 @@ claude plugin install cc-suite@xiaolai --scope project
 - [Codex CLI](https://github.com/openai/codex) installed — required for Claude→Codex delegation commands
 - [Antigravity CLI](https://github.com/google-antigravity/antigravity-cli) (`agy`) installed — required for Google-backed delegation and `/cc-suite:agy-preflight`
 - [Grok Build](https://x.ai/cli) (`grok`, xAI) installed — required for the Claude→Grok ACP delegation lane (`/cc-suite:grok`) and `/cc-suite:grok-preflight`
+- [Qwen Code](https://github.com/QwenLM/qwen-code) (`qwen`, ≥ 0.21.0) installed — required for `/cc-suite:qwen-review` and `/cc-suite:qwen-preflight`
 - [claude-octopus](https://www.npmjs.com/package/claude-octopus) — required for Codex→Claude delegation. Delivered via `npx -y` at runtime, no pre-install needed. Uses the same credential store as Claude CLI (`~/.claude/.credentials.json`).
 
 ## Quick start
@@ -213,6 +253,8 @@ Codex-backed commands delegate through the CLI runner (`scripts/codex-runner.mjs
 | `/cc-suite:agy` | Delegate a bounded prompt directly to Antigravity CLI with shared job tracking |
 | `/cc-suite:grok-preflight` | Check Grok Build readiness (binary, auth, models) — fast and local, no network |
 | `/cc-suite:grok` | Delegate a bounded prompt to Grok Build over ACP with shared job tracking |
+| `/cc-suite:qwen-preflight` | Check local Qwen Code readiness without sending a model prompt |
+| `/cc-suite:qwen-review` | Run a bounded, read-only Qwen critique with exact-file policy, strict completion, verified hashes, and limited resume |
 | `/cc-suite:setup` | Manage the stop-time review gate |
 | `/cc-suite:refresh-knowledge` | Update the Claude Code conventions skill from latest docs |
 

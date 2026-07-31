@@ -42,6 +42,8 @@ const COMMANDS = [
   "agy",
   "grok-preflight",
   "grok",
+  "qwen-preflight",
+  "qwen-review",
   "bridge-tools",
   "migrate-google",
   "codex-preflight",
@@ -93,6 +95,15 @@ test("agy command uses the Antigravity runner without an effort picker", () => {
   assert.ok(content.includes("Do not ask for a reasoning-effort setting"));
 });
 
+test("qwen review command is Plan-only and uses the supervised runner", () => {
+  const content = readCommand("qwen-review");
+  assert.ok(content.includes("scripts/qwen-runner.mjs"));
+  assert.ok(content.includes("scripts/qwen-preflight.sh"));
+  assert.ok(content.includes("--approval-mode plan"));
+  assert.ok(content.includes("--target"));
+  assert.ok(content.includes("critique, not evidence"));
+});
+
 test("shared partials have user-invocable: false", () => {
   const sharedDir = path.join(PLUGIN_ROOT, "commands", "shared");
   const partials = fs.readdirSync(sharedDir).filter((f) => f.endsWith(".md"));
@@ -110,7 +121,7 @@ test("shared partials have user-invocable: false", () => {
 });
 
 test("background-capable commands mention --background flag", () => {
-  const bgCommands = ["audit", "implement", "bug-analyze", "review-plan"];
+  const bgCommands = ["audit", "implement", "bug-analyze", "review-plan", "qwen-review"];
   for (const name of bgCommands) {
     const content = readCommand(name);
     assert.ok(

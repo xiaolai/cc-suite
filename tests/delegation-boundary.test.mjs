@@ -55,8 +55,8 @@ test("withDelegationBoundary tolerates an empty prompt", () => {
   assert.equal(withDelegationBoundary(undefined), DELEGATION_BOUNDARY);
 });
 
-test("the agy and Grok runners apply the boundary", () => {
-  for (const script of ["agy-runner.mjs", "grok-runner.mjs"]) {
+test("the agy, Grok, and Qwen runners apply the boundary", () => {
+  for (const script of ["agy-runner.mjs", "grok-runner.mjs", "qwen-runner.mjs"]) {
     const source = readScript(script);
     assert.match(
       source,
@@ -75,7 +75,7 @@ test("the boundary is applied where the child is invoked, not where args parse",
   // The background path re-spawns the runner with the original prompt. Applying
   // the boundary during parseArgs would stack a second copy onto every
   // backgrounded run, so the call must sit outside parseArgs.
-  for (const script of ["agy-runner.mjs", "grok-runner.mjs"]) {
+  for (const script of ["agy-runner.mjs", "grok-runner.mjs", "qwen-runner.mjs"]) {
     const source = readScript(script);
     const parseStart = source.indexOf("function parseArgs");
     assert.ok(parseStart !== -1, `${script} should define parseArgs`);

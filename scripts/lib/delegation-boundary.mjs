@@ -18,8 +18,9 @@
 //      stop an agent that reaches for the skill deliberately.
 //
 //   2. This boundary, injected into the prompt. Tool-agnostic and effective
-//      against deliberate use, so it is the only lever available on the agy and
-//      Grok lanes. Applied in code rather than left to the calling command,
+//      against deliberate use, so it is the only lever available on the agy,
+//      Grok, and bounded Qwen-review lanes. Applied in code rather than left to
+//      the calling command,
 //      because it has to hold on every call — foreground, background, resume.
 //
 // The Codex lane assembles its preamble from prose in

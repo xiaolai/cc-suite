@@ -2186,6 +2186,49 @@ fi
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# T78  qwen-runner.mjs — no prompt → exits non-zero
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T78: qwen-runner.mjs — missing prompt is rejected"
+make_tmp
+assert_exit_nonzero node "$SCRIPTS/qwen-runner.mjs" --kind qwen-review
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T79  qwen-runner.mjs — qwen absent → failed job with install hint
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T79: qwen-runner.mjs — qwen not on PATH"
+make_tmp
+mkdir -p node-bin
+ln -s "$(command -v node)" node-bin/node
+STERILE_PATH="$PWD/node-bin:/usr/bin:/bin"
+
+out="$(env PATH="$STERILE_PATH" CLAUDE_PLUGIN_DATA="$PWD/plugin-data" \
+  node "$SCRIPTS/qwen-runner.mjs" --kind qwen-review \
+  --max-resumes 0 --attempt-timeout-ms 1000 --idle-timeout-ms 1000 \
+  --timeout-ms 2000 -- "smoke" 2>/dev/null || true)"
+printf '%s' "$out" > result.json
+
+assert_exit0 python3 -c "import json; json.load(open('result.json'))"
+assert_contains "result.json" '"status":"failed"'
+assert_contains "result.json" '"errorCode":"qwen_not_found"'
+assert_contains "result.json" '"jobId"'
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T80  qwen-preflight.sh — qwen absent → error JSON
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T80: qwen-preflight.sh — qwen not on PATH"
+make_tmp
+STERILE_PATH="$(dirname "$(command -v python3)"):/usr/bin:/bin"
+out="$(env PATH="$STERILE_PATH" bash "$SCRIPTS/qwen-preflight.sh" 2>/dev/null || true)"
+printf '%s' "$out" > pf.json
+
+assert_exit0 python3 -c "import json; json.load(open('pf.json'))"
+assert_contains "pf.json" '"status":"error"'
+assert_contains "pf.json" '"error_code":"qwen_not_found"'
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Summary
 # ═══════════════════════════════════════════════════════════════════════════════
 echo
