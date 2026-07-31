@@ -119,7 +119,8 @@ editor:
 workspace, then starts Qwen with Safe Mode, Plan mode, Qwen's sandbox, and
 `stream-json`. A prompt-only review has a zero-call budget. A file review exposes
 only isolated copies and applies a bounded `read_file` call budget. Because Qwen
-0.21.0 ignores `--core-tools` in Safe Mode, the runner instead passes explicit
+versions 0.21.0 through 0.21.2 ignore `--core-tools` in Safe Mode, the runner
+instead passes explicit
 deny rules for every known non-review tool and then checks the real init event:
 prompt-only runs must expose no tools, while target runs must expose exactly
 `read_file`; both must expose no MCP servers. Any new or unexpected advertised

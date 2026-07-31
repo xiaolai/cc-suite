@@ -45,9 +45,10 @@ const EXIT_GRACE_MS = 10 * 1000;
 const SIGKILL_GRACE_MS = 5 * 1000;
 const MAX_RESUMES_LIMIT = 5;
 
-// Qwen 0.21.0 ignores --core-tools in Safe Mode. Deny every known non-review
-// tool explicitly, then verify the actual init tool list before accepting any
-// later stream event. A future unlisted tool therefore fails the init check.
+// Qwen 0.21.0 through 0.21.2 ignore --core-tools in Safe Mode. Deny every known
+// non-review tool explicitly, then verify the actual init tool list before
+// accepting any later stream event. A future unlisted tool therefore fails the
+// init check.
 const QWEN_FORBIDDEN_TOOLS = [
   "edit",
   "write_file",
@@ -55,6 +56,8 @@ const QWEN_FORBIDDEN_TOOLS = [
   "glob",
   "run_shell_command",
   "todo_write",
+  "get_goal",
+  "update_goal",
   "save_memory",
   "agent",
   "skill",
@@ -85,6 +88,7 @@ const QWEN_FORBIDDEN_TOOLS = [
   "notebook_edit",
   "tool_search",
   "read_mcp_resource",
+  "zoom_image",
   "enter_worktree",
   "exit_worktree",
   "workflow",

@@ -169,7 +169,10 @@ test("qwen runner enforces sandbox and built-in budgets at the CLI boundary", ()
     assert.equal(args.includes("--core-tools"), false);
     const excluded = args[args.indexOf("--exclude-tools") + 1].split(",");
     assert.ok(excluded.includes("agent"));
+    assert.ok(excluded.includes("get_goal"));
+    assert.ok(excluded.includes("update_goal"));
     assert.ok(excluded.includes("run_shell_command"));
+    assert.ok(excluded.includes("zoom_image"));
     assert.ok(excluded.includes("computer_use__click"));
     assert.equal(excluded.includes("read_file"), false);
     assert.equal(args[args.indexOf("--max-tool-calls") + 1], "4");
