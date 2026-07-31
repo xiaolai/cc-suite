@@ -22,6 +22,8 @@ function initEvent(sessionId = "session-1") {
     subtype: "init",
     session_id: sessionId,
     permission_mode: "plan",
+    tools: [],
+    mcp_servers: [],
   };
 }
 
@@ -118,7 +120,7 @@ test("an exact target review allows only read_file on the declared real path", (
     fs.writeFileSync(path.join(dir, "other.md"), "other\n");
     const targets = snapshotReviewTargets(dir, ["draft.md"]);
     const state = createQwenStreamState({ cwd: dir, targets });
-    consumeQwenEvent(state, initEvent());
+    consumeQwenEvent(state, { ...initEvent(), tools: ["read_file"] });
     consumeQwenEvent(state, {
       type: "assistant",
       session_id: "session-1",
@@ -160,7 +162,7 @@ test("non-read tools are rejected even when a target is declared", () => {
     fs.writeFileSync(path.join(dir, "draft.md"), "draft\n");
     const targets = snapshotReviewTargets(dir, ["draft.md"]);
     const state = createQwenStreamState({ cwd: dir, targets });
-    consumeQwenEvent(state, initEvent());
+    consumeQwenEvent(state, { ...initEvent(), tools: ["read_file"] });
     assert.throws(
       () => consumeQwenEvent(state, {
         type: "assistant",
@@ -176,6 +178,63 @@ test("non-read tools are rejected even when a target is declared", () => {
       }),
       (error) => error.code === "forbidden_tool"
     );
+  } finally {
+    cleanupDir(dir);
+  }
+});
+
+test("init fails closed when Qwen exposes an unexpected tool", () => {
+  const dir = makeTempDir("qwen-stream-");
+  try {
+    const state = createQwenStreamState({ cwd: dir });
+    assert.throws(
+      () => consumeQwenEvent(state, { ...initEvent(), tools: ["agent"] }),
+      (error) => error.code === "tool_boundary_mismatch"
+    );
+  } finally {
+    cleanupDir(dir);
+  }
+});
+
+test("target review requires read_file to be the only advertised tool", () => {
+  const dir = makeTempDir("qwen-stream-");
+  try {
+    fs.writeFileSync(path.join(dir, "draft.md"), "draft\n");
+    const targets = snapshotReviewTargets(dir, ["draft.md"]);
+    const state = createQwenStreamState({ cwd: dir, targets });
+    assert.throws(
+      () => consumeQwenEvent(state, initEvent()),
+      (error) => error.code === "tool_boundary_mismatch"
+    );
+  } finally {
+    cleanupDir(dir);
+  }
+});
+
+test("init fails closed unless Safe Mode leaves the MCP server set empty", () => {
+  const dir = makeTempDir("qwen-stream-");
+  try {
+    const state = createQwenStreamState({ cwd: dir });
+    assert.throws(
+      () => consumeQwenEvent(state, { ...initEvent(), mcp_servers: ["claude-code"] }),
+      (error) => error.code === "tool_boundary_mismatch"
+    );
+  } finally {
+    cleanupDir(dir);
+  }
+});
+
+test("session_start after init does not revalidate or replace the verified boundary", () => {
+  const dir = makeTempDir("qwen-stream-");
+  try {
+    const state = createQwenStreamState({ cwd: dir });
+    consumeQwenEvent(state, initEvent());
+    consumeQwenEvent(state, {
+      type: "system",
+      subtype: "session_start",
+      session_id: "session-1",
+    });
+    assert.equal(state.toolBoundaryVerified, true);
   } finally {
     cleanupDir(dir);
   }

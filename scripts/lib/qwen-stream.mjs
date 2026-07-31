@@ -278,19 +278,10 @@ function inspectAssistant(state, event) {
       validateReadTool(state, call);
       continue;
     }
-    if (typeof block === "string") {
-      state.assistantText.push(block);
-      continue;
-    }
+    if (typeof block === "string") continue;
     if (!block || typeof block !== "object") continue;
-    if (block.type === "text" && typeof block.text === "string") {
-      state.assistantText.push(block.text);
-      continue;
-    }
-    if (typeof block.text === "string" && !block.thought) {
-      state.assistantText.push(block.text);
-      continue;
-    }
+    if (block.type === "text" && typeof block.text === "string") continue;
+    if (typeof block.text === "string" && !block.thought) continue;
     const kind = block.type ?? (block.thought ? "thinking" : null);
     if (
       kind === "thinking" ||
@@ -314,6 +305,9 @@ function inspectAssistant(state, event) {
 }
 
 function validateInit(state, event) {
+  if (state.initSeen) {
+    throw new QwenStreamError("duplicate_init", "Qwen emitted more than one init event");
+  }
   const mode = event.permission_mode ?? event.permissionMode;
   if (mode !== "plan") {
     throw new QwenStreamError(
@@ -321,8 +315,40 @@ function validateInit(state, event) {
       `Qwen did not confirm Plan mode (received ${mode ?? "no permission_mode"})`
     );
   }
+
+  if (!Array.isArray(event.mcp_servers) || event.mcp_servers.length !== 0) {
+    throw new QwenStreamError(
+      "tool_boundary_mismatch",
+      "Qwen init did not confirm an empty MCP server set"
+    );
+  }
+  if (!Array.isArray(event.tools) || event.tools.some((tool) => typeof tool !== "string")) {
+    throw new QwenStreamError(
+      "tool_boundary_mismatch",
+      "Qwen init did not provide a valid tool list"
+    );
+  }
+
+  const advertised = new Set(event.tools);
+  const expected = state.allowedTargets.size > 0 ? new Set(["read_file"]) : new Set();
+  const unexpected = [...advertised].filter((tool) => !expected.has(tool));
+  const missing = [...expected].filter((tool) => !advertised.has(tool));
+  if (unexpected.length > 0 || missing.length > 0 || advertised.size !== event.tools.length) {
+    const details = [
+      unexpected.length > 0 ? `unexpected=${unexpected.join(",")}` : null,
+      missing.length > 0 ? `missing=${missing.join(",")}` : null,
+      advertised.size !== event.tools.length ? "duplicate tool names" : null,
+    ].filter(Boolean).join("; ");
+    throw new QwenStreamError(
+      "tool_boundary_mismatch",
+      `Qwen init tool boundary mismatch${details ? `: ${details}` : ""}`
+    );
+  }
+
   state.initSeen = true;
   state.permissionMode = mode;
+  state.advertisedTools = [...advertised];
+  state.toolBoundaryVerified = true;
 }
 
 function inspectResult(state, event) {
@@ -357,8 +383,9 @@ export function createQwenStreamState({ cwd, targets = [] }) {
     allowedTargets: new Map(targets.map((target) => [target.realPath, target])),
     initSeen: false,
     permissionMode: null,
+    advertisedTools: [],
+    toolBoundaryVerified: false,
     sessionId: null,
-    assistantText: [],
     toolCalls: [],
     resultSeen: false,
     resultSubtype: null,
@@ -386,7 +413,7 @@ export function consumeQwenEvent(state, event) {
 
   switch (event.type) {
     case "system":
-      if (event.subtype === "init" || event.subtype === "session_start") {
+      if (event.subtype === "init") {
         validateInit(state, event);
       }
       return;

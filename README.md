@@ -23,7 +23,7 @@ Each tool reads from its own files. `CLAUDE.md` and `AGENTS.md` sit next to each
 | **Claude → `agy` delegation** | `scripts/agy-runner.mjs` drives Antigravity CLI headlessly, with the same job tracking, background mode, deadline enforcement, and conversation resume as the Codex runner. |
 | **`agy` → Claude delegation** | The same claude-octopus MCP server, registered in `agy`'s workspace config. |
 | **Claude → Grok delegation** | `/cc-suite:grok` drives **Grok Build** over the Agent Client Protocol (`scripts/grok-runner.mjs` acts as the ACP client to `grok agent stdio`), with the same job tracking, background mode, deadline enforcement, and session resume as the Codex/agy runners. |
-| **Claude → Qwen review** | `/cc-suite:qwen-review` runs Qwen as a bounded critic: Safe Mode + Plan mode + sandbox, isolated target copies, a read-file-only tool allowlist and budget, strict terminal-result validation, verified file hashes, and at most two same-session resumes after incomplete output. |
+| **Claude → Qwen review** | `/cc-suite:qwen-review` runs Qwen as a bounded critic: Safe Mode + Plan mode + sandbox, isolated target copies, explicit tool denials plus init-surface verification, a bounded `read_file` budget, strict terminal-result validation, verified file hashes, and at most two same-session resumes after incomplete output. |
 | **More coding agents (opt-in)** | `/cc-suite:bridge-tools` mirrors the project MCP surface into **Grok Build**, **opencode**, **Qwen Code**, and **Kimi CLI** — each selected in `.cc-suite.md`'s `## Enabled Tools` list. Grok, opencode, and Kimi read `AGENTS.md` and shared skills natively, so only MCP config is mirrored (per tool's native format); Qwen Code also gets a skills symlink and an instruction-file setting, since it reads neither by default. China-aware: Qwen/Kimi/opencode work natively in mainland China; Grok is VPN-only. |
 
 ## More coding agents (opt-in)
@@ -118,10 +118,15 @@ editor:
 `scripts/qwen-runner.mjs` copies declared targets into a private temporary
 workspace, then starts Qwen with Safe Mode, Plan mode, Qwen's sandbox, and
 `stream-json`. A prompt-only review has a zero-call budget. A file review exposes
-only isolated copies, registers only `read_file`, applies a bounded call budget,
-and rejects stream events for undeclared paths. Success requires a Plan-mode init
-event, no policy violation, a non-empty terminal success result, exit code 0,
-and unchanged source and staged hashes.
+only isolated copies and applies a bounded `read_file` call budget. Because Qwen
+0.21.0 ignores `--core-tools` in Safe Mode, the runner instead passes explicit
+deny rules for every known non-review tool and then checks the real init event:
+prompt-only runs must expose no tools, while target runs must expose exactly
+`read_file`; both must expose no MCP servers. Any new or unexpected advertised
+tool fails closed before later stream events are accepted. The stream observer
+also rejects undeclared paths. Success requires this verified Plan-mode init,
+no policy violation, a non-empty terminal success result, exit code 0, and
+unchanged source and staged hashes.
 
 If Qwen exits without a terminal result, the runner resumes the same session at
 most twice. It never retries parsing, policy, terminal-error, exit-mismatch, or
@@ -131,7 +136,9 @@ diagnostic files explicitly. Qwen's output remains critique, not evidence — th
 calling agent verifies findings and retains final judgment.
 
 These controls are defense in depth, not a promise of perfect OS isolation.
-Temporary copies are removed after a normal job; never review secrets.
+Temporary copies are removed after a normal job and on `SIGHUP`, `SIGINT`, or
+`SIGTERM`; an uncatchable `SIGKILL` can still leave a private temporary
+directory behind. Never review secrets.
 
 ## Antigravity CLI (`agy`)
 

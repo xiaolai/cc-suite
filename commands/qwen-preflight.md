@@ -34,7 +34,9 @@ Display:
 - Plan mode
 - Qwen sandbox
 - isolated temporary target copies
-- read-file tool allowlist and bounded tool calls
+- explicit non-review tool denials and verified init tool surface
+- zero tool-call budget for prompt-only reviews
+- bounded `read_file` calls for declared targets
 - stream-json completion validation
 - exact-target read policy
 - bounded session resume

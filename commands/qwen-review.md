@@ -77,9 +77,11 @@ The runner:
 1. Injects the shared delegation boundary.
 2. Copies declared files into a private temporary workspace, then starts Qwen
    with `--safe-mode --sandbox --approval-mode plan`.
-3. Uses Qwen's tool allowlist and tool budget: no calls for prompt-only review,
-   or only bounded `read_file` calls for the isolated target copies. The stream
-   observer also rejects undeclared paths.
+3. Denies every known non-review tool at Qwen's CLI boundary and checks the
+   actual init event before accepting later events: no exposed tools or calls
+   for prompt-only review, or exactly `read_file` with a bounded call budget for
+   isolated target copies. Any unexpected advertised tool fails closed. The
+   stream observer also rejects undeclared paths.
 4. Accepts success only after a non-empty terminal `result`, `is_error=false`,
    and process exit code 0.
 5. Verifies target hashes after every attempt.
@@ -87,9 +89,10 @@ The runner:
    exit. Policy, parsing, terminal-error, exit-mismatch, and hash failures are
    never resumed.
 
-The runner deletes normal temporary copies after the job. This narrows Qwen's
-workspace view, but it is still defense in depth rather than a claim of perfect
-OS isolation. Do not send secrets.
+The runner deletes temporary copies after the job and on catchable termination
+signals. An uncatchable `SIGKILL` can still leave a private temporary directory
+behind. This narrows Qwen's workspace view, but it is still defense in depth
+rather than a claim of perfect OS isolation. Do not send secrets.
 
 ### Step 4: Report and adjudicate
 

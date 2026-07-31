@@ -73,5 +73,5 @@ process.stdout.write(ok ? "yes" : "no");
   fi
 fi
 
-printf '{"backend":"qwen","preflight_schema":%s,"status":"ok","qwen_version":%s,"minimum_version":"%s","auth_mode":"not_probed","default_model":null,"models":[],"reasoning_efforts":%s,"sandbox_levels":%s,"sandbox_provider":"%s","capabilities":{"safe_mode":true,"plan_mode":true,"sandbox":true,"stream_json":true,"resume":true,"tool_allowlist":true,"tool_budget":true,"isolated_target_copies":true,"exact_target_policy":true}}\n' \
+printf '{"backend":"qwen","preflight_schema":%s,"status":"ok","qwen_version":%s,"minimum_version":"%s","auth_mode":"not_probed","default_model":null,"models":[],"reasoning_efforts":%s,"sandbox_levels":%s,"sandbox_provider":"%s","capabilities":{"safe_mode":true,"plan_mode":true,"sandbox":true,"stream_json":true,"resume":true,"tool_boundary":true,"tool_budget":true,"zero_tool_budget":true,"isolated_target_copies":true,"exact_target_policy":true}}\n' \
   "$PREFLIGHT_SCHEMA" "$QWEN_VERSION_JSON" "$MIN_VERSION" "$REASONING_EFFORTS" "$SANDBOX_LEVELS" "$(json_escape "$SANDBOX_PROVIDER")"

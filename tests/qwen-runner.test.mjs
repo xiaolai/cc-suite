@@ -4,7 +4,7 @@ import path from "node:path";
 import process from "node:process";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 import { cleanupDir, makeTempDir } from "./helpers.mjs";
 
@@ -39,9 +39,28 @@ const target = findTarget(process.cwd());
 const resumed = args.includes("--resume");
 const session = "fake-qwen-session";
 const emit = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
-emit({ type: "system", subtype: "init", session_id: session, permission_mode: "plan" });
+const excludes = args[args.indexOf("--exclude-tools") + 1]?.split(",") || [];
+const tools = excludes.includes("read_file") ? [] : ["read_file"];
+if (mode === "unexpected-init-tool") tools.push("agent");
+if (process.env.FAKE_QWEN_CWD_FILE) {
+  fs.writeFileSync(process.env.FAKE_QWEN_CWD_FILE, process.cwd());
+}
+if (process.env.FAKE_QWEN_PID_FILE) {
+  fs.writeFileSync(process.env.FAKE_QWEN_PID_FILE, String(process.pid));
+}
+emit({
+  type: "system",
+  subtype: "init",
+  session_id: session,
+  permission_mode: "plan",
+  tools,
+  mcp_servers: [],
+});
 if (mode === "timeout-resume" && !resumed) {
   process.stdout.write('{"type":"assistant"');
+  setInterval(() => {}, 1000);
+} else if (mode === "signal-hang") {
+  process.on("SIGTERM", () => {});
   setInterval(() => {}, 1000);
 } else {
   if (mode === "malformed") {
@@ -147,10 +166,12 @@ test("qwen runner enforces sandbox and built-in budgets at the CLI boundary", ()
       "--approval-mode",
       "plan",
     ]);
-    assert.deepEqual(args.slice(args.indexOf("--core-tools"), args.indexOf("--core-tools") + 2), [
-      "--core-tools",
-      "read_file",
-    ]);
+    assert.equal(args.includes("--core-tools"), false);
+    const excluded = args[args.indexOf("--exclude-tools") + 1].split(",");
+    assert.ok(excluded.includes("agent"));
+    assert.ok(excluded.includes("run_shell_command"));
+    assert.ok(excluded.includes("computer_use__click"));
+    assert.equal(excluded.includes("read_file"), false);
     assert.equal(args[args.indexOf("--max-tool-calls") + 1], "4");
     assert.equal(args[args.indexOf("--max-session-turns") + 1], "30");
     assert.match(args[args.indexOf("--max-wall-time") + 1], /^\d+s$/);
@@ -166,6 +187,8 @@ test("prompt-only review gives Qwen a zero tool-call budget", () => {
     const args = JSON.parse(fs.readFileSync(run.argsFile, "utf8"));
     assert.equal(args[args.indexOf("--max-tool-calls") + 1], "0");
     assert.equal(args.includes("--core-tools"), false);
+    const excluded = args[args.indexOf("--exclude-tools") + 1].split(",");
+    assert.ok(excluded.includes("read_file"));
   } finally {
     cleanupDir(run.dir);
   }
@@ -239,6 +262,7 @@ test("qwen runner allows read_file only for the exact declared target", () => {
 for (const [mode, errorCode] of [
   ["malformed", "invalid_json"],
   ["forbidden", "forbidden_tool"],
+  ["unexpected-init-tool", "tool_boundary_mismatch"],
   ["wrong-target", "forbidden_tool_path"],
   ["terminal-error", "qwen_terminal_error"],
   ["exit-mismatch", "exit_mismatch"],
@@ -267,6 +291,82 @@ test("an empty terminal result is incomplete, not successful", () => {
     cleanupDir(run.dir);
   }
 });
+
+test("unknown runner arguments fail instead of being ignored", () => {
+  const run = runFake("normal", ["--definitely-unknown"]);
+  try {
+    assert.notEqual(run.result.status, 0);
+    assert.equal(run.output.status, "failed");
+    assert.equal(run.output.errorCode, "invalid_arguments");
+    assert.match(run.output.error, /Unknown argument/);
+    assert.equal(fs.existsSync(run.argsFile), false);
+  } finally {
+    cleanupDir(run.dir);
+  }
+});
+
+test("SIGTERM removes the private review stage and stops the runner", async () => {
+  const fixture = setup();
+  const cwdFile = path.join(fixture.dir, "qwen-cwd.txt");
+  const pidFile = path.join(fixture.dir, "qwen-pid.txt");
+  const pluginData = path.join(fixture.dir, "plugin-data");
+  const child = spawn(process.execPath, [
+    RUNNER,
+    "--target", "draft.md",
+    "--max-resumes", "0",
+    "--attempt-timeout-ms", "30000",
+    "--idle-timeout-ms", "30000",
+    "--timeout-ms", "30000",
+    "--",
+    "Read and review draft.md.",
+  ], {
+    cwd: fixture.dir,
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      PATH: `${fixture.bin}${path.delimiter}${process.env.PATH}`,
+      CLAUDE_PLUGIN_DATA: pluginData,
+      FAKE_QWEN_MODE: "signal-hang",
+      FAKE_QWEN_CWD_FILE: cwdFile,
+      FAKE_QWEN_PID_FILE: pidFile,
+    },
+  });
+
+  try {
+    for (let attempt = 0; attempt < 100 && !fs.existsSync(cwdFile); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.equal(fs.existsSync(cwdFile), true);
+    const stageRoot = fs.readFileSync(cwdFile, "utf8");
+    const qwenPid = Number(fs.readFileSync(pidFile, "utf8"));
+    assert.equal(fs.existsSync(stageRoot), true);
+
+    child.kill("SIGTERM");
+    const exitCode = await new Promise((resolve) => child.once("close", resolve));
+    assert.equal(exitCode, 143);
+    assert.equal(fs.existsSync(stageRoot), false);
+    assert.throws(() => process.kill(qwenPid, 0), { code: "ESRCH" });
+    const state = readBackgroundState(pluginData);
+    const job = state.jobs.find((candidate) => candidate.kind === "qwen-review");
+    assert.equal(job.status, "failed");
+    assert.equal(job.errorCode, "interrupted");
+  } finally {
+    if (child.exitCode === null) child.kill("SIGKILL");
+    cleanupDir(fixture.dir);
+  }
+});
+
+for (const value of ["", " ", "0x10", "1e2"]) {
+  test(`strict integer parsing rejects ${JSON.stringify(value)}`, () => {
+    const run = runFake("normal", ["--max-resumes", value]);
+    try {
+      assert.notEqual(run.result.status, 0);
+      assert.equal(run.output.errorCode, "invalid_arguments");
+    } finally {
+      cleanupDir(run.dir);
+    }
+  });
+}
 
 test("hash mismatch fails even when Qwen emits a success result", () => {
   const run = runFake("mutate", ["--target", "draft.md"]);
@@ -414,7 +514,7 @@ test("qwen preflight reports a local fake 0.21.0 binary as ready", () => {
     assert.equal(output.status, "ok");
     assert.equal(output.qwen_version, "0.21.0");
     assert.equal(output.sandbox_provider, "sandbox-exec");
-    assert.equal(output.capabilities.tool_allowlist, true);
+    assert.equal(output.capabilities.tool_boundary, true);
     assert.equal(output.capabilities.exact_target_policy, true);
   } finally {
     cleanupDir(fixture.dir);

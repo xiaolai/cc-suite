@@ -101,7 +101,7 @@ Delegation lanes:
 | Codex / agy → Claude | pinned `claude-octopus` MCP server (also exposes `claude_code_sessions` / `_transcript`) | — |
 | Claude → agy | `agy-runner.mjs` (`agy -p`, conversation recovered by dir-diff) | `/cc-suite:agy-preflight` (`agy-preflight.sh`) |
 | Claude → Grok | `grok-runner.mjs` — ACP client driving `grok agent stdio` (`initialize` → `session/new`/`load` → `session/prompt`); `threadId` is the ACP session id | `/cc-suite:grok-preflight` (`grok-preflight.sh`, fast/local) |
-| Claude → Qwen critic | `qwen-runner.mjs` — Safe Mode + Plan mode + sandbox, isolated target copies, bounded `read_file`, strict terminal-result validation, verified hashes, and at most two same-session resumes | `/cc-suite:qwen-preflight` (`qwen-preflight.sh`, fast/local) |
+| Claude → Qwen critic | `qwen-runner.mjs` — Safe Mode + Plan mode + sandbox, isolated target copies, explicit tool denials plus init-surface verification, bounded `read_file`, strict terminal-result validation, verified hashes, and at most two same-session resumes | `/cc-suite:qwen-preflight` (`qwen-preflight.sh`, fast/local) |
 
 All preflight scripts emit the same JSON shape (`status`, `default_model`, `models`, `reasoning_efforts`, `sandbox_levels`, `error_code`). New backend runner ⇒ mirror `agy-runner.mjs` (parseArgs / executeX / runForeground / runBackground / runBackgroundWorker) and add a `<backend>-preflight`.
 

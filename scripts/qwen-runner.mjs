@@ -45,6 +45,94 @@ const EXIT_GRACE_MS = 10 * 1000;
 const SIGKILL_GRACE_MS = 5 * 1000;
 const MAX_RESUMES_LIMIT = 5;
 
+// Qwen 0.21.0 ignores --core-tools in Safe Mode. Deny every known non-review
+// tool explicitly, then verify the actual init tool list before accepting any
+// later stream event. A future unlisted tool therefore fails the init check.
+const QWEN_FORBIDDEN_TOOLS = [
+  "edit",
+  "write_file",
+  "grep_search",
+  "glob",
+  "run_shell_command",
+  "todo_write",
+  "save_memory",
+  "agent",
+  "skill",
+  "exit_plan_mode",
+  "enter_plan_mode",
+  "web_fetch",
+  "web_search",
+  "image_gen",
+  "list_directory",
+  "lsp",
+  "ask_user_question",
+  "cron_create",
+  "cron_list",
+  "cron_delete",
+  "loop_wakeup",
+  "create_sub_session",
+  "list_agents",
+  "task_stop",
+  "task_create",
+  "task_update",
+  "task_list",
+  "team_create",
+  "team_delete",
+  "team_plan_approval",
+  "send_message",
+  "structured_output",
+  "monitor",
+  "notebook_edit",
+  "tool_search",
+  "read_mcp_resource",
+  "enter_worktree",
+  "exit_worktree",
+  "workflow",
+  "artifact",
+  "record_artifact",
+  "computer_use__bring_to_front",
+  "computer_use__check_for_update",
+  "computer_use__check_permissions",
+  "computer_use__click",
+  "computer_use__double_click",
+  "computer_use__drag",
+  "computer_use__end_session",
+  "computer_use__get_accessibility_tree",
+  "computer_use__get_agent_cursor_state",
+  "computer_use__get_config",
+  "computer_use__get_cursor_position",
+  "computer_use__get_recording_state",
+  "computer_use__get_screen_size",
+  "computer_use__get_window_state",
+  "computer_use__hotkey",
+  "computer_use__kill_app",
+  "computer_use__launch_app",
+  "computer_use__list_apps",
+  "computer_use__list_windows",
+  "computer_use__move_cursor",
+  "computer_use__page",
+  "computer_use__press_key",
+  "computer_use__replay_trajectory",
+  "computer_use__right_click",
+  "computer_use__scroll",
+  "computer_use__set_agent_cursor_enabled",
+  "computer_use__set_agent_cursor_motion",
+  "computer_use__set_agent_cursor_style",
+  "computer_use__set_config",
+  "computer_use__set_value",
+  "computer_use__start_recording",
+  "computer_use__start_session",
+  "computer_use__stop_recording",
+  "computer_use__type_text",
+  "computer_use__zoom",
+];
+
+const ACTIVE_QWEN_CHILDREN = new Set();
+const ACTIVE_REVIEW_STAGES = new Set();
+const ACTIVE_JOB_CONTEXTS = new Set();
+let handlingSignal = false;
+let receivedSignal = null;
+
 const AUTO_RESUME_PROMPT = [
   "The previous headless turn ended without a valid terminal result event.",
   "Continue the same bounded review from the restored session.",
@@ -52,9 +140,26 @@ const AUTO_RESUME_PROMPT = [
   "Return the final review directly.",
 ].join(" ");
 
-function parsePositiveInt(value, fallback) {
+function parseIntegerFlag(flag, value, minimum, maximum = Number.MAX_SAFE_INTEGER) {
+  if (!/^\d+$/.test(value)) {
+    throw new QwenStreamError("invalid_arguments", `${flag} must be a decimal integer`);
+  }
   const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+  if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
+    const range = maximum === Number.MAX_SAFE_INTEGER
+      ? `an integer >= ${minimum}`
+      : `an integer from ${minimum} to ${maximum}`;
+    throw new QwenStreamError("invalid_arguments", `${flag} must be ${range}`);
+  }
+  return parsed;
+}
+
+function optionValue(argv, index, flag) {
+  const value = argv[index + 1];
+  if (value === undefined || value === "--" || value.startsWith("--")) {
+    throw new QwenStreamError("invalid_arguments", `${flag} requires a value`);
+  }
+  return value;
 }
 
 function parseArgs(argv) {
@@ -76,31 +181,71 @@ function parseArgs(argv) {
   let i = 2;
   while (i < argv.length) {
     const arg = argv[i];
-    if (arg === "--kind" && argv[i + 1]) args.kind = argv[++i];
-    else if (arg === "--model" && argv[i + 1]) args.model = argv[++i];
-    else if (arg === "--target" && argv[i + 1]) args.targets.push(argv[++i]);
-    else if (arg === "--max-resumes" && argv[i + 1]) {
-      const parsed = Number(argv[++i]);
-      if (Number.isSafeInteger(parsed) && parsed >= 0) {
-        args.maxResumes = Math.min(parsed, MAX_RESUMES_LIMIT);
-      }
-    } else if (arg === "--attempt-timeout-ms" && argv[i + 1]) {
-      args.attemptTimeoutMs = parsePositiveInt(argv[++i], args.attemptTimeoutMs);
-    } else if (arg === "--idle-timeout-ms" && argv[i + 1]) {
-      args.idleTimeoutMs = parsePositiveInt(argv[++i], args.idleTimeoutMs);
-    } else if (arg === "--timeout-ms" && argv[i + 1]) {
-      args.timeoutMs = parsePositiveInt(argv[++i], args.timeoutMs);
-    } else if (arg === "--debug-capture") args.debugCapture = true;
-    else if (arg === "--background") args.background = true;
-    else if (arg === "--session-id" && argv[i + 1]) args.sessionId = argv[++i];
-    else if (arg === "--summary" && argv[i + 1]) args.summary = argv[++i];
-    else if (arg === "--") {
-      args.prompt = argv.slice(i + 1).join(" ");
-      break;
+    switch (arg) {
+      case "--kind":
+        args.kind = optionValue(argv, i, arg);
+        i += 2;
+        continue;
+      case "--model":
+        args.model = optionValue(argv, i, arg);
+        i += 2;
+        continue;
+      case "--target":
+        args.targets.push(optionValue(argv, i, arg));
+        i += 2;
+        continue;
+      case "--max-resumes":
+        args.maxResumes = parseIntegerFlag(
+          arg,
+          optionValue(argv, i, arg),
+          0,
+          MAX_RESUMES_LIMIT
+        );
+        i += 2;
+        continue;
+      case "--attempt-timeout-ms":
+        args.attemptTimeoutMs = parseIntegerFlag(arg, optionValue(argv, i, arg), 1);
+        i += 2;
+        continue;
+      case "--idle-timeout-ms":
+        args.idleTimeoutMs = parseIntegerFlag(arg, optionValue(argv, i, arg), 1);
+        i += 2;
+        continue;
+      case "--timeout-ms":
+        args.timeoutMs = parseIntegerFlag(arg, optionValue(argv, i, arg), 1);
+        i += 2;
+        continue;
+      case "--debug-capture":
+        args.debugCapture = true;
+        i += 1;
+        continue;
+      case "--background":
+        args.background = true;
+        i += 1;
+        continue;
+      case "--session-id":
+        args.sessionId = optionValue(argv, i, arg);
+        i += 2;
+        continue;
+      case "--summary":
+        args.summary = optionValue(argv, i, arg);
+        i += 2;
+        continue;
+      case "--":
+        args.prompt = argv.slice(i + 1).join(" ");
+        i = argv.length;
+        continue;
+      default:
+        throw new QwenStreamError("invalid_arguments", `Unknown argument: ${arg}`);
     }
-    i += 1;
   }
   return args;
+}
+
+function excludedTools(targets) {
+  return targets.length === 0
+    ? [...QWEN_FORBIDDEN_TOOLS, "read_file"]
+    : QWEN_FORBIDDEN_TOOLS;
 }
 
 function appendLog(logFile, message) {
@@ -146,8 +291,8 @@ function buildQwenArgs(args, targets, resumeId, prompt, attemptTimeoutMs) {
     "--max-wall-time", `${Math.max(1, Math.ceil(attemptTimeoutMs / 1000))}s`,
     "--max-session-turns", "30",
     "--max-tool-calls", String(maxToolCalls),
+    "--exclude-tools", excludedTools(targets).join(","),
   ];
-  if (targets.length > 0) qwenArgs.push("--core-tools", "read_file");
   if (args.model) qwenArgs.push("--model", args.model);
   if (resumeId) qwenArgs.push("--resume", resumeId);
   qwenArgs.push("--prompt", boundedPrompt(prompt, targets));
@@ -186,6 +331,71 @@ function sandboxEnvironment() {
   return env;
 }
 
+function cleanupReviewStage(stage) {
+  ACTIVE_REVIEW_STAGES.delete(stage);
+  removeStagedReview(stage);
+}
+
+function markActiveJobsInterrupted(signal) {
+  const errorMessage = `Qwen review runner interrupted by ${signal}`;
+  const completedAt = new Date().toISOString();
+  for (const context of ACTIVE_JOB_CONTEXTS) {
+    try {
+      upsertJob(context.cwd, {
+        id: context.jobId,
+        status: "failed",
+        phase: "failed",
+        errorCode: "interrupted",
+        errorMessage,
+        completedAt,
+      });
+      writeJobFile(context.cwd, context.jobId, {
+        rawOutput: "",
+        threadId: null,
+        attempts: [],
+        error: errorMessage,
+        errorCode: "interrupted",
+      });
+    } catch {
+      // Continue terminating the child and cleaning every private stage.
+    }
+  }
+}
+
+for (const [signal, exitCode] of [["SIGHUP", 129], ["SIGINT", 130], ["SIGTERM", 143]]) {
+  process.once(signal, () => {
+    if (handlingSignal) return;
+    handlingSignal = true;
+    receivedSignal = signal;
+    process.exitCode = exitCode;
+    for (const child of ACTIVE_QWEN_CHILDREN) {
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        // Best-effort child shutdown; stage cleanup remains mandatory.
+      }
+    }
+    for (const stage of ACTIVE_REVIEW_STAGES) {
+      try {
+        removeStagedReview(stage);
+      } catch {
+        // The process is terminating; do not leave another stage unexamined.
+      }
+    }
+    markActiveJobsInterrupted(signal);
+    setTimeout(() => {
+      for (const child of ACTIVE_QWEN_CHILDREN) {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // Best effort; the parent must still terminate with the signal code.
+        }
+      }
+      setTimeout(() => process.exit(exitCode), 100);
+    }, 1000);
+  });
+}
+
 function executeQwenAttempt(cwd, args, targets, logFile, attempt, resumeId, prompt, attemptTimeoutMs) {
   return new Promise((resolve) => {
     const qwenArgs = buildQwenArgs(args, targets, resumeId, prompt, attemptTimeoutMs);
@@ -219,6 +429,7 @@ function executeQwenAttempt(cwd, args, targets, logFile, attempt, resumeId, prom
       stdio: ["ignore", "pipe", "pipe"],
       env: sandboxEnvironment(),
     });
+    ACTIVE_QWEN_CHILDREN.add(child);
 
     const startedAt = Date.now();
     const heartbeat = setInterval(() => {
@@ -244,8 +455,9 @@ function executeQwenAttempt(cwd, args, targets, logFile, attempt, resumeId, prom
         ...result,
         sessionId: state.sessionId || resumeId || null,
         permissionMode: state.permissionMode,
+        advertisedTools: state.advertisedTools,
+        toolBoundaryVerified: state.toolBoundaryVerified,
         toolCalls: state.toolCalls,
-        assistantText: state.assistantText.join("").trim(),
         usage: state.usage,
         debugCapture: capture,
       });
@@ -296,12 +508,15 @@ function executeQwenAttempt(cwd, args, targets, logFile, attempt, resumeId, prom
     child.stdout.on("data", (chunk) => {
       resetIdleTimer();
       if (capture) appendPrivate(capture.stdout, chunk);
+      if (protocolError) return;
       try {
         for (const line of decoder.push(chunk)) consumeLine(line);
       } catch (error) {
-        protocolError = error instanceof QwenStreamError
-          ? error
-          : new QwenStreamError("stream_failure", error.message);
+        if (!protocolError) {
+          protocolError = error instanceof QwenStreamError
+            ? error
+            : new QwenStreamError("stream_failure", error.message);
+        }
         appendLog(logFile, `Attempt ${attempt}: ${protocolError.code}: ${redactDiagnostic(protocolError.message)}`);
         terminate(protocolError.code);
       }
@@ -328,14 +543,26 @@ function executeQwenAttempt(cwd, args, targets, logFile, attempt, resumeId, prom
 
     child.on("close", (code, signal) => {
       childClosed = true;
+      ACTIVE_QWEN_CHILDREN.delete(child);
       clearTimeout(killTimer);
       if (settled) return;
-      try {
-        for (const line of decoder.finish()) consumeLine(line);
-      } catch (error) {
-        protocolError = error instanceof QwenStreamError
-          ? error
-          : new QwenStreamError("stream_failure", error.message);
+      if (receivedSignal) {
+        finish({
+          outcome: "failed",
+          errorCode: "interrupted",
+          errorMessage: `Qwen review runner interrupted by ${receivedSignal}`,
+          rawOutput: "",
+        });
+        return;
+      }
+      if (!protocolError) {
+        try {
+          for (const line of decoder.finish()) consumeLine(line);
+        } catch (error) {
+          protocolError = error instanceof QwenStreamError
+            ? error
+            : new QwenStreamError("stream_failure", error.message);
+        }
       }
 
       if (timedOut) {
@@ -436,12 +663,25 @@ async function executeQwen(cwd, args, targets, integrityTargets, logFile) {
       errorCode: result.errorCode ?? null,
       sessionId: result.sessionId,
       permissionMode: result.permissionMode,
+      advertisedTools: result.advertisedTools,
+      toolBoundaryVerified: result.toolBoundaryVerified,
       toolCalls: result.toolCalls.map((call) => ({
         name: call.name,
         path: call.displayPath,
       })),
       ...(result.debugCapture ? { debugCapture: result.debugCapture } : {}),
     });
+
+    if (result.errorCode === "interrupted") {
+      return {
+        status: "failed",
+        errorCode: result.errorCode,
+        errorMessage: result.errorMessage,
+        sessionId: result.sessionId,
+        rawOutput: "",
+        attempts,
+      };
+    }
 
     const hashes = verifyReviewTargets(integrityTargets);
     if (!hashes.ok) {
@@ -509,6 +749,7 @@ function jobPayload(result) {
 
 async function runForeground(cwd, args) {
   const jobId = generateJobId(args.kind);
+  const jobContext = { cwd, jobId };
   const logFile = resolveJobLogFile(cwd, jobId);
   const hostSessionId = args.sessionId || process.env.CODEX_TOOLKIT_SESSION_ID || null;
   const sourceTargets = snapshotReviewTargets(cwd, args.targets);
@@ -526,11 +767,13 @@ async function runForeground(cwd, args) {
     deadlineAt: new Date(Date.now() + args.timeoutMs).toISOString(),
     logFile,
   });
+  ACTIVE_JOB_CONTEXTS.add(jobContext);
 
   let result;
   let stage = null;
   try {
     stage = stageReviewTargets(sourceTargets);
+    ACTIVE_REVIEW_STAGES.add(stage);
     appendLog(logFile, `Starting bounded Qwen review (foreground, targets=${stage.targets.length}, isolated=true)`);
     result = await executeQwen(
       stage.root,
@@ -540,7 +783,7 @@ async function runForeground(cwd, args) {
       logFile
     );
   } finally {
-    if (stage) removeStagedReview(stage);
+    if (stage) cleanupReviewStage(stage);
   }
   upsertJob(cwd, {
     id: jobId,
@@ -552,6 +795,7 @@ async function runForeground(cwd, args) {
     ...(result.errorMessage ? { errorMessage: result.errorMessage, errorCode: result.errorCode } : {}),
   });
   writeJobFile(cwd, jobId, jobPayload(result));
+  ACTIVE_JOB_CONTEXTS.delete(jobContext);
 
   process.stdout.write(JSON.stringify({
     jobId,
@@ -647,6 +891,7 @@ function runBackground(cwd, args) {
 }
 
 async function runBackgroundWorker(cwd, args, jobId) {
+  const jobContext = { cwd, jobId };
   const logFile = resolveJobLogFile(cwd, jobId);
   const sourceTargets = snapshotReviewTargets(cwd, args.targets);
   upsertJob(cwd, {
@@ -657,10 +902,12 @@ async function runBackgroundWorker(cwd, args, jobId) {
     startedAt: new Date().toISOString(),
     deadlineAt: new Date(Date.now() + args.timeoutMs).toISOString(),
   });
+  ACTIVE_JOB_CONTEXTS.add(jobContext);
   let result;
   let stage = null;
   try {
     stage = stageReviewTargets(sourceTargets);
+    ACTIVE_REVIEW_STAGES.add(stage);
     appendLog(logFile, `Background worker started (backend=qwen, targets=${stage.targets.length}, isolated=true)`);
     result = await executeQwen(
       stage.root,
@@ -670,7 +917,7 @@ async function runBackgroundWorker(cwd, args, jobId) {
       logFile
     );
   } finally {
-    if (stage) removeStagedReview(stage);
+    if (stage) cleanupReviewStage(stage);
   }
   upsertJob(cwd, {
     id: jobId,
@@ -682,13 +929,39 @@ async function runBackgroundWorker(cwd, args, jobId) {
     ...(result.errorMessage ? { errorMessage: result.errorMessage, errorCode: result.errorCode } : {}),
   });
   writeJobFile(cwd, jobId, jobPayload(result));
+  ACTIVE_JOB_CONTEXTS.delete(jobContext);
 }
 
 async function main() {
-  const args = parseArgs(process.argv);
-  if (!args.prompt) {
-    process.stderr.write("Error: no review prompt provided. Use -- <prompt>\n");
-    process.exit(1);
+  let args;
+  try {
+    args = parseArgs(process.argv);
+    if (!args.prompt?.trim()) {
+      throw new QwenStreamError(
+        "invalid_arguments",
+        "No review prompt provided. Use -- <prompt>"
+      );
+    }
+    if (args.kind !== "qwen-review") {
+      throw new QwenStreamError(
+        "invalid_arguments",
+        `Unsupported job kind: ${args.kind}`
+      );
+    }
+  } catch (error) {
+    const code = error instanceof QwenStreamError ? error.code : "invalid_arguments";
+    process.stdout.write(JSON.stringify({
+      jobId: null,
+      status: "failed",
+      threadId: null,
+      rawOutput: "",
+      attempts: [],
+      targetsVerified: false,
+      errorCode: code,
+      error: redactDiagnostic(error.message),
+    }) + "\n");
+    process.exitCode = 1;
+    return;
   }
 
   const cwd = resolveWorkspaceRoot(process.cwd());
