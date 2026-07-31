@@ -171,3 +171,21 @@ Rounds: {round count}
 - Reusing `{cycle_session_id}` for verification gives Claude full context of what it originally flagged, producing sharper verdicts than a fresh session
 - Keep fixes minimal — Codex should touch only what Claude flagged; regressions come from broad edits
 - If a fix causes test failures, revert that fix and report it as NOT FIXED rather than introducing new failures
+
+## Scope Note
+
+Covers the full audit→fix→verify loop: Claude audits, Codex fixes, Claude verifies, repeat. For an audit-only pass that reports findings without changing files, use `$audit`. For confirming fixes that were made outside this loop, use `$verify`.
+
+## Example Invocations
+
+<example>
+Context: A feature branch is finished and the user wants findings resolved, not just listed, before opening a PR.
+user: "Audit the changes on this branch and fix what you find."
+assistant: "I'll run audit-fix — Claude audits the diff, Codex applies each fix, and Claude verifies every one before I report the round summary."
+</example>
+
+<example>
+Context: A previous audit produced a findings list that nobody acted on.
+user: "Don't just tell me what's wrong this time — actually fix it and confirm the fixes hold."
+assistant: "I'll invoke audit-fix so each finding goes through the fix-then-verify loop, repeating up to 3 rounds until the audit comes back clean."
+</example>

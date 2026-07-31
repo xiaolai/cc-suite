@@ -67,3 +67,17 @@ Present Claude's plan verbatim, then ask the user whether to proceed with implem
 - `permissionMode: plan` prevents accidental file writes — planning only
 - `effort: high` is strongly recommended for accurate plans; shallow effort produces vague steps
 - Include the files and directory listings most closely related to the task in the prompt for better accuracy
+
+## Example Invocations
+
+<example>
+Context: A large migration needs a design agreed before any code is written.
+user: "Work out how we'd move this API from REST to GraphQL before anyone touches the code."
+assistant: "I'll ask claude-plan for a numbered plan with file paths and interfaces, so we settle the design before implementation starts."
+</example>
+
+<example>
+Context: Requirements are ambiguous and the user wants the shape of the work first.
+user: "I want multi-tenancy in this schema but I'm not sure what it touches."
+assistant: "I'll invoke claude-plan to map the affected files and produce a step-by-step plan — that surfaces the scope before we commit to an approach."
+</example>

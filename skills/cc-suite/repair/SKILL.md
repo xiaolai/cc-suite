@@ -102,3 +102,17 @@ Show the full status output. Then report:
 - **Issues remain**: list remaining `·` and `!` items. Distinguish:
   - Items fixable only interactively (e.g. `AGENTS.md` missing when a non-importable `CLAUDE.md` exists): "Run `/cc-suite:init` in a Claude Code session."
   - Items requiring manual action (Codex trust prompt, Codex CLI not installed): give the exact manual step.
+
+## Example Invocations
+
+<example>
+Context: The diagnose skill reported issues that its own auto-fix could not resolve.
+user: "Diagnose says three things are broken and it couldn't fix them."
+assistant: "I'll run the repair skill, which re-runs every bridge and registration script in sequence without asking questions."
+</example>
+
+<example>
+Context: cc-suite was reinstalled and every artifact needs restoring without redoing setup.
+user: "I reinstalled cc-suite — put everything back without making me answer the setup questions again."
+assistant: "I'll invoke repair — it idempotently re-runs init.sh, bridge_skills.sh, mcp_codex.sh, mcp_claude.sh, and bridge_mcp.sh, so existing choices are preserved."
+</example>

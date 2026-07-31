@@ -99,3 +99,17 @@ If clean: report CLEAN with the scope audited.
 - `permissionMode: plan` keeps Claude read-only — audit only, no writes
 - Pass `session_id` to `$verify` after Codex applies fixes, to reuse the same Claude session
 - For full projects, pass the top-level source directory rather than individual files
+
+## Example Invocations
+
+<example>
+Context: Codex just implemented a feature and the user wants an independent opinion before merging.
+user: "Have Claude look over what you just wrote before I merge it."
+assistant: "I'll invoke audit on the changed files — Claude reads them cold and returns findings with file:line and severity, since Codex reviewing its own work is not an independent check."
+</example>
+
+<example>
+Context: The user wants a deep pre-release pass over a whole module rather than a quick diff check.
+user: "Do a thorough review of src/payments/ before we ship."
+assistant: "I'll call audit with full depth for the 9-dimension pass, which adds security, dependency, and test-coverage dimensions over the 5-dimension mini audit."
+</example>

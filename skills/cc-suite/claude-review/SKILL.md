@@ -81,3 +81,17 @@ Follow with a summary count by severity and a recommended action (fix now vs fix
 - `claude-debug` — use when findings point to a specific bug that needs root-cause tracing
 - `claude-implement` — use after review to have Claude apply the suggested fixes autonomously
 - `$audit-fix` — use when review reveals a recurring pattern that needs a systematic fix cycle
+
+## Example Invocations
+
+<example>
+Context: Auth code was just modified and the user wants a second opinion focused on security.
+user: "Look over the auth changes I just made — mainly worried about security."
+assistant: "I'll delegate to claude-review with security as the lead dimension, alongside correctness and architecture."
+</example>
+
+<example>
+Context: The user wants a cold read of a diff, not the opinion of whoever wrote it.
+user: "Get a fresh pair of eyes on this PR's test coverage."
+assistant: "I'll start a claude-review session so Claude reads the diff without prior context and reports structured findings on coverage."
+</example>

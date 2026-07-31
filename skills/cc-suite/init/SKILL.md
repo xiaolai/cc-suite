@@ -227,3 +227,17 @@ Next steps:
   Run /cc-suite:diagnose to verify health at any time
   Commit AGENTS.md, .cc-suite.md, .mcp.json to share with your team
 ```
+
+## Example Invocations
+
+<example>
+Context: A brand-new project needs cc-suite set up from inside the conversation.
+user: "Set cc-suite up for this project and walk me through the choices."
+assistant: "I'll run the init skill — it detects the stack, asks the setup questions, then bootstraps AGENTS.md and the MCP registrations."
+</example>
+
+<example>
+Context: The repo already carries an AGENTS.md written for another tool.
+user: "There's already an AGENTS.md here from Codex — can cc-suite still work?"
+assistant: "I'll use init, which detects the existing AGENTS.md and adds the cc-suite bridge artifacts around it rather than overwriting it."
+</example>

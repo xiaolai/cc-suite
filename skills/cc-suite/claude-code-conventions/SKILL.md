@@ -295,3 +295,21 @@ plugin-name/
 - Format: bold imperative + rationale + positive framing
 - Enforceable: testable, specific, observable
 - No duplication of linter/formatter/CI enforcement
+
+## Scope Note
+
+Covers Claude Code's own artifact schemas and naming conventions, and exists to inject that reference material into Codex audit prompts. For running an audit against those conventions, use `$audit` or `$audit-fix`. For authoring cc-suite advisor agents — a different, cc-suite-specific file format — use `agent-design`. For choosing canonical terminology inside cc-suite artifacts, use `vocabulary`.
+
+## Example Invocations
+
+<example>
+Context: An audit needs to judge whether a hook event name in a plugin is valid.
+user: "Is `pretooluse` a real Claude Code hook event?"
+assistant: "I'll check claude-code-conventions, which lists the confirmed event names and their casing — the valid form is `PreToolUse`, so this hook would never fire."
+</example>
+
+<example>
+Context: The user is authoring a new command file and is unsure which frontmatter fields are mandatory.
+user: "What does a command file actually need in its frontmatter?"
+assistant: "I'll load claude-code-conventions for the command frontmatter section — only `description` is required; `argument-hint`, `allowed-tools`, and `model` are optional."
+</example>

@@ -43,6 +43,8 @@ mkdir -p .cc-suite/agents
 cp "${CLAUDE_PLUGIN_ROOT}/templates/agents/<preset-name>.md" ".cc-suite/agents/<preset-name>.md"
 ```
 
+If `<preset-name>` does not match a file under `${CLAUDE_PLUGIN_ROOT}/templates/agents/`, stop before copying and report: `No preset named '<preset-name>'. Available presets: {list from the table above}. Re-run with one of those names or with --custom.`
+
 If the file already exists, ask the user whether to overwrite, edit, or cancel.
 
 ### Step 3: Tailor the preset (if used)

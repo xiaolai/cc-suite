@@ -179,3 +179,17 @@ It does **not** cover:
 - **Skill authoring** — for writing skills (knowledge that loads on demand, no model invocation), refer to `cc-suite/claude-code-conventions` and the `nlpm:conventions` family.
 - **MCP server authoring from scratch** — `claude-octopus` is the MCP server; this skill describes how to *configure* it per advisor, not how to build a new MCP server.
 - **The bridge mechanics** — how `bridge_agents.py` writes `.mcp.json` and `.codex/config.toml`. See `scripts/bridge_agents.py` itself, plus `commands/init.md` / `repair.md` / `update.md` for when the bridge runs.
+
+## Example Invocations
+
+<example>
+Context: The user wants a persistent reviewer persona that both Claude and Codex can consult.
+user: "Add an advisor that pushes back on over-engineering in my API designs."
+assistant: "I'll load agent-design first — it defines the value-over-rules system-prompt shape, the tool restrictions advisors get by default, and the description block scalar that teaches callers when to consult it."
+</example>
+
+<example>
+Context: An existing advisor is being called too often for the wrong questions.
+user: "My security advisor keeps getting invoked for formatting questions — fix its definition."
+assistant: "I'll consult agent-design for the description and `<example>` block conventions, since that field is what the caller reads when deciding whether this advisor is the right one to invoke."
+</example>

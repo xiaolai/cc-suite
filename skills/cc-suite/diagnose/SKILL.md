@@ -48,3 +48,17 @@ Ask: "Fix all auto-fixable issues now? (yes / show commands only / cancel)". If 
 Run the same engine invocation again and diff per check `id`: fixed (issue → healthy/expected_absent), pending restart (fix applied with `restart_required: true`, still flagged — expected until the host restarts), remaining. Report the three counts. Never claim a fix worked from the fix command's exit code alone.
 
 If issues remain: "Next step: run `/cc-suite:repair` for a full non-interactive re-run of all setup scripts. If that also fails, run `/cc-suite:init` in a Claude Code session."
+
+## Example Invocations
+
+<example>
+Context: A session starts in a project where the user is unsure the bridge artifacts survived.
+user: "Is cc-suite actually wired up in this repo?"
+assistant: "I'll run the diagnose skill to execute the health-check engine and report issues, healthy checks, and what it fixed on its own."
+</example>
+
+<example>
+Context: cc-suite was just upgraded and the user wants confirmation nothing broke.
+user: "I updated cc-suite — check nothing's stale before I keep going."
+assistant: "I'll invoke diagnose so the health check re-runs against the new version and flags any artifact left behind by the previous one."
+</example>

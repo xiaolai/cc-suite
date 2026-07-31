@@ -82,3 +82,17 @@ Report to the user:
 - `claude-plan` — use before debugging to sketch a diagnosis strategy for complex, multi-file issues
 - `claude-implement` — use after root cause is identified to apply a larger fix or refactor
 - `$audit-fix` — use when the bug is a pattern across many files and needs a full audit→fix cycle
+
+## Example Invocations
+
+<example>
+Context: A test fails intermittently and the stack trace does not explain why.
+user: "This test passes locally and fails in CI about half the time — I can't work out why."
+assistant: "I'll send it to claude-debug with the failing output and reproduction steps so Claude can trace the root cause rather than guess at a retry."
+</example>
+
+<example>
+Context: An error surfaces deep inside a dependency and the obvious fixes have been tried.
+user: "The exception is thrown somewhere inside the ORM and I've run out of ideas."
+assistant: "I'll invoke claude-debug with the full stack trace so Claude can follow the call chain into the ORM layer and report the actual cause before changing anything."
+</example>

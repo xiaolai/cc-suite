@@ -37,6 +37,8 @@ And STOP.
 
 Read the job's result file from the state directory (`{cwd}/.codex-jobs/{job-id}/result.json`). The result file contains the raw Codex output and metadata.
 
+If the result file does not exist, or does not parse as JSON, report `Result file missing or unreadable for job {job-id} — it may have been pruned. Run /cc-suite:status to see available jobs.` and STOP.
+
 ### Step 3: Display the result
 
 ```markdown

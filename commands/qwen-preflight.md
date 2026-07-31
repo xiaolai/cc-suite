@@ -7,15 +7,15 @@ allowed-tools:
 
 # Qwen Review Preflight
 
-Run the local readiness check:
+## Step 1: Run the preflight script
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/qwen-preflight.sh"
 ```
 
-Parse the single JSON object.
+Parse the single JSON object. If `status` is `"error"`, skip to Step 3.
 
-## Success
+## Step 2: Display results
 
 Display:
 
@@ -46,7 +46,9 @@ Display:
 provider call, and preflight must not send an availability prompt. The first
 real review reports an authentication/provider failure through the job result.
 
-## Errors
+## Step 3: Handle errors
+
+Report `error_code` and `error`, then apply the matching remedy:
 
 - `qwen_not_found` — install Qwen Code and ensure `qwen` is on `PATH`.
 - `qwen_version_unsupported` — upgrade to the reported minimum version or newer.

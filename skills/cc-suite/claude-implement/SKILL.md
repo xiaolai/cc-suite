@@ -71,3 +71,17 @@ Report back to the user:
 - If the task is sensitive or you want a dry-run first, use `claude-plan` skill before this one
 - `effort: high` ensures thorough implementation; lower effort may skip edge cases
 - Pass `maxBudgetUsd` if you need to cap spend on large implementations
+
+## Example Invocations
+
+<example>
+Context: The task is well scoped and the user wants it built end to end rather than described.
+user: "Add rate limiting to the /api/upload endpoint — 100 requests per minute per IP."
+assistant: "I'll delegate this to claude-implement with the limit, the endpoint, and the requirement to add tests, since Claude has write access and can make the change directly."
+</example>
+
+<example>
+Context: A refactor spans five files and needs coordinated edits.
+user: "Convert the auth module from callbacks to async/await across all five files."
+assistant: "I'll hand this to claude-implement so Claude can read all five files together and make the changes as one coordinated pass."
+</example>

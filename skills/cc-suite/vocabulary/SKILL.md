@@ -83,9 +83,9 @@ These are **not drift** — each suffix encodes the persona's stance.
 
 When introducing a new preset, pick the suffix that best matches its stance. Default to `_advisor` when none fit.
 
-## Why some pairs are convention-only (not enforced by R51)
+## Why these pairs are convention-only (not enforced by R51)
 
-The `/nlpm:vocab-drift` scan surfaced several drift candidates that look like clean canonical/deprecated pairs but turn out to be **polysemous** in cc-suite. R51 is mechanical — it flags every occurrence of a deprecated term regardless of context — so declaring these would generate false-positive penalties on legitimate uses. They are conventions, not rules:
+The `/nlpm:vocab-drift` scan surfaced the drift candidates listed below. Each looks like a clean canonical/deprecated pair but turns out to be **polysemous** in cc-suite. R51 is mechanical — it flags every occurrence of a deprecated term regardless of context — so declaring these would generate false-positive penalties on legitimate uses. They are conventions, not rules:
 
 | Concept pair | Why we don't enforce |
 |--------------|----------------------|
@@ -111,7 +111,7 @@ The `/nlpm:vocab-drift` scan surfaced several drift candidates that look like cl
 
 2. New terms appear in `analysis/vocabulary-extract/summary.md`.
 3. Add a row to the matching table above (Verbs or Nouns, in the correct scope). Cite at least one file as evidence.
-4. To deprecate a synonym, add it to the canonical term's `deprecated:` list in `registry.yaml` AND update the "Enforced deprecation pairs" table above. Before doing this, run `grep -r "<deprecated>"` and confirm the term has no legitimate alternate meanings — if it does, document the pair in "Why some pairs are convention-only" instead.
+4. To deprecate a synonym, add it to the canonical term's `deprecated:` list in `registry.yaml` AND update the "Enforced deprecation pairs" table above. Before doing this, run `grep -r "<deprecated>"` and confirm the term has no legitimate alternate meanings — if it does, document the pair in "Why these pairs are convention-only" instead.
 
 ## Adopting R51
 
@@ -131,3 +131,17 @@ The pruned registry should produce zero R51 findings on the current corpus.
 - The corpus extractor: `${NLPM_ROOT}/analysis/scripts/extract-vocabulary.py`
 - The six design principles: `${NLPM_ROOT}/analysis/vocabulary-design-principles.md`
 - Run `/nlpm:vocab-drift` periodically to surface new candidate pairs as the corpus grows.
+
+## Example Invocations
+
+<example>
+Context: An author is naming a new action in a command file and wants the approved verb.
+user: "My new command looks for outdated config entries — what should I call that action?"
+assistant: "I'll check the vocabulary registry before naming it, so this lands on the canonical verb instead of coining a synonym that R51 will flag later."
+</example>
+
+<example>
+Context: The scorer flagged a deprecated term and the author needs the canonical replacement.
+user: "R51 flagged a deprecated synonym in this file — what am I supposed to write instead?"
+assistant: "I'll look the flagged word up in the enforced deprecation pairs table below and use the canonical column's value as the replacement."
+</example>

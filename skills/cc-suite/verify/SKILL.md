@@ -90,3 +90,17 @@ Save the returned `session_id` as `{verify_session_id}`.
 - Always prefer Option A when a session is available — Claude retains full audit context and can make more precise verdicts
 - If all issues are FIXED, report success and suggest committing
 - If any are NOT FIXED or REGRESSED, feed those back into `$audit-fix` or fix manually
+
+## Example Invocations
+
+<example>
+Context: Codex has applied fixes for issues Claude raised in an earlier audit.
+user: "Codex says it fixed everything from the last review — is that true?"
+assistant: "I'll continue the prior Claude session through verify, so Claude checks its own findings and returns FIXED / NOT FIXED / PARTIAL / REGRESSED for each one."
+</example>
+
+<example>
+Context: There is a findings list from a previous day but no session id to resume.
+user: "Here's yesterday's findings list — check whether these are actually resolved now."
+assistant: "No session_id is available, so I'll start a fresh verify session and have Claude re-read each reported location before giving a verdict."
+</example>
