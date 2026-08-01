@@ -366,6 +366,27 @@ function markActiveJobsInterrupted(signal) {
   }
 }
 
+// Terminate a Qwen child and any subprocesses it spawned (sandbox providers,
+// containers, helpers) by signalling its whole process group; fall back to the
+// direct pid when group signalling is unavailable. The child is spawned
+// detached so it leads its own process group.
+function killQwenTree(child, signal) {
+  if (!child.pid) return;
+  if (process.platform !== "win32") {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch {
+      // No such group or not a group leader — fall through to the direct pid.
+    }
+  }
+  try {
+    child.kill(signal);
+  } catch {
+    // Already gone.
+  }
+}
+
 for (const [signal, exitCode] of [["SIGHUP", 129], ["SIGINT", 130], ["SIGTERM", 143]]) {
   process.once(signal, () => {
     if (handlingSignal) return;
@@ -373,11 +394,7 @@ for (const [signal, exitCode] of [["SIGHUP", 129], ["SIGINT", 130], ["SIGTERM", 
     receivedSignal = signal;
     process.exitCode = exitCode;
     for (const child of ACTIVE_QWEN_CHILDREN) {
-      try {
-        child.kill("SIGTERM");
-      } catch {
-        // Best-effort child shutdown; stage cleanup remains mandatory.
-      }
+      killQwenTree(child, "SIGTERM");
     }
     for (const stage of ACTIVE_REVIEW_STAGES) {
       try {
@@ -389,11 +406,7 @@ for (const [signal, exitCode] of [["SIGHUP", 129], ["SIGINT", 130], ["SIGTERM", 
     markActiveJobsInterrupted(signal);
     setTimeout(() => {
       for (const child of ACTIVE_QWEN_CHILDREN) {
-        try {
-          child.kill("SIGKILL");
-        } catch {
-          // Best effort; the parent must still terminate with the signal code.
-        }
+        killQwenTree(child, "SIGKILL");
       }
       setTimeout(() => process.exit(exitCode), 100);
     }, 1000);
@@ -428,9 +441,12 @@ function executeQwenAttempt(cwd, args, targets, logFile, attempt, resumeId, prom
       appendLog(logFile, `Attempt ${attempt}: raw debug capture enabled (may contain reviewed content)`);
     }
 
+    // detached: the child leads its own process group so killQwenTree can
+    // terminate the whole tree (sandbox providers included), not just qwen.
     const child = spawn("qwen", qwenArgs, {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
+      detached: process.platform !== "win32",
       env: sandboxEnvironment(),
     });
     ACTIVE_QWEN_CHILDREN.add(child);
@@ -470,9 +486,9 @@ function executeQwenAttempt(cwd, args, targets, logFile, attempt, resumeId, prom
     function terminate(reason) {
       if (childClosed) return;
       appendLog(logFile, `Attempt ${attempt}: terminating (${reason})`);
-      child.kill("SIGTERM");
+      killQwenTree(child, "SIGTERM");
       killTimer = setTimeout(() => {
-        if (!childClosed) child.kill("SIGKILL");
+        if (!childClosed) killQwenTree(child, "SIGKILL");
       }, SIGKILL_GRACE_MS);
     }
 
@@ -773,44 +789,90 @@ async function runForeground(cwd, args) {
   });
   ACTIVE_JOB_CONTEXTS.add(jobContext);
 
-  let result;
-  let stage = null;
+  // Any throw below (staging, execution, cleanup, persistence) must finalize
+  // this job under its real id instead of leaving it recorded as running and
+  // reporting jobId:null from main()'s catch-all.
   try {
-    stage = stageReviewTargets(sourceTargets);
-    ACTIVE_REVIEW_STAGES.add(stage);
-    appendLog(logFile, `Starting bounded Qwen review (foreground, targets=${stage.targets.length}, isolated=true)`);
-    result = await executeQwen(
-      stage.root,
-      args,
-      stage.targets,
-      [...sourceTargets, ...stage.targets],
-      logFile
-    );
-  } finally {
-    if (stage) cleanupReviewStage(stage);
-  }
-  upsertJob(cwd, {
-    id: jobId,
-    status: result.status,
-    phase: result.status,
-    threadId: result.sessionId || null,
-    attempts: result.attempts.length,
-    completedAt: new Date().toISOString(),
-    ...(result.errorMessage ? { errorMessage: result.errorMessage, errorCode: result.errorCode } : {}),
-  });
-  writeJobFile(cwd, jobId, jobPayload(result));
-  ACTIVE_JOB_CONTEXTS.delete(jobContext);
+    let result;
+    let stage = null;
+    try {
+      stage = stageReviewTargets(sourceTargets);
+      ACTIVE_REVIEW_STAGES.add(stage);
+      appendLog(logFile, `Starting bounded Qwen review (foreground, targets=${stage.targets.length}, isolated=true)`);
+      result = await executeQwen(
+        stage.root,
+        args,
+        stage.targets,
+        [...sourceTargets, ...stage.targets],
+        logFile
+      );
+    } finally {
+      if (stage) cleanupReviewStage(stage);
+    }
+    upsertJob(cwd, {
+      id: jobId,
+      status: result.status,
+      phase: result.status,
+      threadId: result.sessionId || null,
+      attempts: result.attempts.length,
+      completedAt: new Date().toISOString(),
+      ...(result.errorMessage ? { errorMessage: result.errorMessage, errorCode: result.errorCode } : {}),
+    });
+    writeJobFile(cwd, jobId, jobPayload(result));
 
-  process.stdout.write(JSON.stringify({
-    jobId,
-    status: result.status,
-    threadId: result.sessionId || null,
-    rawOutput: result.rawOutput || "",
-    attempts: result.attempts,
-    targetsVerified: result.status === "completed",
-    ...(result.errorMessage ? { error: result.errorMessage, errorCode: result.errorCode } : {}),
-  }) + "\n");
-  if (result.status !== "completed") process.exitCode = 1;
+    process.stdout.write(JSON.stringify({
+      jobId,
+      status: result.status,
+      threadId: result.sessionId || null,
+      rawOutput: result.rawOutput || "",
+      attempts: result.attempts,
+      targetsVerified: result.status === "completed",
+      ...(result.errorMessage ? { error: result.errorMessage, errorCode: result.errorCode } : {}),
+    }) + "\n");
+    if (result.status !== "completed") process.exitCode = 1;
+  } catch (error) {
+    const code = error instanceof QwenStreamError ? error.code : "runner_failure";
+    const message = redactDiagnostic(error.message);
+    // Finalize job state first: a logging failure must never leave the job
+    // recorded as running.
+    try {
+      upsertJob(cwd, {
+        id: jobId,
+        status: "failed",
+        phase: "failed",
+        errorCode: code,
+        errorMessage: message,
+        completedAt: new Date().toISOString(),
+      });
+      writeJobFile(cwd, jobId, {
+        rawOutput: "",
+        threadId: null,
+        attempts: [],
+        error: message,
+        errorCode: code,
+      });
+    } catch {
+      // State unwritable — the stdout result below still reports the failure.
+    }
+    try {
+      appendLog(logFile, `Foreground job failed: ${code}: ${message}`);
+    } catch {
+      // Log unwritable — the job state above is already finalized.
+    }
+    process.stdout.write(JSON.stringify({
+      jobId,
+      status: "failed",
+      threadId: null,
+      rawOutput: "",
+      attempts: [],
+      targetsVerified: false,
+      errorCode: code,
+      error: message,
+    }) + "\n");
+    process.exitCode = 1;
+  } finally {
+    ACTIVE_JOB_CONTEXTS.delete(jobContext);
+  }
 }
 
 function childArgs(args) {
@@ -982,9 +1044,9 @@ async function main() {
     const code = error instanceof QwenStreamError ? error.code : "runner_failure";
     const backgroundJobId = process.env.CODEX_TOOLKIT_BACKGROUND_JOB_ID;
     if (backgroundJobId) {
-      const logFile = resolveJobLogFile(cwd, backgroundJobId);
       const message = redactDiagnostic(error.message);
-      appendLog(logFile, `Background worker failed: ${code}: ${message}`);
+      // Finalize job state first: a logging failure must never leave the job
+      // recorded as running.
       upsertJob(cwd, {
         id: backgroundJobId,
         status: "failed",
@@ -1000,6 +1062,11 @@ async function main() {
         error: message,
         errorCode: code,
       });
+      try {
+        appendLog(resolveJobLogFile(cwd, backgroundJobId), `Background worker failed: ${code}: ${message}`);
+      } catch {
+        // Log unwritable — the job state above is already finalized.
+      }
       process.exitCode = 1;
       return;
     }

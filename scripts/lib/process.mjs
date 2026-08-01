@@ -59,20 +59,19 @@ export function terminateProcessTree(pid, options = {}) {
   try {
     killImpl(-pid, "SIGTERM");
     return { attempted: true, delivered: true, method: "process-group" };
-  } catch (error) {
-    if (error?.code !== "ESRCH") {
-      // Group kill failed for non-ESRCH reason, try single process
-      try {
-        killImpl(pid, "SIGTERM");
-        return { attempted: true, delivered: true, method: "process" };
-      } catch (innerError) {
-        if (innerError?.code === "ESRCH") {
-          return { attempted: true, delivered: false, method: "process" };
-        }
-        throw innerError;
+  } catch {
+    // Group kill failed — including ESRCH, which only proves no process
+    // group with that id exists; the process itself may still be alive
+    // without being a group leader. Always fall back to the positive PID.
+    try {
+      killImpl(pid, "SIGTERM");
+      return { attempted: true, delivered: true, method: "process" };
+    } catch (innerError) {
+      if (innerError?.code === "ESRCH") {
+        return { attempted: true, delivered: false, method: "process" };
       }
+      throw innerError;
     }
-    return { attempted: true, delivered: false, method: "process-group" };
   }
 }
 

@@ -621,7 +621,9 @@ section "T23: unbridge.sh — removes cc-suite-created CLAUDE.md"
 make_tmp
 mkdir -p .codex
 
-echo "# AGENTS content" > AGENTS.md
+# A genuinely cc-suite-created AGENTS.md carries the init.sh scaffold line;
+# unbridge keys its delete decision on that marker, not on the CLAUDE flag.
+printf '# Project Instructions\n\nNever modify `CLAUDE.md` directly — it only imports `AGENTS.md`.\n' > AGENTS.md
 printf "@AGENTS.md\n" > CLAUDE.md
 mkdir -p .cc-suite
 printf "CC_SUITE_CREATED_CLAUDE=1\n" > .cc-suite/provenance
@@ -630,6 +632,53 @@ assert_exit0 bash "$SCRIPTS/unbridge.sh"
 
 assert_no_file "AGENTS.md"
 assert_no_file "CLAUDE.md"    # cc-suite created it — remove on unbridge
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T23b  unbridge.sh — preserves a pre-existing AGENTS.md (no scaffold marker)
+# ═══════════════════════════════════════════════════════════════════════════════
+# CC_SUITE_CREATED_CLAUDE=1 records that init created CLAUDE.md — it says
+# nothing about AGENTS.md. When init found a user-authored AGENTS.md, only the
+# CLAUDE.md import belongs to cc-suite; deleting AGENTS.md would lose user
+# content. The pre-fix behavior did exactly that.
+section "T23b: unbridge.sh — preserves pre-existing AGENTS.md"
+make_tmp
+mkdir -p .codex
+
+echo "# user-authored AGENTS content" > AGENTS.md
+printf "@AGENTS.md\n" > CLAUDE.md
+mkdir -p .cc-suite
+printf "CC_SUITE_CREATED_CLAUDE=1\n" > .cc-suite/provenance
+
+assert_exit0 bash "$SCRIPTS/unbridge.sh"
+
+assert_file "AGENTS.md"       # user content survives unbridge
+assert_contains "AGENTS.md" "user-authored AGENTS content"
+assert_no_file "CLAUDE.md"    # the import cc-suite created is still removed
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T23c  unbridge.sh — recorded CC_SUITE_CREATED_AGENTS beats the content heuristic
+# ═══════════════════════════════════════════════════════════════════════════════
+# A current init.sh records CC_SUITE_CREATED_AGENTS=1 whenever it wrote
+# AGENTS.md itself. Unbridge must key on that record, not on mutable file
+# content: here the scaffold marker line has been edited out of AGENTS.md,
+# which would fool the legacy heuristic into keeping a cc-suite-created file.
+section "T23c: unbridge.sh — provenance-recorded AGENTS.md removed despite edits"
+make_tmp
+mkdir -p .codex
+
+printf '# Project Instructions\n\nEdited: the scaffold marker line is gone.\n' > AGENTS.md
+printf "@AGENTS.md\n" > CLAUDE.md
+mkdir -p .cc-suite
+printf "CC_SUITE_CREATED_CLAUDE=1\nCC_SUITE_CREATED_AGENTS=1\n" > .cc-suite/provenance
+
+assert_exit0 bash "$SCRIPTS/unbridge.sh"
+
+assert_no_file "AGENTS.md"    # provenance says init created it — removed
+assert_no_file "CLAUDE.md"
 
 cleanup
 
@@ -1395,7 +1444,7 @@ git add -A; git commit -qm init >/dev/null 2>&1
 
 assert_exit0 git ls-files --error-unmatch .mcp.json      # tracked before fix
 bash "$SCRIPTS/ensure_gitignore.sh" >/dev/null 2>&1
-assert_contains ".gitignore" "cc-suite-schema: 6"
+assert_contains ".gitignore" "cc-suite-schema: 7"
 assert_exit_nonzero git ls-files --error-unmatch .mcp.json   # now untracked
 assert_exit0 git check-ignore .mcp.json                      # now ignored
 assert_file ".mcp.json"                                      # working file kept
@@ -1442,7 +1491,7 @@ printf '# >>> cc-suite >>>\n# cc-suite-schema: 2\n.claude/settings.local.json\n#
 git add -A; git commit -qm init >/dev/null 2>&1
 
 bash "$SCRIPTS/ensure_gitignore.sh" >/dev/null 2>&1
-assert_contains ".gitignore" "cc-suite-schema: 6"
+assert_contains ".gitignore" "cc-suite-schema: 7"
 assert_count "# >>> cc-suite >>>" ".gitignore" 1   # single block, no duplication
 assert_exit_nonzero git ls-files --error-unmatch .mcp.json   # migrated + untracked
 assert_exit0 git check-ignore .mcp.json

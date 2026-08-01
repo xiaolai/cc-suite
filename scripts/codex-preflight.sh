@@ -85,7 +85,7 @@ mkdir -p "$CACHE_DIR"
 CACHE_FILE="$CACHE_DIR/preflight-cache.json"
 
 if [[ -z "${CODEX_PREFLIGHT_NO_CACHE:-}" && -f "$CACHE_FILE" \
-      && "$(grep -c '"preflight_schema":$PREFLIGHT_SCHEMA' "$CACHE_FILE" 2>/dev/null || true)" -gt 0 ]]; then
+      && "$(grep -c "\"preflight_schema\":$PREFLIGHT_SCHEMA" "$CACHE_FILE" 2>/dev/null || true)" -gt 0 ]]; then
   cache_age=$(file_age_seconds "$CACHE_FILE")
   if [[ $cache_age -lt $CACHE_TTL ]]; then
     info "Using cached results (${cache_age}s old, TTL ${CACHE_TTL}s)"
@@ -117,7 +117,11 @@ info "Codex version: $CODEX_VERSION"
 AUTH_MODE="unknown"
 
 LOGIN_STATUS=$(codex login status </dev/null 2>&1) || true
-if echo "$LOGIN_STATUS" | grep -qi "logged in"; then
+# Negative phrases first: "Not logged in" contains "logged in", so testing the
+# positive phrase first would classify it as authenticated.
+if echo "$LOGIN_STATUS" | grep -qi "not logged in\|not authenticated"; then
+  AUTH_MODE="unknown"
+elif echo "$LOGIN_STATUS" | grep -qi "logged in"; then
   if echo "$LOGIN_STATUS" | grep -qi "chatgpt"; then
     AUTH_MODE="chatgpt_login"
   elif echo "$LOGIN_STATUS" | grep -qi "api.key\|api_key"; then
@@ -125,8 +129,6 @@ if echo "$LOGIN_STATUS" | grep -qi "logged in"; then
   else
     AUTH_MODE="authenticated"
   fi
-elif echo "$LOGIN_STATUS" | grep -qi "not logged in\|not authenticated"; then
-  AUTH_MODE="unknown"
 else
   AUTH_FILE="$HOME/.codex/auth.json"
   if [[ -f "$AUTH_FILE" ]]; then
@@ -191,7 +193,7 @@ if $USE_CACHE; then
     MODELS_DETAIL=$(python3 -c "
 import json, re, sys
 try:
-    with open('$MODELS_CACHE') as f:
+    with open(sys.argv[1]) as f:
         data = json.load(f)
     result = []
     for index, m in enumerate(data.get('models', [])):
@@ -226,7 +228,7 @@ try:
 except Exception:
     print('[]')
     sys.exit(1)
-" 2>/dev/null) || MODELS_DETAIL="[]"
+" "$MODELS_CACHE" 2>/dev/null) || MODELS_DETAIL="[]"
 
     # Also populate AVAILABLE array for backward compat and info output
     while IFS= read -r slug; do
@@ -279,8 +281,6 @@ fi
 
 # ── Step 4b: Handle missing cache ────────────────────────────────────────────
 
-UNAVAILABLE=()
-
 if ! $USE_CACHE; then
   CODEX_VERSION_SAFE=$(json_escape "$CODEX_VERSION")
   AUTH_MODE_SAFE=$(json_escape "$AUTH_MODE")
@@ -305,7 +305,8 @@ fi
 # ── Step 6: Output JSON ─────────────────────────────────────────────────────
 
 available_json=$(json_array "${AVAILABLE[@]+"${AVAILABLE[@]}"}")
-unavailable_json=$(json_array "${UNAVAILABLE[@]+"${UNAVAILABLE[@]}"}")
+# No unavailable-model calculation exists; the field stays for schema stability.
+unavailable_json="[]"
 
 CODEX_VERSION_SAFE=$(json_escape "$CODEX_VERSION")
 AUTH_MODE_SAFE=$(json_escape "$AUTH_MODE")

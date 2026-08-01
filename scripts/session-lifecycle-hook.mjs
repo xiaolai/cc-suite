@@ -42,20 +42,55 @@ function cleanupSessionJobs(cwd, sessionId) {
   const sessionJobs = state.jobs.filter((j) => j.sessionId === sessionId);
   if (sessionJobs.length === 0) return;
 
-  // Kill any still-running jobs for this session
+  // Kill still-running jobs, but only drop records for jobs confirmed dead.
+  // Anything we merely signalled — or could not signal at all — is retained
+  // and marked cancelled so a surviving process never becomes invisible.
+  const removableIds = new Set();
+  const retainedNotes = new Map();
   for (const job of sessionJobs) {
-    if (job.status !== "queued" && job.status !== "running") continue;
+    if (job.status !== "queued" && job.status !== "running") {
+      removableIds.add(job.id);
+      continue;
+    }
     try {
-      terminateProcessTree(job.pid ?? Number.NaN);
+      const outcome = terminateProcessTree(job.pid ?? Number.NaN);
+      if (outcome.attempted && !outcome.delivered) {
+        // ESRCH on both signal paths: the process is confirmed gone.
+        removableIds.add(job.id);
+      } else if (outcome.attempted) {
+        retainedNotes.set(
+          job.id,
+          "Session ended; termination signal sent but process exit was not confirmed."
+        );
+      } else {
+        retainedNotes.set(
+          job.id,
+          "Session ended; no recorded PID, so the job process could not be terminated."
+        );
+      }
     } catch {
-      // Ignore teardown failures during session shutdown
+      retainedNotes.set(
+        job.id,
+        "Session ended; terminating the job process failed, so it may still be running."
+      );
     }
   }
 
-  // Remove session jobs from state
+  const timestamp = new Date().toISOString();
   saveState(workspaceRoot, {
     ...state,
-    jobs: state.jobs.filter((j) => j.sessionId !== sessionId),
+    jobs: state.jobs
+      .filter((j) => !removableIds.has(j.id))
+      .map((j) =>
+        retainedNotes.has(j.id)
+          ? {
+              ...j,
+              status: "cancelled",
+              errorMessage: retainedNotes.get(j.id),
+              updatedAt: timestamp,
+            }
+          : j
+      ),
   });
 }
 

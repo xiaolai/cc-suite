@@ -49,7 +49,41 @@ AUTH_MODE="none"
 if [ -n "${XAI_API_KEY:-}" ]; then
   AUTH_MODE="api_key"
 elif [ -s "$AUTH_FILE" ]; then
-  AUTH_MODE="session"
+  # A real grok session file is a JSON object holding credential fields (a
+  # session entry carries e.g. `key` and `refresh_token`, possibly nested under
+  # a per-issuer key). Malformed JSON, an empty object, or unrelated content
+  # must not pass as an authenticated session. Still a local check, no network.
+  if python3 - "$AUTH_FILE" <<'PY' 2>/dev/null; then
+import json, re, sys
+
+try:
+    with open(sys.argv[1]) as fh:
+        data = json.load(fh)
+except Exception:
+    sys.exit(1)
+
+CRED_KEY = re.compile(r"key|token|session|credential", re.I)
+
+
+def has_credential(obj, depth=0):
+    """A non-empty string under a credential-named key, up to two levels deep."""
+    if not isinstance(obj, dict) or depth > 2:
+        return False
+    for k, v in obj.items():
+        if isinstance(k, str) and CRED_KEY.search(k) and isinstance(v, str) and v.strip():
+            return True
+        if has_credential(v, depth + 1):
+            return True
+    return False
+
+
+sys.exit(0 if isinstance(data, dict) and has_credential(data) else 1)
+PY
+    AUTH_MODE="session"
+  else
+    emit_error "credentials_unreadable" "auth.json exists but is not a JSON object with credential fields — corrupt or foreign credentials. Run: grok login" "$GROK_VERSION_JSON"
+    exit 0
+  fi
 fi
 if [ "$AUTH_MODE" = "none" ]; then
   emit_error "not_authenticated" "Not authenticated. Run: grok login" "$GROK_VERSION_JSON"

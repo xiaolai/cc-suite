@@ -24,6 +24,11 @@ set -uo pipefail
 CACHE_TTL=300
 PREFLIGHT_SCHEMA=2
 MODELS_TIMEOUT_SECONDS="${AGY_MODELS_TIMEOUT_SECONDS:-10}"
+# A non-integer would defeat the macOS fallback's numeric comparison and leave
+# a hung probe unbounded — validate and fall back to the default.
+if ! [[ "$MODELS_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+  MODELS_TIMEOUT_SECONDS=10
+fi
 SANDBOX_LEVELS='["read-only","workspace-write","danger-full-access"]'
 REASONING_EFFORTS='[]'   # agy encodes effort in the model name — see header
 
@@ -36,7 +41,9 @@ json_escape() {
   s="${s//$'\n'/\\n}"
   s="${s//$'\t'/\\t}"
   s="${s//$'\r'/}"
-  printf '%s' "$s"
+  # JSON forbids raw bytes below 0x20 — drop any remaining control characters
+  # (\n, \t, \r are already handled above).
+  printf '%s' "$s" | tr -d '\000-\010\013\014\016-\037'
 }
 
 file_age_seconds() {
@@ -86,10 +93,21 @@ run_with_timeout() {
 # ── Step 1: cache ────────────────────────────────────────────────────────────
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/codex-toolkit"
 mkdir -p "$CACHE_DIR"
-CACHE_FILE="$CACHE_DIR/agy-preflight-cache.json"
+# workspace_mcp_registered depends on $PWD, so the cache is keyed per workspace —
+# a single global file could serve one project's bridge status to another.
+WORKSPACE_KEY="$(printf '%s' "$PWD" | cksum | awk '{print $1}')"
+CACHE_FILE="$CACHE_DIR/agy-preflight-cache-${WORKSPACE_KEY}.json"
+
+cache_is_valid_json() {
+  # A truncated/concurrent write must not be replayed as a preflight result.
+  # Without python3 the atomic-rename write path is the only guard.
+  command -v python3 >/dev/null 2>&1 || return 0
+  python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$1" >/dev/null 2>&1
+}
 
 if [[ -z "${AGY_PREFLIGHT_NO_CACHE:-}" && -f "$CACHE_FILE" \
-      && "$(grep -c '"preflight_schema":'$PREFLIGHT_SCHEMA "$CACHE_FILE" 2>/dev/null || true)" -gt 0 ]]; then
+      && "$(grep -c '"preflight_schema":'$PREFLIGHT_SCHEMA "$CACHE_FILE" 2>/dev/null || true)" -gt 0 ]] \
+      && cache_is_valid_json "$CACHE_FILE"; then
   cache_age=$(file_age_seconds "$CACHE_FILE")
   if [[ $cache_age -lt $CACHE_TTL ]]; then
     info "Using cached results (${cache_age}s old, TTL ${CACHE_TTL}s)"
@@ -176,5 +194,8 @@ DEFAULT_MODEL="$(printf '%s\n' "$MODELS_RAW" | head -1)"
 DEFAULT_MODEL_SAFE="$(json_escape "$DEFAULT_MODEL")"
 RESULT="{\"backend\":\"agy\",\"preflight_schema\":$PREFLIGHT_SCHEMA,\"status\":\"ok\",\"agy_version\":\"$AGY_VERSION_SAFE\",\"default_model\":\"$DEFAULT_MODEL_SAFE\",\"models\":$MODELS_JSON,\"reasoning_efforts\":$REASONING_EFFORTS,\"sandbox_levels\":$SANDBOX_LEVELS,\"workspace_mcp_registered\":$WORKSPACE_MCP_REGISTERED,\"claude_mcp_registered\":$CLAUDE_MCP_REGISTERED}"
 
-printf '%s\n' "$RESULT" > "$CACHE_FILE"
+# Atomic cache commit — a concurrent reader must never observe a partial write.
+CACHE_TMP="$(mktemp "$CACHE_FILE.XXXXXX")"
+printf '%s\n' "$RESULT" > "$CACHE_TMP"
+mv -f "$CACHE_TMP" "$CACHE_FILE"
 printf '%s\n' "$RESULT"

@@ -14,8 +14,11 @@ json_escape() {
   s="${s//\\/\\\\}"
   s="${s//\"/\\\"}"
   s="${s//$'\n'/\\n}"
+  s="${s//$'\t'/\\t}"
   s="${s//$'\r'/}"
-  printf '%s' "$s"
+  # JSON forbids raw bytes below 0x20 — drop any remaining control characters
+  # (\n, \t, \r are already handled above).
+  printf '%s' "$s" | tr -d '\000-\010\013\014\016-\037'
 }
 
 emit_error() {
@@ -50,6 +53,28 @@ if ! command -v "$SANDBOX_PROVIDER" >/dev/null 2>&1; then
   emit_error "qwen_sandbox_unavailable" "Configured Qwen sandbox provider is unavailable: $SANDBOX_PROVIDER"
   exit 0
 fi
+
+# For daemon-backed providers, an installed binary is not readiness: a stopped
+# daemon would pass preflight and fail at review time. Probe locally, bounded.
+provider_ready() {
+  local provider="$1"
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 5s "$provider" info >/dev/null 2>&1
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout 5s "$provider" info >/dev/null 2>&1
+  else
+    "$provider" info >/dev/null 2>&1
+  fi
+}
+
+case "$SANDBOX_PROVIDER" in
+  docker|podman)
+    if ! provider_ready "$SANDBOX_PROVIDER"; then
+      emit_error "qwen_sandbox_unavailable" "Qwen sandbox provider '$SANDBOX_PROVIDER' is installed but not responding — is the daemon running?"
+      exit 0
+    fi
+    ;;
+esac
 
 QWEN_VERSION_RAW="$(qwen --version 2>/dev/null | head -1 | tr -d '\r')"
 QWEN_VERSION_JSON="\"$(json_escape "${QWEN_VERSION_RAW:-unknown}")\""

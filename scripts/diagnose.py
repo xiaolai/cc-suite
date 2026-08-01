@@ -49,6 +49,7 @@ ROOT = Path.cwd()
 SCHEMA = 1
 
 sys.path.insert(0, str(SCRIPT_DIR))
+import bridge_agents  # noqa: E402  (canonical advisor frontmatter parser)
 import bridge_tools  # noqa: E402  (registry + enabled-tools parsing)
 
 CLAUDE_SENTINEL_OPEN = ">>> cc-suite-claude-mcp >>>"
@@ -113,8 +114,14 @@ def check_claude_md() -> dict:
     if text is None:
         return check("claude_md", "CLAUDE.md", "issue", "missing — Claude sessions get no instructions",
                      auto=[f"bash {script('init.sh')}"])
-    if re.search(r"^@AGENTS\.md\s*$", text, re.M):
+    if text.strip() == "@AGENTS.md":
         return check("claude_md", "CLAUDE.md", "healthy", "@AGENTS.md import")
+    if re.search(r"^@AGENTS\.md\s*$", text, re.M):
+        return check("claude_md", "CLAUDE.md", "manual",
+                     "@AGENTS.md import plus other content (hybrid) — Claude reads extra "
+                     "instructions the other tools do not",
+                     manual="merge the extra content into AGENTS.md, leaving CLAUDE.md as a "
+                            "pure @AGENTS.md import")
     return check("claude_md", "CLAUDE.md", "manual",
                  "substantive content, not an @AGENTS.md import — Claude and the other tools read different instructions",
                  manual="merge the content into AGENTS.md (or run /cc-suite:init, which migrates it)")
@@ -480,19 +487,24 @@ def check_advisors(enabled: list[str]) -> dict:
     if not declared_files:
         return check("advisors", ".cc-suite/agents", "expected_absent", "no advisor agents declared")
     # Compare by NAME, not count — a stale registration with the right count
-    # must not pass. The name defaults to the filename stem; an explicit
-    # `name:` frontmatter key overrides it (mirrors bridge_agents.py).
+    # must not pass. Names come from the canonical frontmatter parser in
+    # bridge_agents.py (a loose whole-file regex would accept prose `name:`
+    # lines and report false health).
     declared = set()
+    unparseable = []
     for f in declared_files:
-        text = _read(f) or ""
-        m = re.search(r"(?m)^name:\s*(\S+)\s*$", text)
-        declared.add(m.group(1) if m else f.stem)
+        try:
+            declared.add(str(bridge_agents.parse_agent_file(f)["name"]))
+        except Exception:  # noqa: BLE001 — a broken advisor file is a finding, not a crash
+            unparseable.append(f.name)
     doc = _load_json(ROOT / ".mcp.json")
     registered = set()
     if isinstance(doc, dict) and isinstance(doc.get("mcpServers"), dict):
         registered = {k for k, v in doc["mcpServers"].items()
                       if isinstance(v, dict) and v.get("_cc_suite_agent")}
     problems = []
+    if unparseable:
+        problems.append(f"unparseable advisor file(s): {', '.join(unparseable)}")
     if declared - registered:
         problems.append(f"declared but not registered: {', '.join(sorted(declared - registered))}")
     if registered - declared:
@@ -510,12 +522,50 @@ def check_advisors(enabled: list[str]) -> dict:
                  auto=[f"python3 {script('bridge_agents.py')}", f"bash {script('bridge_mcp.sh')}"])
 
 
+def _gitignore_schema_marker() -> str | None:
+    """Current schema marker, single-sourced from ensure_gitignore.sh."""
+    text = _read(PLUGIN_ROOT / "scripts/ensure_gitignore.sh") or ""
+    m = re.search(r'(?m)^SCHEMA_MARKER="([^"]+)"', text)
+    return m.group(1) if m else None
+
+
+def _gitignore_required_lines() -> list[str]:
+    """Entries every cc-suite block must carry, single-sourced from the first
+    (unconditional) heredoc in ensure_gitignore.sh — the mode-specific extras
+    written later are optional and not required here."""
+    text = _read(PLUGIN_ROOT / "scripts/ensure_gitignore.sh") or ""
+    m = re.search(r"(?ms)^\s*cat <<'GI'\n(.*?)^GI$", text)
+    if not m:
+        return []
+    return [ln.strip() for ln in m.group(1).splitlines()
+            if ln.strip() and not ln.strip().startswith("#")]
+
+
 def check_gitignore() -> dict:
     text = _read(ROOT / ".gitignore") or ""
-    if "# >>> cc-suite >>>" in text:
-        return check("gitignore", ".gitignore", "healthy", "has cc-suite block")
-    return check("gitignore", ".gitignore", "issue", "no cc-suite block",
-                 auto=[f"bash {script('init.sh')}"])
+    opens = text.count("# >>> cc-suite >>>")
+    closes = text.count("# <<< cc-suite <<<")
+    if opens == 0 and closes == 0:
+        return check("gitignore", ".gitignore", "issue", "no cc-suite block",
+                     auto=[f"bash {script('init.sh')}"])
+    start = text.find("# >>> cc-suite >>>")
+    end = text.find("# <<< cc-suite <<<")
+    if opens != 1 or closes != 1 or end < start:
+        return check("gitignore", ".gitignore", "issue",
+                     "cc-suite block sentinels are unpaired, duplicated, or mangled",
+                     auto=[f"bash {script('init.sh')}"])
+    block = text[start:end]
+    marker = _gitignore_schema_marker()
+    if marker and marker not in block:
+        return check("gitignore", ".gitignore", "issue",
+                     "cc-suite block is at an old schema",
+                     auto=[f"bash {script('init.sh')}"])
+    missing = [ln for ln in _gitignore_required_lines() if ln not in block]
+    if missing:
+        return check("gitignore", ".gitignore", "issue",
+                     f"cc-suite block is missing required entries: {', '.join(missing)}",
+                     auto=[f"bash {script('init.sh')}"])
+    return check("gitignore", ".gitignore", "healthy", "has current cc-suite block")
 
 
 def check_registry_tools() -> list[dict]:
@@ -574,15 +624,28 @@ def check_codex_runtime(enabled: list[str]) -> list[dict]:
                          "not trusted — hooks, rules, and .codex/config.toml are inert",
                          manual="run `codex` once in this directory and accept the trust prompt"))
 
-    in_features = False
+    # Parse with tomllib so valid headers the fixer accepts (leading whitespace,
+    # trailing comments) are not misdiagnosed. Line scan only as pre-3.11 fallback.
     hooks_on = False
-    for line in text.splitlines():
-        s = line.strip()
-        if s.startswith("["):
-            in_features = s == "[features]"
-        elif in_features and re.match(r"plugin_hooks\s*=\s*true", s):
-            hooks_on = True
-            break
+    try:
+        import tomllib
+        parsed = tomllib.loads(text)
+        features = parsed.get("features")
+        hooks_on = isinstance(features, dict) and features.get("plugin_hooks") is True
+    except ModuleNotFoundError:
+        # No tomllib (pre-3.11): tolerate the header/assignment spellings TOML
+        # allows — internal whitespace and trailing comments — instead of the
+        # exact-match scan that misdiagnosed valid configs the fixer accepts.
+        in_features = False
+        for line in text.splitlines():
+            s = line.strip()
+            if s.startswith("["):
+                in_features = bool(re.match(r"^\[\s*features\s*\]\s*(?:#.*)?$", s))
+            elif in_features and re.match(r"^plugin_hooks\s*=\s*true\s*(?:#.*)?$", s):
+                hooks_on = True
+                break
+    except Exception:  # noqa: BLE001 — invalid TOML means the flag is not in effect
+        hooks_on = False
     if hooks_on:
         out.append(check("plugin_hooks", "plugin_hooks", "healthy", "enabled in ~/.codex/config.toml"))
     else:
@@ -670,11 +733,22 @@ def check_boot(enabled: list[str]) -> dict:
 # ── engine ───────────────────────────────────────────────────────────────────
 
 def run(run_preflight: bool = True, boot_test: bool = False) -> dict:
+    # parse_enabled_tools already returns defaults when the file or section is
+    # genuinely absent — an exception here means the config exists but cannot
+    # be read/parsed, which must be reported, not silently defaulted.
+    config_issue = None
     try:
         enabled = bridge_tools.parse_enabled_tools()
-    except Exception:  # noqa: BLE001 — a broken config must not kill the engine
+    except Exception as exc:  # noqa: BLE001 — a broken config must not kill the engine
         enabled = list(bridge_tools.DEFAULT_TOOLS)
+        config_issue = check(
+            "enabled_tools_config", ".cc-suite.md → Enabled Tools", "issue",
+            f"could not read the Enabled Tools selection ({exc}) — "
+            "reporting against the default tool set",
+            manual="fix the `## Enabled Tools` section of .cc-suite.md, then re-run diagnose")
     checks: list[dict] = []
+    if config_issue:
+        checks.append(config_issue)
     checks.append(check_agents_md())
     checks.append(check_claude_md())
     checks.extend(check_legacy_google())

@@ -33,7 +33,10 @@ LEGACY_ORIGINAL_CLAUDE=".codex/.cc-suite-original-claude.md"
 CLAUDE_MIGRATED=0
 CC_SUITE_CREATED_CLAUDE=0
 CC_SUITE_CREATED_GEMINI=0
-CC_SUITE_CREATED_CODEX_CONFIG=0
+# Empty means "not recorded" (legacy install or pre-existing AGENTS.md) and
+# falls back to the scaffold-content heuristic below; "1" means init wrote
+# AGENTS.md itself.
+CC_SUITE_CREATED_AGENTS=""
 if [ -f "$PROVENANCE" ]; then
   # shellcheck disable=SC1090
   while IFS='=' read -r k v; do
@@ -41,16 +44,38 @@ if [ -f "$PROVENANCE" ]; then
       CLAUDE_MIGRATED)            CLAUDE_MIGRATED="$v" ;;
       CC_SUITE_CREATED_CLAUDE)   CC_SUITE_CREATED_CLAUDE="$v" ;;
       CC_SUITE_CREATED_GEMINI)   CC_SUITE_CREATED_GEMINI="$v" ;;
-      CC_SUITE_CREATED_CODEX_CONFIG) CC_SUITE_CREATED_CODEX_CONFIG="$v" ;;
+      CC_SUITE_CREATED_AGENTS)   CC_SUITE_CREATED_AGENTS="$v" ;;
     esac
   done < "$PROVENANCE"
 fi
 
-# AGENTS.md — restore content to CLAUDE.md first, then delete.
+# AGENTS.md — restore content to CLAUDE.md first, then delete. A pre-existing
+# AGENTS.md that init.sh left untouched must survive unbridge — it is user
+# content that exists nowhere else.
+KEEP_AGENTS=0
 if [ -f AGENTS.md ]; then
   if [ "$CC_SUITE_CREATED_CLAUDE" = "1" ]; then
-    # init.sh created CLAUDE.md from scratch — there is nothing original to restore.
-    skip "CLAUDE.md was created by cc-suite; will be removed (no content to restore)"
+    # Recorded provenance beats content inspection: init.sh writes
+    # CC_SUITE_CREATED_AGENTS=1 whenever it created AGENTS.md itself. The
+    # scaffold-content heuristic below remains only for legacy installs whose
+    # provenance predates that key.
+    if [ "$CC_SUITE_CREATED_AGENTS" = "1" ]; then
+      # init.sh created both files from scratch — nothing original to restore.
+      skip "CLAUDE.md was created by cc-suite; will be removed (no content to restore)"
+    elif [ -n "$CC_SUITE_CREATED_AGENTS" ]; then
+      # Explicitly recorded as NOT created by init — user content.
+      KEEP_AGENTS=1
+      skip "AGENTS.md predates cc-suite (recorded provenance) — left alone"
+    elif grep -qF 'Never modify `CLAUDE.md` directly' AGENTS.md; then
+      # Legacy install (no CC_SUITE_CREATED_AGENTS record): fall back to the
+      # scaffold marker init.sh wrote into a cc-suite-created AGENTS.md.
+      skip "CLAUDE.md was created by cc-suite; will be removed (no content to restore)"
+    else
+      # No record and no cc-suite scaffold: AGENTS.md predated init.sh, which
+      # only created the CLAUDE.md import. Deleting it would lose user content.
+      KEEP_AGENTS=1
+      skip "AGENTS.md predates cc-suite — left alone"
+    fi
   elif [ "$CLAUDE_MIGRATED" = "1" ] && [ -f "$ORIGINAL_CLAUDE" ]; then
     # Restore the verbatim original CLAUDE.md, not the AGENTS.md scaffolding.
     cp "$ORIGINAL_CLAUDE" CLAUDE.md
@@ -75,17 +100,22 @@ if [ -f AGENTS.md ]; then
     cp AGENTS.md "$_backup"
     warn "CLAUDE.md has its own content; backed up AGENTS.md → $_backup"
   fi
-  rm AGENTS.md
-  ok "removed AGENTS.md"
+  if [ "$KEEP_AGENTS" != "1" ]; then
+    rm AGENTS.md
+    ok "removed AGENTS.md"
+  fi
 else
   skip "AGENTS.md not present"
 fi
 
-# GEMINI.md — remove if it was cc-suite-created or is a bare @import.
+# GEMINI.md — remove only a still-pure @import. A cc-suite-created file the
+# user has since edited is their content now; deleting it would lose edits.
 if [ -f GEMINI.md ]; then
-  if [ "$CC_SUITE_CREATED_GEMINI" = "1" ] || is_pure_import GEMINI.md; then
+  if is_pure_import GEMINI.md; then
     rm GEMINI.md
-    ok "removed GEMINI.md (cc-suite created or @AGENTS.md import)"
+    ok "removed GEMINI.md (@AGENTS.md import)"
+  elif [ "$CC_SUITE_CREATED_GEMINI" = "1" ]; then
+    skip "GEMINI.md was cc-suite-created but has been edited — left alone"
   else
     skip "GEMINI.md has custom content — left alone"
   fi
@@ -119,10 +149,12 @@ if [ -d .cc-suite ]; then
 fi
 
 # .agents/mcp_config.json — remove only the cc-suite-managed entries. A user
-# config or user entries in a generated file are preserved.
+# config, user entries in a generated file, and sibling top-level keys are
+# all preserved; the file is deleted only when nothing at all remains.
+UNBRIDGE_FAILED=0
 if [ -f .agents/.cc-suite-mcp.provenance.json ]; then
-  python3 - <<'PY'
-import json
+  if python3 - <<'PY'; then
+import json, sys
 from pathlib import Path
 
 target = Path('.agents/mcp_config.json')
@@ -130,21 +162,37 @@ provenance = Path('.agents/.cc-suite-mcp.provenance.json')
 try:
     meta = json.loads(provenance.read_text())
     managed = set(meta.get('managed_servers', []))
-    data = json.loads(target.read_text()) if target.exists() else {}
-    servers = data.get('mcpServers', {}) if isinstance(data, dict) else {}
-    if isinstance(servers, dict):
+    if target.exists():
+        data = json.loads(target.read_text())
+        if not isinstance(data, dict) or not isinstance(data.get('mcpServers', {}), dict):
+            # SystemExit(1) is a BaseException — it bypasses the broad handler
+            # below, so the shell wrapper records the failure and unbridge does
+            # not announce completion over an uncleaned config.
+            print('! .agents/mcp_config.json has an unexpected shape — left alone (provenance kept)', file=sys.stderr)
+            raise SystemExit(1)
+        servers = data.get('mcpServers', {})
         remaining = {k: v for k, v in servers.items() if k not in managed}
         if remaining:
-            target.write_text(json.dumps({'mcpServers': remaining}, indent=2) + '\n')
+            data['mcpServers'] = remaining
+        else:
+            data.pop('mcpServers', None)
+        if data:
+            target.write_text(json.dumps(data, indent=2) + '\n')
             print('✓ .agents/mcp_config.json: removed cc-suite-managed servers')
-        elif target.exists():
+        else:
             target.unlink()
             print('✓ removed .agents/mcp_config.json (cc-suite generated)')
     provenance.unlink()
     print('✓ removed .agents/.cc-suite-mcp.provenance.json')
 except Exception as exc:
-    print(f'! could not safely remove Antigravity MCP bridge: {exc}')
+    print(f'! could not safely remove Antigravity MCP bridge: {exc}', file=sys.stderr)
+    raise SystemExit(1)
 PY
+    :
+  else
+    warn "Antigravity MCP cleanup failed — .agents/ bridge artifacts left in place"
+    UNBRIDGE_FAILED=1
+  fi
 elif [ -f .agents/mcp_config.json ]; then
   skip ".agents/mcp_config.json has no cc-suite provenance — left alone"
 fi
@@ -191,39 +239,55 @@ PY
 fi
 [ -f .codex/hooks.cc-suite.json ] && { rm .codex/hooks.cc-suite.json && ok "removed .codex/hooks.cc-suite.json"; } || true
 
-# .codex/config.toml — strip the sentinel block; if init.sh created the
-# config file in the first place AND it has not been hand-edited since,
-# remove the whole file.
+# .codex/config.toml — strip the cc-suite sentinel blocks; delete the whole
+# file only when init.sh created it AND the non-sentinel remainder still
+# matches the init template exactly (i.e. it has not been hand-edited since).
 if [ -f .codex/config.toml ]; then
-  CCBR_CFG_PROV="$CC_SUITE_CREATED_CODEX_CONFIG" python3 - <<'PY'
-import os
+  python3 - <<'PY'
 from pathlib import Path
-SENTINEL_START = "# >>> cc-suite-mcp >>>"
-SENTINEL_END   = "# <<< cc-suite-mcp <<<"
-INIT_MARKER    = "# cc-suite: generated-by-init"
+# Both cc-suite-owned sentinel blocks: MCP mirror (bridge_mcp.sh) and the
+# claude-octopus registration (mcp_claude.sh).
+BLOCKS = [
+    ("# >>> cc-suite-mcp >>>", "# <<< cc-suite-mcp <<<"),
+    ("# >>> cc-suite-claude-mcp >>>", "# <<< cc-suite-claude-mcp <<<"),
+]
+INIT_MARKER = "# cc-suite: generated-by-init"
+# Must match the CFG heredoc in init.sh verbatim.
+INIT_TEMPLATE = """\
+# cc-suite: generated-by-init  (this comment is consumed by unbridge)
+# Codex CLI configuration for this project.
+# See: https://developers.openai.com/codex/config-reference
+
+# Uncomment to also read CLAUDE.md as a fallback instruction source:
+# project_doc_fallback_filenames = ["CLAUDE.md"]
+
+# MCP servers mirrored from .mcp.json are added below by /cc-suite:bridge-mcp.
+"""
 p = Path(".codex/config.toml")
 text = p.read_text(encoding="utf-8")
-start = text.find(SENTINEL_START)
-end   = text.find(SENTINEL_END)
-if start != -1 and end != -1:
-    nl = text.find("\n", end)
-    cleaned = text[:start].rstrip("\n") + ("\n" + text[nl + 1:] if nl != -1 else "")
-else:
-    cleaned = text
-cleaned_strip = cleaned.strip()
-# If the file was created by init.sh and the only content left is the marker
-# comment + the init template, delete the file. Provenance-aware via env.
-created_by_init = os.environ.get("CCBR_CFG_PROV") == "1" or INIT_MARKER in cleaned
-if created_by_init and INIT_MARKER in cleaned:
+cleaned = text
+removed_any = False
+for s_marker, e_marker in BLOCKS:
+    start = cleaned.find(s_marker)
+    end   = cleaned.find(e_marker)
+    if start != -1 and end != -1 and end > start:
+        nl = cleaned.find("\n", end)
+        cleaned = cleaned[:start].rstrip("\n") + ("\n" + cleaned[nl + 1:] if nl != -1 else "")
+        removed_any = True
+if cleaned.strip() == INIT_TEMPLATE.strip():
+    # Unedited init output (the exact-template match implies the init marker):
+    # safe to delete outright.
     p.unlink()
-    print("✓ removed .codex/config.toml (cc-suite-generated)")
-elif start != -1 and end != -1:
-    if cleaned_strip:
+    print("✓ removed .codex/config.toml (cc-suite-generated, unedited)")
+elif removed_any:
+    if cleaned.strip():
         p.write_text(cleaned + "\n", encoding="utf-8")
-        print("✓ .codex/config.toml: removed cc-suite-mcp sentinel block")
+        print("✓ .codex/config.toml: removed cc-suite sentinel block(s)")
     else:
         p.unlink()
-        print("✓ removed .codex/config.toml (only contained sentinel block)")
+        print("✓ removed .codex/config.toml (only contained cc-suite blocks)")
+elif INIT_MARKER in cleaned:
+    print("· .codex/config.toml was created by init but has been edited — left alone")
 else:
     print("· .codex/config.toml has no cc-suite markers — left alone")
 PY
@@ -254,4 +318,8 @@ PY
 fi
 
 echo
+if [ "$UNBRIDGE_FAILED" = "1" ]; then
+  warn "cc-suite unbridge finished with errors — see messages above."
+  exit 1
+fi
 ok "cc-suite unbridge complete. .mcp.json and .claude/ are left alone."

@@ -38,10 +38,33 @@ function stripLogPrefix(line) {
   return line.replace(/^\[[^\]]+\]\s*/, "").trim();
 }
 
+const PROGRESS_PREVIEW_TAIL_BYTES = 64 * 1024;
+
 export function readJobProgressPreview(logFile, maxLines = DEFAULT_MAX_PROGRESS_LINES) {
   if (!logFile || !fs.existsSync(logFile)) return [];
-  const lines = fs
-    .readFileSync(logFile, "utf8")
+  // Read only a bounded tail window so large logs never make status slow.
+  let tail;
+  let start = 0;
+  try {
+    const fd = fs.openSync(logFile, "r");
+    try {
+      const size = fs.fstatSync(fd).size;
+      start = Math.max(0, size - PROGRESS_PREVIEW_TAIL_BYTES);
+      const buffer = Buffer.alloc(size - start);
+      fs.readSync(fd, buffer, 0, buffer.length, start);
+      tail = buffer.toString("utf8");
+    } finally {
+      fs.closeSync(fd);
+    }
+    if (start > 0) {
+      // Drop the first line: it may be a fragment of a truncated line.
+      const firstNewline = tail.indexOf("\n");
+      tail = firstNewline === -1 ? "" : tail.slice(firstNewline + 1);
+    }
+  } catch {
+    return [];
+  }
+  const lines = tail
     .split(/\r?\n/)
     .map((l) => l.trimEnd())
     .filter(Boolean)
@@ -137,14 +160,18 @@ export function buildStatusSnapshot(cwd, options = {}) {
     ? enrichJob(latestFinishedRaw, { maxProgressLines })
     : null;
 
-  const recent = (options.all ? jobs : jobs.slice(0, maxJobs))
-    .filter(
-      (j) =>
-        j.status !== "queued" &&
-        j.status !== "running" &&
-        j.id !== latestFinished?.id
-    )
-    .map((j) => enrichJob(j, { maxProgressLines }));
+  // Filter to finished jobs before applying the cap, so active jobs and the
+  // latest-finished entry cannot consume the recent-jobs window.
+  const finishedRecent = jobs.filter(
+    (j) =>
+      j.status !== "queued" &&
+      j.status !== "running" &&
+      j.id !== latestFinished?.id
+  );
+  const recent = (options.all
+    ? finishedRecent
+    : finishedRecent.slice(0, maxJobs)
+  ).map((j) => enrichJob(j, { maxProgressLines }));
 
   return {
     workspaceRoot,
@@ -173,36 +200,30 @@ export function resolveResultJob(cwd, reference) {
   );
 
   if (reference) {
-    // Look for exact or prefix match in finished jobs
-    const exact = finishedJobs.find((j) => j.id === reference);
-    if (exact) return { workspaceRoot, job: exact };
-
-    const prefixMatches = finishedJobs.filter((j) =>
-      j.id.startsWith(reference)
-    );
-    if (prefixMatches.length === 1)
-      return { workspaceRoot, job: prefixMatches[0] };
-    if (prefixMatches.length > 1) {
+    // Resolve exact/prefix identity across ALL jobs first, then branch on the
+    // selected job's status — otherwise a finished prefix match (abc-old) can
+    // shadow an active exact match (abc).
+    let selected = jobs.find((j) => j.id === reference) ?? null;
+    if (!selected) {
+      const prefixMatches = jobs.filter((j) => j.id.startsWith(reference));
+      if (prefixMatches.length > 1) {
+        throw new Error(
+          `Job reference "${reference}" is ambiguous. Use a longer job id.`
+        );
+      }
+      selected = prefixMatches[0] ?? null;
+    }
+    if (!selected) {
       throw new Error(
-        `Job reference "${reference}" is ambiguous. Use a longer job id.`
+        `No job found for "${reference}". Run /codex-toolkit:status to list known jobs.`
       );
     }
-
-    // Not found in finished — check if it's still running
-    const activeJob = jobs.find(
-      (j) =>
-        (j.id === reference || j.id.startsWith(reference)) &&
-        (j.status === "queued" || j.status === "running")
-    );
-    if (activeJob) {
+    if (selected.status === "queued" || selected.status === "running") {
       throw new Error(
-        `Job ${activeJob.id} is still ${activeJob.status}. Check /codex-toolkit:status.`
+        `Job ${selected.id} is still ${selected.status}. Check /codex-toolkit:status.`
       );
     }
-
-    throw new Error(
-      `No job found for "${reference}". Run /codex-toolkit:status to list known jobs.`
-    );
+    return { workspaceRoot, job: selected };
   }
 
   // No reference — return latest finished

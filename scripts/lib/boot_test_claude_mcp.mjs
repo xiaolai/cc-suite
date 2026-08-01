@@ -23,7 +23,18 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PIN_FILE = resolve(HERE, "claude-octopus-pin.txt");
-const TIMEOUT_MS = Number(process.env.TIMEOUT_MS) || 30000;
+function parseTimeoutMs(raw) {
+  if (raw === undefined || raw === "") return 30000;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    console.error(
+      `✗ invalid TIMEOUT_MS ${JSON.stringify(raw)}: expected a positive integer of milliseconds`
+    );
+    process.exit(1);
+  }
+  return parsed;
+}
+const TIMEOUT_MS = parseTimeoutMs(process.env.TIMEOUT_MS);
 
 function readPin() {
   return readFileSync(PIN_FILE, "utf8").trim();
@@ -60,15 +71,28 @@ const timer = setTimeout(() => {
 
 function finish(code, message) {
   clearTimeout(timer);
-  try { child.kill("SIGTERM"); } catch {}
-  setTimeout(() => { try { child.kill("SIGKILL"); } catch {} }, 500);
   if (code === 0) {
     console.log(`✓ ${message}`);
   } else {
     console.error(`✗ ${message}`);
     if (stderr.trim()) console.error(`  stderr: ${stderr.trim().split("\n").slice(0, 4).join(" | ")}`);
   }
-  process.exit(code);
+  // Only exit once the child is gone: exit immediately if it already died,
+  // otherwise SIGTERM, escalate to SIGKILL after a grace period, and exit on
+  // its exit event — so a SIGTERM-resistant child is not orphaned.
+  if (child.exitCode !== null || child.signalCode !== null) {
+    process.exit(code);
+  }
+  const killTimer = setTimeout(() => {
+    try { child.kill("SIGKILL"); } catch {}
+    // Last resort if no exit event ever arrives (e.g. spawn never happened).
+    setTimeout(() => process.exit(code), 500);
+  }, 500);
+  child.once("exit", () => {
+    clearTimeout(killTimer);
+    process.exit(code);
+  });
+  try { child.kill("SIGTERM"); } catch {}
 }
 
 child.on("error", (err) => {

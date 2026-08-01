@@ -57,7 +57,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/init.sh"
 
 ## Tests
 
-Run the integration suite (95 test sections, 426 assertions):
+Run the integration suite (97 test sections, 433 assertions):
 
 ```bash
 bash tests/integration.sh

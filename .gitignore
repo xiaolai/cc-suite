@@ -4,7 +4,7 @@
 *.pyc
 
 # >>> cc-suite >>>
-# cc-suite-schema: 6
+# cc-suite-schema: 7
 # AI assistant local state
 .claude/settings.local.json
 .claude/CLAUDE.local.md
@@ -31,6 +31,15 @@ CLAUDE.local.md
 # cc-suite tool-profile bridge (grok/opencode/qwen) — derived provenance
 # sidecars tracking which MCP servers cc-suite owns. Not authored.
 .cc-suite-*.provenance.json
+
+# cc-suite local state — what init created, and the pre-bridge CLAUDE.md backup.
+# Machine-local bookkeeping, not shared. Listed file-by-file on purpose:
+# .cc-suite/agents/ holds declared advisors and IS meant to be committed.
+.cc-suite/provenance
+.cc-suite/original-claude.md
+# Audit findings files written by /cc-suite:audit and the audit-fix loop —
+# per-run working state (findings + fix statuses), not authored content.
+.cc-suite/audits/
 
 # cc-suite: plugin repo — keep the dev-only Codex MCP registration out of the
 # published plugin. Claude Code auto-registers a plugin-root .mcp.json, which

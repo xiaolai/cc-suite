@@ -31,13 +31,26 @@ ok()   { printf '✓ %s\n' "$*"; }
 skip() { printf '· %s\n' "$*"; }
 
 # Which coding agents this project bridges. Single-sourced from the
-# `## Enabled Tools` section of .cc-suite.md via the bridge engine, which falls
-# back to claude/codex/antigravity when the file or section is absent — so a
-# project initialized before tool selection existed behaves exactly as before.
-ENABLED_TOOLS="$(python3 "${SCRIPT_DIR}/bridge_tools.py" --enabled 2>/dev/null || true)"
+# `## Enabled Tools` section of .cc-suite.md via the bridge engine, which
+# itself falls back to claude/codex/antigravity when the file or section is
+# absent — so a project initialized before tool selection existed behaves
+# exactly as before. A helper FAILURE is different from an absent selection:
+# defaulting silently could create artifacts the project did not select.
+if ! ENABLED_TOOLS="$(python3 "${SCRIPT_DIR}/bridge_tools.py" --enabled 2>/dev/null)"; then
+  echo "error: could not read the Enabled Tools selection (bridge_tools.py --enabled failed)." >&2
+  echo "       Fix the '## Enabled Tools' section of .cc-suite.md (or remove it), then re-run /cc-suite:init." >&2
+  exit 1
+fi
 [ -n "$ENABLED_TOOLS" ] || ENABLED_TOOLS=$'claude\ncodex\nantigravity'
 
 tool_enabled() { printf '%s\n' "$ENABLED_TOOLS" | grep -qx "$1"; }
+
+# A "pure @AGENTS.md import" is exactly one nonblank line equal to @AGENTS.md.
+# Trim per-line edges only — deleting ALL whitespace would make invalid content
+# such as `@ AGENTS.md` look like a valid import.
+claude_pure_import() {
+  [ "$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' CLAUDE.md | grep -v '^$')" = "@AGENTS.md" ]
+}
 
 # cc-suite's own bookkeeping. It used to live under .codex/, which meant a
 # project that bridges no Codex still grew a .codex/ directory — misleading, and
@@ -50,6 +63,10 @@ ORIGINAL_CLAUDE="${STATE_DIR}/original-claude.md"
 
 # Tracks whether CLAUDE.md content was migrated into AGENTS.md in this run.
 CLAUDE_MIGRATED=0
+# Tracks whether this run wrote AGENTS.md itself (fresh scaffold or migration).
+# Recorded in provenance so unbridge.sh can key its delete decision on what
+# init actually did, not on mutable file content.
+CC_SUITE_CREATED_AGENTS=0
 
 # --- 1. AGENTS.md ----------------------------------------------------------
 if [ -f AGENTS.md ]; then
@@ -60,8 +77,7 @@ else
     # A pure @AGENTS.md import is a one-line file. Anything else (including
     # `@AGENTS.md\n# extra content`) is either substantive content or an
     # unusual hybrid and should NOT be silently overwritten.
-    _claude_trim="$(tr -d '[:space:]' < CLAUDE.md)"
-    if [ "$_claude_trim" = "@AGENTS.md" ]; then
+    if claude_pure_import; then
       skip "CLAUDE.md is already a pure @AGENTS.md import — not migrating"
     elif grep -qE '^@AGENTS\.md\s*$' CLAUDE.md; then
       # Hybrid: @AGENTS.md line + other content. Refuse to touch it.
@@ -109,13 +125,13 @@ context; Codex and `agy` both read `AGENTS.md` natively.
 - `.mcp.json` — MCP server registrations (Claude Code + Codex)
 TPL
   } > AGENTS.md
+  CC_SUITE_CREATED_AGENTS=1
   ok "AGENTS.md written ($([ "$CLAUDE_MIGRATED" = "1" ] && echo "migrated from CLAUDE.md" || echo "fresh"))"
 fi
 
 # --- 2. CLAUDE.md → @AGENTS.md import --------------------------------------
 if [ -f CLAUDE.md ]; then
-  _claude_trim="$(tr -d '[:space:]' < CLAUDE.md)"
-  if [ "$_claude_trim" = "@AGENTS.md" ]; then
+  if claude_pure_import; then
     skip "CLAUDE.md already imports @AGENTS.md"
   elif [ "$CLAUDE_MIGRATED" = "1" ]; then
     # Safe to replace: content was just written to AGENTS.md in this run.
@@ -156,20 +172,21 @@ fi
 if [ -n "${CC_SUITE_CREATED_CLAUDE:-}" ]; then
   record_provenance "CC_SUITE_CREATED_CLAUDE=1"
 fi
+if [ "${CC_SUITE_CREATED_AGENTS:-0}" = "1" ]; then
+  record_provenance "CC_SUITE_CREATED_AGENTS=1"
+fi
 
 # --- 4. Codex scaffolding ---------------------------------------------------
 if ! tool_enabled codex; then
   skip ".codex/prompts skipped — codex not enabled for this project"
 else
   mkdir -p .codex/prompts
-  for d in .codex/prompts; do
-    if [ ! -e "$d/.gitkeep" ]; then
-      touch "$d/.gitkeep"
-      ok "$d/.gitkeep"
-    else
-      skip "$d/.gitkeep"
-    fi
-  done
+  if [ ! -e .codex/prompts/.gitkeep ]; then
+    touch .codex/prompts/.gitkeep
+    ok ".codex/prompts/.gitkeep"
+  else
+    skip ".codex/prompts/.gitkeep"
+  fi
 fi
 
 # --- 5. .codex/config.toml -------------------------------------------------

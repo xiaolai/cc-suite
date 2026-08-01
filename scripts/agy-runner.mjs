@@ -59,6 +59,26 @@ const CONVERSATIONS_DIR =
   process.env.AGY_CONVERSATIONS_DIR ||
   path.join(os.homedir(), ".gemini", "antigravity-cli", "conversations");
 
+// A value-taking flag must be followed by a real value. "" is the background
+// argv convention for "unset" and keeps its historical skip-the-flag behavior;
+// another option in value position used to be consumed as the value (e.g.
+// `--model --sandbox read-only` set model to "--sandbox") and now fails loudly.
+function flagValue(value, flag) {
+  if (value.startsWith("--")) {
+    process.stderr.write(`Error: ${flag} requires a value, got '${value}'\n`);
+    process.exit(1);
+  }
+  return value;
+}
+
+const KNOWN_FLAGS = new Set([
+  "--kind", "--model", "--effort", "--sandbox", "--mode", "--add-dir",
+  "--resume", "--timeout-ms", "--background", "--session-id", "--summary",
+]);
+
+const VALID_SANDBOXES = new Set(["read-only", "workspace-write", "danger-full-access"]);
+const VALID_MODES = new Set(["accept-edits", "plan"]);
+
 function parseArgs(argv) {
   const args = {
     kind: "agy",
@@ -75,28 +95,57 @@ function parseArgs(argv) {
     prompt: null,
   };
 
+  // Every token before `--` must be a known flag (or a flag value): unknown
+  // options, stray positionals, missing flag values, and malformed values all
+  // fail loudly pre-spawn instead of being silently dropped.
   let i = 2;
   while (i < argv.length) {
     const arg = argv[i];
-    if (arg === "--kind" && argv[i + 1]) { args.kind = argv[++i]; }
-    else if (arg === "--model" && argv[i + 1]) { args.model = argv[++i]; }
-    else if (arg === "--effort" && argv[i + 1]) { args.effort = argv[++i]; }
-    else if (arg === "--sandbox" && argv[i + 1]) { args.sandbox = argv[++i]; }
-    else if (arg === "--mode" && argv[i + 1]) { args.mode = argv[++i]; }
-    else if (arg === "--add-dir" && argv[i + 1]) { args.addDirs.push(argv[++i]); }
-    else if (arg === "--resume" && argv[i + 1]) { args.resume = argv[++i]; }
-    else if (arg === "--timeout-ms" && argv[i + 1]) {
-      const n = Number(argv[++i]);
-      if (Number.isFinite(n) && n > 0) args.timeoutMs = n;
-    }
-    else if (arg === "--background") { args.background = true; }
-    else if (arg === "--session-id" && argv[i + 1]) { args.sessionId = argv[++i]; }
-    else if (arg === "--summary" && argv[i + 1]) { args.summary = argv[++i]; }
-    else if (arg === "--") {
+    if (arg === "--") {
       args.prompt = argv.slice(i + 1).join(" ");
       break;
     }
-    i++;
+    if (arg === "--background") {
+      args.background = true;
+      i += 1;
+      continue;
+    }
+    if (!KNOWN_FLAGS.has(arg)) {
+      process.stderr.write(
+        arg.startsWith("--")
+          ? `Error: unknown option '${arg}'\n`
+          : `Error: unexpected argument '${arg}' — the prompt must follow '--'\n`
+      );
+      process.exit(1);
+    }
+    if (i + 1 >= argv.length) {
+      process.stderr.write(`Error: ${arg} requires a value\n`);
+      process.exit(1);
+    }
+    const raw = argv[i + 1];
+    i += 2;
+    if (raw === "") continue; // background "" placeholder — flag stays unset
+    const value = flagValue(raw, arg);
+    switch (arg) {
+      case "--kind": args.kind = value; break;
+      case "--model": args.model = value; break;
+      case "--effort": args.effort = value; break;
+      case "--sandbox": args.sandbox = value; break;
+      case "--mode": args.mode = value; break;
+      case "--add-dir": args.addDirs.push(value); break;
+      case "--resume": args.resume = value; break;
+      case "--session-id": args.sessionId = value; break;
+      case "--summary": args.summary = value; break;
+      case "--timeout-ms": {
+        const n = Number(value);
+        if (!Number.isFinite(n) || n <= 0) {
+          process.stderr.write(`Error: --timeout-ms requires a positive number of milliseconds, got '${value}'\n`);
+          process.exit(1);
+        }
+        args.timeoutMs = n;
+        break;
+      }
+    }
   }
 
   return args;
@@ -410,6 +459,17 @@ function runBackground(cwd, args) {
     deadlineAt: new Date(Date.now() + args.timeoutMs).toISOString(),
   });
 
+  // A failed spawn must not leave the job recorded as running forever.
+  child.on("error", (err) => {
+    appendLog(logFile, `Background spawn error: ${err.message}`);
+    upsertJob(cwd, {
+      id: jobId,
+      status: "failed",
+      errorMessage: `Failed to start background worker: ${err.message}`,
+      completedAt: new Date().toISOString(),
+    });
+  });
+
   child.unref();
 
   const output = { jobId, status: "queued", message: `Job ${jobId} started in background.` };
@@ -443,6 +503,17 @@ async function main() {
     process.stderr.write("Error: no prompt provided. Use -- <prompt>\n");
     process.exit(1);
   }
+  // An invalid sandbox must fail loudly: buildAgyArgs would otherwise emit
+  // neither --sandbox nor a permission flag, silently dropping the requested
+  // isolation.
+  if (!VALID_SANDBOXES.has(args.sandbox)) {
+    process.stderr.write(`Error: invalid --sandbox '${args.sandbox}' (expected read-only, workspace-write, or danger-full-access)\n`);
+    process.exit(1);
+  }
+  if (args.mode && !VALID_MODES.has(args.mode)) {
+    process.stderr.write(`Error: invalid --mode '${args.mode}' (expected accept-edits or plan)\n`);
+    process.exit(1);
+  }
 
   const cwd = resolveWorkspaceRoot(process.cwd());
 
@@ -459,4 +530,26 @@ async function main() {
   }
 }
 
-main();
+main().catch((error) => {
+  const message = error?.message || String(error);
+  const backgroundJobId = process.env.CODEX_TOOLKIT_BACKGROUND_JOB_ID;
+  if (backgroundJobId) {
+    try {
+      upsertJob(resolveWorkspaceRoot(process.cwd()), {
+        id: backgroundJobId,
+        status: "failed",
+        errorMessage: message,
+        completedAt: new Date().toISOString(),
+      });
+    } catch {
+      // State unreachable — the structured output below is the only signal.
+    }
+  }
+  process.stdout.write(JSON.stringify({
+    jobId: backgroundJobId || null,
+    status: "failed",
+    error: message,
+  }) + "\n");
+  process.stderr.write(`Error: ${message}\n`);
+  process.exitCode = 1;
+});

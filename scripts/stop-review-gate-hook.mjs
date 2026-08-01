@@ -39,7 +39,8 @@ function buildReviewPrompt(input = {}) {
   const parts = [
     "You are an adversarial code reviewer.",
     "The code and changes you are reviewing were produced by Anthropic's Claude (a competing AI system). Evaluate them with full rigor — do not defer to them or assume correctness because an AI wrote them.",
-    "Review the changes Claude made in this session.",
+    "Review the pending changes in this worktree: use `git status` and `git diff HEAD`, plus untracked files, to enumerate exactly what is uncommitted.",
+    "Session-scoped attribution is not available, so some pending changes may predate this session — review everything pending and flag issues regardless of author.",
     "Focus on: correctness, security vulnerabilities, logic errors, missing edge cases, and regressions.",
     "",
     "Output format:",
@@ -89,7 +90,7 @@ function runStopReview(cwd, input = {}) {
   if (result.error?.code === "ETIMEDOUT") {
     return {
       ok: false,
-      reason: "Stop-time review timed out after 15 minutes. Run /codex-toolkit:audit --wait manually.",
+      reason: "Stop-time review timed out after 15 minutes. Run /cc-suite:audit manually.",
     };
   }
 
@@ -99,7 +100,7 @@ function runStopReview(cwd, input = {}) {
       ok: false,
       reason: detail
         ? `Stop-time review failed: ${detail}`
-        : "Stop-time review failed. Run /codex-toolkit:audit manually.",
+        : "Stop-time review failed. Run /cc-suite:audit manually.",
     };
   }
 
@@ -111,7 +112,7 @@ function parseStopReviewOutput(rawOutput) {
   if (!text) {
     return {
       ok: false,
-      reason: "Stop-time review returned no output. Run /codex-toolkit:audit manually.",
+      reason: "Stop-time review returned no output. Run /cc-suite:audit manually.",
     };
   }
 
@@ -129,7 +130,7 @@ function parseStopReviewOutput(rawOutput) {
 
   return {
     ok: false,
-    reason: "Stop-time review returned unexpected output. Run /codex-toolkit:audit manually.",
+    reason: "Stop-time review returned unexpected output. Run /cc-suite:audit manually.",
   };
 }
 
@@ -147,7 +148,7 @@ function main() {
     (j) => j.status === "queued" || j.status === "running"
   );
   const runningNote = runningJob
-    ? `Codex job ${runningJob.id} is still running. Use /codex-toolkit:cancel ${runningJob.id} to stop it.`
+    ? `Codex job ${runningJob.id} is still running. Use /cc-suite:cancel ${runningJob.id} to stop it.`
     : null;
 
   // If review gate is disabled, just log and exit
@@ -156,11 +157,15 @@ function main() {
     return;
   }
 
-  // Check codex availability
+  // Check codex availability. The gate is opt-in, so fail closed: a missing
+  // reviewer must block like any other review failure, not silently allow.
   const codexStatus = binaryAvailable("codex");
   if (!codexStatus.available) {
-    logNote("Codex CLI not available for stop-time review.");
-    logNote(runningNote);
+    const reason = `Stop-time review gate is enabled but the Codex CLI is unavailable (${codexStatus.detail}). Install the codex CLI, or disable the review gate, then retry.`;
+    emitDecision({
+      decision: "block",
+      reason: runningNote ? `${runningNote} ${reason}` : reason,
+    });
     return;
   }
 

@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -36,6 +38,23 @@ def load_json(path: Path) -> object | None:
     except json.JSONDecodeError as exc:
         report(f"{path}: invalid JSON: {exc}", error=True)
         raise SystemExit(2)
+
+
+def atomic_write_json(path: Path, payload: object) -> None:
+    """Same-directory tempfile + os.replace, so a crash or a concurrent reader
+    never sees partial JSON."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".tmp-", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, indent=2) + "\n")
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def translate_server(name: str, config: object) -> dict | None:
@@ -143,7 +162,7 @@ def main() -> int:
         if not isinstance(raw_target, dict) or not isinstance(raw_target.get("mcpServers", {}), dict):
             report(f"{TARGET}: top-level mcpServers must be an object — leaving it alone", error=True)
             return 2
-        existing = raw_target["mcpServers"]
+        existing = raw_target.get("mcpServers", {})
 
     if managed is None:
         managed = set()
@@ -163,19 +182,26 @@ def main() -> int:
 
     merged = {**remaining, **desired}
     AGENTS_DIR.mkdir(parents=True, exist_ok=True)
-    TARGET.write_text(json.dumps({"mcpServers": merged}, indent=2) + "\n", encoding="utf-8")
-    PROVENANCE.write_text(
-        json.dumps(
-            {
-                "schema": SCHEMA,
-                "managed_servers": list(desired),
-                "source": ".mcp.json",
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    # Three-step transactional write, each step atomic, so a crash between any
+    # two writes self-heals on the next run in both directions:
+    #   1. expand provenance to old ∪ new — every server we have ever written
+    #      stays recorded as cc-suite-owned, so a fresh target entry is never
+    #      misclassified as a user-owned conflict;
+    #   2. write the target;
+    #   3. contract provenance to exactly the new set — a name is un-claimed
+    #      only after the target write that removed it has really landed, so a
+    #      removed managed server is never misclassified as user-owned either.
+    # A provenance name absent from the target is inert (nothing to preserve
+    # or remove), so a stale expanded set from a crashed run is harmless.
+    def prov_payload(names: list[str]) -> dict:
+        return {"schema": SCHEMA, "managed_servers": names, "source": ".mcp.json"}
+
+    union = sorted(managed | set(desired))
+    final = sorted(desired)
+    if union != final:
+        atomic_write_json(PROVENANCE, prov_payload(union))
+    atomic_write_json(TARGET, {"mcpServers": merged})
+    atomic_write_json(PROVENANCE, prov_payload(final))
 
     print(f"✓ {TARGET}: synchronized {len(desired)} cc-suite server(s)")
     if "claude-code" in desired:

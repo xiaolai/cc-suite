@@ -62,30 +62,87 @@ export function ensureStateDir(cwd) {
   fs.mkdirSync(resolveJobsDir(cwd), { recursive: true });
 }
 
+function quarantineStateFile(stateFile, cause) {
+  const quarantineFile = `${stateFile}.corrupt-${Date.now()}`;
+  const detail = cause?.message ?? String(cause);
+  try {
+    fs.renameSync(stateFile, quarantineFile);
+    process.stderr.write(
+      `cc-suite: state file was unreadable (${detail}); quarantined to ${quarantineFile}\n`
+    );
+  } catch {
+    process.stderr.write(
+      `cc-suite: state file is unreadable (${detail}) and could not be quarantined; using default state\n`
+    );
+  }
+}
+
 export function loadState(cwd) {
   const stateFile = resolveStateFile(cwd);
-  if (!fs.existsSync(stateFile)) {
+  let raw;
+  try {
+    raw = fs.readFileSync(stateFile, "utf8");
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      quarantineStateFile(stateFile, error);
+    }
     return defaultState();
   }
   try {
-    const parsed = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+    const parsed = JSON.parse(raw);
     return {
       ...defaultState(),
       ...parsed,
       config: { ...defaultState().config, ...(parsed.config ?? {}) },
       jobs: Array.isArray(parsed.jobs) ? parsed.jobs : [],
     };
-  } catch {
+  } catch (error) {
+    quarantineStateFile(stateFile, error);
     return defaultState();
   }
 }
 
+function isActiveJob(job) {
+  return job.status === "queued" || job.status === "running";
+}
+
 function pruneJobs(jobs) {
-  return [...jobs]
-    .sort((a, b) =>
-      String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? ""))
-    )
-    .slice(0, MAX_JOBS);
+  const sorted = [...jobs].sort((a, b) =>
+    String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? ""))
+  );
+  // Active jobs are never pruned; the cap applies to terminal jobs only.
+  const activeCount = sorted.filter(isActiveJob).length;
+  const terminalBudget = Math.max(0, MAX_JOBS - activeCount);
+  let terminalKept = 0;
+  return sorted.filter((job) => {
+    if (isActiveJob(job)) return true;
+    if (terminalKept < terminalBudget) {
+      terminalKept += 1;
+      return true;
+    }
+    return false;
+  });
+}
+
+function writeFileAtomic(filePath, content) {
+  const tmpFile = `${filePath}.tmp-${process.pid}-${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+  try {
+    const fd = fs.openSync(tmpFile, "w");
+    try {
+      fs.writeFileSync(fd, content, "utf8");
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(tmpFile, filePath);
+  } catch (error) {
+    try {
+      fs.unlinkSync(tmpFile);
+    } catch {}
+    throw error;
+  }
 }
 
 export function saveState(cwd, state) {
@@ -98,18 +155,19 @@ export function saveState(cwd, state) {
     jobs: nextJobs,
   };
 
+  // Commit the new state atomically before deleting pruned artifacts, so an
+  // interrupted save never leaves the old state referencing deleted files.
+  writeFileAtomic(
+    resolveStateFile(cwd),
+    `${JSON.stringify(nextState, null, 2)}\n`
+  );
+
   const retainedIds = new Set(nextJobs.map((j) => j.id));
   for (const job of previousJobs) {
     if (retainedIds.has(job.id)) continue;
     removeJobFile(resolveJobFile(cwd, job.id));
     removeFileIfExists(job.logFile);
   }
-
-  fs.writeFileSync(
-    resolveStateFile(cwd),
-    `${JSON.stringify(nextState, null, 2)}\n`,
-    "utf8"
-  );
   return nextState;
 }
 
@@ -161,11 +219,7 @@ export function getConfig(cwd) {
 export function writeJobFile(cwd, jobId, payload) {
   ensureStateDir(cwd);
   const jobFile = resolveJobFile(cwd, jobId);
-  fs.writeFileSync(
-    jobFile,
-    `${JSON.stringify(payload, null, 2)}\n`,
-    "utf8"
-  );
+  writeFileAtomic(jobFile, `${JSON.stringify(payload, null, 2)}\n`);
   return jobFile;
 }
 

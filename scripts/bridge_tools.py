@@ -35,6 +35,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -156,6 +157,23 @@ def load_json(path: Path) -> object | None:
         raise SystemExit(2)
 
 
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Same-directory tempfile + os.replace, so a crash or a concurrent reader
+    never sees partial content."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".tmp-", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+        raise
+
+
 def resolve_id(raw: str) -> str | None:
     """Map a user-typed tool token to a canonical profile id (honoring aliases)."""
     token = raw.strip().lower()
@@ -244,6 +262,36 @@ def claude_octopus_pin() -> str:
     return pin
 
 
+def _valid_server_shape(name: str, config: dict) -> bool:
+    """Type-check the fields the emitters consume, so a malformed .mcp.json
+    entry is skipped with a warning instead of crashing an emitter or being
+    silently mangled (e.g. a string `args` iterated per character)."""
+    if not isinstance(config.get("type", "stdio"), str):
+        warn(f"{name}: server type must be a string — skipped")
+        return False
+    if config.get("command") is not None and not isinstance(config["command"], str):
+        warn(f"{name}: command must be a string — skipped")
+        return False
+    if config.get("args") is not None and (
+        not isinstance(config["args"], list)
+        or not all(isinstance(a, str) for a in config["args"])
+    ):
+        warn(f"{name}: args must be a list of strings — skipped")
+        return False
+    for key in ("env", "headers"):
+        if config.get(key) is not None and (
+            not isinstance(config[key], dict)
+            or not all(isinstance(k, str) and isinstance(v, str) for k, v in config[key].items())
+        ):
+            warn(f"{name}: {key} must be an object of string values — skipped")
+            return False
+    for key in ("serverUrl", "url", "httpUrl"):
+        if config.get(key) is not None and not isinstance(config[key], str):
+            warn(f"{name}: {key} must be a string — skipped")
+            return False
+    return True
+
+
 def desired_servers() -> dict[str, dict]:
     """The canonical server set every registry-bridged tool receives:
     the project's .mcp.json servers plus the pinned claude-octopus server
@@ -251,10 +299,10 @@ def desired_servers() -> dict[str, dict]:
     """
     result: dict[str, dict] = {}
     for name, config in read_source_servers().items():
-        if isinstance(config, dict):
-            result[name] = copy.deepcopy(config)
-        else:
+        if not isinstance(config, dict):
             warn(f"{name}: server config must be an object — skipped")
+        elif _valid_server_shape(name, config):
+            result[name] = copy.deepcopy(config)
     result.setdefault(
         "claude-code",
         {"type": "stdio", "command": "npx", "args": ["-y", f"claude-octopus@{claude_octopus_pin()}"], "env": {}},
@@ -288,6 +336,16 @@ def _toml_key(name: str) -> str:
     return '"' + name.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
+def _toml_unquote(key: str) -> str:
+    """Undo TOML key quoting: literal (single-quoted) keys verbatim, basic
+    (double-quoted) keys with their backslash escapes resolved."""
+    if len(key) >= 2 and key[0] == key[-1] == "'":
+        return key[1:-1]
+    if len(key) >= 2 and key[0] == key[-1] == '"':
+        return re.sub(r"\\(.)", r"\1", key[1:-1])
+    return key
+
+
 def _toml_str(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
@@ -300,14 +358,16 @@ def resolve_path(spec: dict) -> Path:
 
 
 # ── Emitters ─────────────────────────────────────────────────────────────────
-# Each returns (changed: bool, redacted: dict[server_name, list[str]]).
+# The JSON emitters return (translated, redacted); the TOML emitter returns
+# (changed, redacted, emitted server names).
 
-def emit_toml_mcp_servers(path: Path, servers: dict[str, dict]) -> tuple[bool, dict]:
+def emit_toml_mcp_servers(path: Path, servers: dict[str, dict]) -> tuple[bool, dict, list]:
     """Grok Build (and the Codex TOML shape): a sentinel-guarded block of
     `[mcp_servers.<name>]` tables. Rewrites only the sentinel block, preserving
     anything the user added outside it."""
     redacted: dict[str, list[str]] = {}
     blocks: list[str] = []
+    emitted: list[str] = []
     for name, config in servers.items():
         key = _toml_key(name)
         lines = [f"[mcp_servers.{key}]"]
@@ -339,23 +399,51 @@ def emit_toml_mcp_servers(path: Path, servers: dict[str, dict]) -> tuple[bool, d
             redacted[name] = missing
             lines.append(f"# env/headers not mirrored (may hold secrets) — add manually: {', '.join(missing)}")
         blocks.append("\n".join(lines))
+        emitted.append(name)
 
     block = f"{TOML_SENTINEL_OPEN}\n" + "\n\n".join(blocks) + f"\n{TOML_SENTINEL_CLOSE}\n"
     existing = path.read_text(encoding="utf-8") if path.exists() else ""
-    base, had_block = _strip_toml_sentinel(existing)
+    base, _ = _strip_toml_sentinel(existing, path)
+    # A user-managed [mcp_servers.<name>] outside the sentinel would collide
+    # with ours: TOML forbids duplicate tables, so the file would be invalid.
+    # TOML allows whitespace around the dot and inside the brackets, single- or
+    # double-quoted keys, and a trailing comment — recognize all of these so an
+    # equivalent header spelling cannot slip past the conflict check.
+    user_tables = {
+        _toml_unquote(m.group(1))
+        for m in re.finditer(
+            r'^\s*\[\s*mcp_servers\s*\.\s*'
+            r'("(?:[^"\\]|\\.)*"|\'[^\']*\'|[A-Za-z0-9_-]+)'
+            r'\s*\]\s*(?:#.*)?$',
+            base, re.MULTILINE
+        )
+    }
+    conflicts = sorted(set(emitted) & user_tables)
+    if conflicts:
+        err(f"{path}: user-managed server name conflict(s): {', '.join(conflicts)} — refusing to overwrite")
+        raise SystemExit(2)
     new_text = (base.rstrip("\n") + "\n\n" + block) if base.strip() else block
     if existing == new_text:
-        return False, redacted
+        return False, redacted, emitted
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(new_text, encoding="utf-8")
-    return True, redacted
+    return True, redacted, emitted
 
 
-def _strip_toml_sentinel(text: str) -> tuple[str, bool]:
-    start = text.find(TOML_SENTINEL_OPEN)
-    end = text.find(TOML_SENTINEL_CLOSE)
-    if start == -1 or end == -1 or end < start:
+def _strip_toml_sentinel(text: str, path: Path | None = None) -> tuple[str, bool]:
+    """Remove the single sentinel-guarded block. Zero sentinels → unchanged.
+    Anything else (unpaired, reversed, or duplicated markers) is a corrupted
+    layout: fail loudly instead of splicing around it and appending a second
+    block alongside the malformed one."""
+    starts = [m.start() for m in re.finditer(re.escape(TOML_SENTINEL_OPEN), text)]
+    ends = [m.start() for m in re.finditer(re.escape(TOML_SENTINEL_CLOSE), text)]
+    if not starts and not ends:
         return text, False
+    if len(starts) != 1 or len(ends) != 1 or ends[0] < starts[0]:
+        where = f"{path}: " if path else ""
+        err(f"{where}malformed cc-suite-mcp sentinel block (unpaired, reversed, or duplicated) — fix it manually")
+        raise SystemExit(2)
+    start, end = starts[0], ends[0]
     nl = text.find("\n", end)
     tail = text[nl + 1:] if nl != -1 else ""
     return text[:start].rstrip("\n") + ("\n" + tail if tail else ""), True
@@ -461,10 +549,24 @@ def _write_json_merge(path: Path, root_key: str, translated: dict[str, dict]) ->
     new_text = json.dumps(new_doc, indent=2) + "\n"
 
     changed = not path.exists() or path.read_text(encoding="utf-8") != new_text
+    # Three-step transactional write, each step atomic, so a crash between any
+    # two writes self-heals on the next run in both directions:
+    #   1. expand provenance to old ∪ new — every server we have ever written
+    #      stays recorded as cc-suite-owned, so a fresh target entry is never
+    #      misclassified as a user-owned conflict;
+    #   2. write the target;
+    #   3. contract provenance to exactly the new set — a name is un-claimed
+    #      only after the target write that removed it has really landed, so a
+    #      removed managed server is never misclassified as user-owned either.
+    # A provenance name absent from the target is inert (nothing to preserve
+    # or remove), so a stale expanded set from a crashed run is harmless.
+    union = sorted(managed | set(translated))
+    final = sorted(translated)
+    if union != final:
+        _write_provenance(prov_path, union)
     if changed:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(new_text, encoding="utf-8")
-    _write_provenance(prov_path, sorted(translated))
+        _atomic_write_text(path, new_text)
+    _write_provenance(prov_path, final)
     return changed
 
 
@@ -483,10 +585,9 @@ def _read_provenance(path: Path) -> set[str] | None:
 
 
 def _write_provenance(path: Path, names: list[str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    _atomic_write_text(
+        path,
         json.dumps({"schema": PROV_SCHEMA, "managed_servers": names, "source": ".mcp.json"}, indent=2) + "\n",
-        encoding="utf-8",
     )
 
 
@@ -510,12 +611,42 @@ def _nested_set(doc: dict, key_path: list[str], value) -> None:
     cur[key_path[-1]] = value
 
 
+def _context_prov_path(path: Path) -> Path:
+    return path.parent / f".cc-suite-{path.name}.context.provenance.json"
+
+
+def _read_context_added(path: Path) -> list[str] | None:
+    """Context entries recorded as bridge-added, or None when no valid record exists."""
+    try:
+        data = json.loads(_context_prov_path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict) or data.get("schema") != PROV_SCHEMA:
+        return None
+    added = data.get("added_entries")
+    if isinstance(added, list) and all(isinstance(x, str) for x in added):
+        return added
+    return None
+
+
+def _record_context_added(path: Path, added: list[str]) -> None:
+    if not added:
+        return
+    prior = _read_context_added(path) or []
+    _atomic_write_text(
+        _context_prov_path(path),
+        json.dumps({"schema": PROV_SCHEMA, "added_entries": sorted(set(prior) | set(added))}, indent=2) + "\n",
+    )
+
+
 def ensure_context_files(path: Path, spec: dict) -> str:
     """Point a tool at AGENTS.md when it will not find it by itself.
 
     Additive by design: an existing user value is kept and only extended with
     the missing entries, because the setting is a general context-file list and
-    the user may legitimately have their own files in it."""
+    the user may legitimately have their own files in it. The entries this
+    bridge adds are recorded in a provenance sibling so unbridge removes
+    exactly those and never a pre-existing user entry."""
     key_path = spec["key"]
     want = spec["want"]
     dotted = ".".join(key_path)
@@ -528,14 +659,16 @@ def ensure_context_files(path: Path, spec: dict) -> str:
 
     current = _nested_get(doc, key_path)
     if current is None:
+        added = list(want)
         merged = list(want)
     elif isinstance(current, str):
-        merged = [*[w for w in want if w != current], current]
+        added = [w for w in want if w != current]
+        merged = [*added, current]
     elif isinstance(current, list) and all(isinstance(x, str) for x in current):
-        missing = [w for w in want if w not in current]
-        if not missing:
+        added = [w for w in want if w not in current]
+        if not added:
             return f"context: {dotted} already includes {want[0]}"
-        merged = [*missing, *current]
+        merged = [*added, *current]
     else:
         return f"context: {dotted} has an unexpected shape — left alone"
 
@@ -545,6 +678,7 @@ def ensure_context_files(path: Path, spec: dict) -> str:
         return f"context: {dotted} already current"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(new_text, encoding="utf-8")
+    _record_context_added(path, added)
     return f"context: {dotted} = {json.dumps(merged)}"
 
 
@@ -559,6 +693,14 @@ def link_skills(link_spec: dict) -> str:
     if link.is_symlink():
         if Path(os.readlink(link)) == rel:
             return f"skills: {link_spec['link']} already linked"
+        try:
+            ours = link.resolve() == target.resolve()
+        except OSError:
+            ours = False
+        if not ours:
+            # Points somewhere else entirely — a user-managed link, not a stale
+            # spelling of ours. Never repoint it.
+            return f"skills: {link_spec['link']} points elsewhere — left alone"
         link.unlink()
     elif link.exists():
         return f"skills: {link_spec['link']} exists and is not a symlink — left alone"
@@ -579,22 +721,26 @@ def bridge_tool(tool_id: str, servers: dict[str, dict]) -> None:
     fmt = mcp["format"]
 
     if fmt == "toml-mcp_servers":
-        changed, redacted = emit_toml_mcp_servers(path, servers)
+        changed, redacted, emitted = emit_toml_mcp_servers(path, servers)
+        count = len(emitted)
     elif fmt == "json-nested":
         translated, redacted = _json_translate_nested(servers)
         changed = _write_json_merge(path, "mcp", translated)
+        count = len(translated)
     elif fmt == "json-mcpServers":
         translated, redacted = _json_translate_mcpservers(servers, remote_key="url")
         changed = _write_json_merge(path, "mcpServers", translated)
+        count = len(translated)
     elif fmt == "json-settings":
         translated, redacted = _json_translate_mcpservers(servers, remote_key="httpUrl")
         changed = _write_json_merge(path, "mcpServers", translated)
+        count = len(translated)
     else:
         err(f"{name}: unknown mcp format {fmt!r} — skipped")
         return
 
     label = str(path if mcp.get("scope") == "global" else path.relative_to(ROOT))
-    ok(f"{name}: {'mirrored' if changed else 'already current'} {len(servers)} server(s) → {label}")
+    ok(f"{name}: {'mirrored' if changed else 'already current'} {count} server(s) → {label}")
     for server, missing in redacted.items():
         warn(f"  {name}/{server}: set manually (not mirrored): {', '.join(missing)}")
 
@@ -607,20 +753,30 @@ def bridge_tool(tool_id: str, servers: dict[str, dict]) -> None:
 
 def _remove_symlink(link_spec: dict) -> None:
     link = ROOT / link_spec["link"]
-    if link.is_symlink():
-        link.unlink()
-        ok(f"removed {link_spec['link']} symlink")
-        try:
-            link.parent.rmdir()  # only succeeds if now empty
-            ok(f"removed empty {link.parent.relative_to(ROOT)}/")
-        except OSError:
-            pass
+    if not link.is_symlink():
+        return
+    target = ROOT / link_spec["target"]
+    rel = Path(os.path.relpath(target, link.parent))
+    try:
+        ours = Path(os.readlink(link)) == rel or link.resolve() == target.resolve()
+    except OSError:
+        ours = False
+    if not ours:
+        note(f"{link_spec['link']} does not point at {link_spec['target']} — left alone")
+        return
+    link.unlink()
+    ok(f"removed {link_spec['link']} symlink")
+    try:
+        link.parent.rmdir()  # only succeeds if now empty
+        ok(f"removed empty {link.parent.relative_to(ROOT)}/")
+    except OSError:
+        pass
 
 
 def _unbridge_toml(path: Path) -> None:
     if not path.exists():
         return
-    base, had = _strip_toml_sentinel(path.read_text(encoding="utf-8"))
+    base, had = _strip_toml_sentinel(path.read_text(encoding="utf-8"), path)
     if not had:
         note(f"{path.name}: no cc-suite block — left alone")
         return
@@ -640,30 +796,41 @@ def _unbridge_json(path: Path, root_key: str) -> None:
         return
     managed = _read_provenance(prov_path)
     doc = load_json(path)
-    if isinstance(doc, dict):
-        section = doc.get(root_key, {})
-        if isinstance(section, dict):
-            remaining = {k: v for k, v in section.items() if k not in (managed or set())}
-            if remaining:
-                doc[root_key] = remaining
-                path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
-                ok(f"{path}: removed cc-suite-managed servers")
-            else:
-                doc.pop(root_key, None)
-                if doc:  # sibling keys survive → keep the file
-                    path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
-                    ok(f"{path}: removed cc-suite {root_key} block")
-                elif path.exists():
-                    path.unlink()
-                    ok(f"removed {path} (cc-suite-only)")
+    if doc is None:
+        # The target is gone (deleted, moved, or an unmounted global path):
+        # nothing was reconciled, so keep the provenance as recovery data
+        # instead of discarding the ownership record.
+        err(f"{path}: missing — nothing reconciled; keeping {prov_path.name}")
+        return
+    # An unexpected shape means the managed entries could not be removed:
+    # keep the provenance so ownership survives a manual repair.
+    if not isinstance(doc, dict) or not isinstance(doc.get(root_key, {}), dict):
+        err(f"{path}: unexpected shape — fix it manually; keeping {prov_path.name}")
+        return
+    section = doc.get(root_key, {})
+    remaining = {k: v for k, v in section.items() if k not in (managed or set())}
+    if remaining:
+        doc[root_key] = remaining
+        path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+        ok(f"{path}: removed cc-suite-managed servers")
+    else:
+        doc.pop(root_key, None)
+        if doc:  # sibling keys survive → keep the file
+            path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+            ok(f"{path}: removed cc-suite {root_key} block")
+        elif path.exists():
+            path.unlink()
+            ok(f"removed {path} (cc-suite-only)")
     prov_path.unlink()
     ok(f"removed {prov_path.name}")
 
 
 def _unbridge_context_files(path: Path, spec: dict) -> None:
-    """Undo ensure_context_files. Only strips the entries cc-suite adds, and
-    only while they still sit at the front in the order it wrote them — past
-    that the user has edited the list and it is theirs."""
+    """Undo ensure_context_files. With an ownership record, strip exactly the
+    recorded bridge-added entries. Without one (bridged before the record
+    existed), fall back to the positional heuristic: strip the entries cc-suite
+    adds only while they still sit at the front in the order it wrote them —
+    past that the user has edited the list and it is theirs."""
     raw = load_json(path)
     if not isinstance(raw, dict):
         return
@@ -673,7 +840,13 @@ def _unbridge_context_files(path: Path, spec: dict) -> None:
     if not isinstance(current, list):
         return
 
-    if current == want:
+    added = _read_context_added(path)
+    if added is not None:
+        rest = [entry for entry in current if entry not in added]
+        if rest == current:  # nothing of ours left in the list
+            _context_prov_path(path).unlink(missing_ok=True)
+            return
+    elif current == want:
         rest = []
     elif current[: len(want)] == want:
         rest = current[len(want):]
@@ -693,6 +866,7 @@ def _unbridge_context_files(path: Path, spec: dict) -> None:
             grand.pop(key_path[-2], None)
 
     path.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
+    _context_prov_path(path).unlink(missing_ok=True)
     ok(f"removed {'.'.join(key_path)} from {path.name}")
 
 

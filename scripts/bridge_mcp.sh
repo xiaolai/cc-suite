@@ -28,7 +28,7 @@ export CC_SUITE_CODEX_ENABLED
 
 if python3 - <<'PY'
 from __future__ import annotations
-import json, os, re, sys
+import json, os, re, sys, tempfile
 from pathlib import Path
 
 SENTINEL_START = "# >>> cc-suite-mcp >>>"
@@ -92,6 +92,17 @@ def main() -> int:
         )
         return 2
     if s_start != -1 and s_end != -1:
+        # Exactly one balanced, ordered block: an end marker before the start
+        # marker, or duplicated markers, would splice unrelated user content.
+        if (s_end < s_start
+                or existing.count(SENTINEL_START) > 1
+                or existing.count(SENTINEL_END) > 1):
+            print(
+                "! .codex/config.toml cc-suite sentinel markers are duplicated "
+                "or out of order. Manually repair before rerunning.",
+                file=sys.stderr,
+            )
+            return 2
         nl = existing.find("\n", s_end)
         base = existing[:s_start].rstrip("\n") + (
             "\n" + existing[nl + 1:] if nl != -1 else ""
@@ -137,7 +148,7 @@ def main() -> int:
         block = _toml_block(name, codex_name, cfg)
         if block is None:
             warned.append(name)
-            print(f"! {name}: unsupported transport or missing required field — skipped", file=sys.stderr)
+            print(f"! {name}: unsupported transport, missing required field, or invalid field type — skipped", file=sys.stderr)
             continue
         new_blocks.append(block)
 
@@ -162,7 +173,20 @@ def main() -> int:
             print("✓ .codex/config.toml: removed stale cc-suite MCP entries")
 
     if existing != rendered or new_blocks:
-        config_path.write_text(rendered, encoding="utf-8")
+        # Same-directory unique temp + atomic rename so concurrent readers —
+        # and concurrent bridge runs, which a fixed temp name would funnel
+        # through one shared inode — never observe partial TOML.
+        fd, tmp = tempfile.mkstemp(prefix=".cc-suite-tmp-", dir=str(config_path.parent))
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(rendered)
+            os.replace(tmp, config_path)
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except FileNotFoundError:
+                pass
+            raise
 
     if not new_blocks:
         if not warned:
@@ -193,12 +217,25 @@ def _toml_block(name: str, codex_name: str, cfg: dict) -> str | None:
 
     if transport == "stdio":
         cmd = cfg.get("command")
-        if not cmd:
+        if not cmd or not isinstance(cmd, str):
+            return None
+        args = cfg.get("args")
+        if args is not None and (
+            not isinstance(args, list) or not all(isinstance(a, str) for a in args)
+        ):
+            # A bare string would be iterated as characters; non-string items
+            # would render invalid TOML.
             return None
         lines.append(f"command = {_qs(cmd)}")
-        if args := cfg.get("args"):
+        if args:
             lines.append(f"args = [{', '.join(_qs(a) for a in args)}]")
-        env = cfg.get("env") or {}
+        env = cfg.get("env")
+        if env is None:
+            env = {}
+        # Explicit None check above: `env or {}` would let falsy invalid values
+        # (an empty list, 0, "") bypass this type validation.
+        if not isinstance(env, dict) or not all(isinstance(k, str) for k in env):
+            return None
         if env:
             # Env values are not mirrored — embedding secrets in config.toml risks
             # committing them. Document the required vars as TOML comments instead.
@@ -215,10 +252,13 @@ def _toml_block(name: str, codex_name: str, cfg: dict) -> str | None:
 
     elif transport in ("sse", "http", "streamable_http"):
         url = cfg.get("url")
-        if not url:
+        if not url or not isinstance(url, str):
             return None
         lines.append(f"url = {_qs(url)}")
-        if tok := cfg.get("bearer_token_env_var"):
+        tok = cfg.get("bearer_token_env_var")
+        if tok is not None and not isinstance(tok, str):
+            return None
+        if tok:
             lines.append(f"bearer_token_env_var = {_qs(tok)}")
 
     else:

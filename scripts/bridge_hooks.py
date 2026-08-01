@@ -127,9 +127,44 @@ def _exclusive_create(target: Path, content: str) -> bool:
     return True
 
 
+def _clear_stale_outputs(reason: str) -> None:
+    """Remove previously mirrored output when there is nothing left to mirror,
+    so hooks removed on the Claude side do not stay active in Codex. Only files
+    carrying the cc-suite marker are deleted; user-owned files are left alone."""
+    for path in (Path(".codex/hooks.json"), Path(".codex/hooks.cc-suite.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict) and data.get(MARKER_KEY) == MARKER_VALUE:
+            path.unlink(missing_ok=True)
+            print(f"· removed stale {path} ({reason})")
+
+
+def _write_fallback(fallback: Path, content: str) -> bool:
+    """Write mirror output to the review side file. The bridge owns this path,
+    but if something without our marker already sits there, refuse rather than
+    clobber what may be a user's in-progress merge or unrelated file."""
+    if fallback.exists():
+        try:
+            existing = json.loads(fallback.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            existing = None
+        if not (isinstance(existing, dict) and existing.get(MARKER_KEY) == MARKER_VALUE):
+            print(
+                f"! {fallback} exists without the cc-suite marker — refusing to overwrite; "
+                "remove it and re-run",
+                file=sys.stderr,
+            )
+            return False
+    _atomic_write(fallback, content)
+    return True
+
+
 def main() -> int:
     src = Path(".claude/settings.json")
     if not src.exists():
+        _clear_stale_outputs("source settings removed")
         print("· .claude/settings.json does not exist — nothing to bridge")
         return 0
     try:
@@ -143,6 +178,7 @@ def main() -> int:
         print(f"! {err}", file=sys.stderr)
         return 1
     if not hooks:
+        _clear_stale_outputs("no hooks in source")
         print("· .claude/settings.json has no hooks section — nothing to bridge")
         return 0
 
@@ -157,6 +193,7 @@ def main() -> int:
             skipped.append(f"{event} (unknown)")
 
     if not mirrored:
+        _clear_stale_outputs("no Codex-compatible hooks in source")
         print("· no Codex-compatible hook events found in .claude/settings.json")
         return 0
 
@@ -189,8 +226,9 @@ def main() -> int:
             _atomic_write(target, output_json)
         else:
             target = fallback
+            if not _write_fallback(target, output_json):
+                return 1
             print(f"! .codex/hooks.json is user-owned (no cc-suite marker) — wrote to {target} for review/merge")
-            _atomic_write(target, output_json)
     else:
         # No existing primary: use O_EXCL create to win-or-lose atomically.
         # This closes the TOCTOU window where another process or the user
@@ -209,8 +247,9 @@ def main() -> int:
                 _atomic_write(target, output_json)
             else:
                 target = fallback
+                if not _write_fallback(target, output_json):
+                    return 1
                 print(f"! .codex/hooks.json appeared during write (now user-owned) — wrote to {target}")
-                _atomic_write(target, output_json)
     print(f"✓ {target}: mirrored events {sorted(mirrored)}")
     if skipped:
         print(f"· skipped Claude-only events: {sorted(skipped)}")

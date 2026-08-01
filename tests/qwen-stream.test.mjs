@@ -156,6 +156,83 @@ test("an exact target review allows only read_file on the declared real path", (
   }
 });
 
+test("a tool result with an id may only consume the pending call with that exact id", () => {
+  const dir = makeTempDir("qwen-stream-");
+  try {
+    fs.writeFileSync(path.join(dir, "draft.md"), "draft\n");
+    const targets = snapshotReviewTargets(dir, ["draft.md"]);
+    const state = createQwenStreamState({ cwd: dir, targets });
+    consumeQwenEvent(state, { ...initEvent(), tools: ["read_file"] });
+    consumeQwenEvent(state, {
+      type: "assistant",
+      session_id: "session-1",
+      message: {
+        content: [{
+          type: "tool_use",
+          id: "tool-1",
+          name: "read_file",
+          input: { file_path: path.join(dir, "draft.md") },
+        }],
+      },
+    });
+
+    // A mismatched id must not consume the pending tool-1 call.
+    assert.throws(
+      () => consumeQwenEvent(state, { type: "tool_result", session_id: "session-1", tool_use_id: "tool-9" }),
+      (error) => error.code === "unsolicited_tool_result"
+    );
+    // An id-less result must not consume the pending named call either.
+    assert.throws(
+      () => consumeQwenEvent(state, { type: "tool_result", session_id: "session-1" }),
+      (error) => error.code === "unsolicited_tool_result"
+    );
+    // The exact id consumes the call; replaying it is unsolicited.
+    consumeQwenEvent(state, { type: "tool_result", session_id: "session-1", tool_use_id: "tool-1" });
+    assert.throws(
+      () => consumeQwenEvent(state, { type: "tool_result", session_id: "session-1", tool_use_id: "tool-1" }),
+      (error) => error.code === "unsolicited_tool_result"
+    );
+  } finally {
+    cleanupDir(dir);
+  }
+});
+
+test("an id-less tool result may only consume an id-less validated call", () => {
+  const dir = makeTempDir("qwen-stream-");
+  try {
+    fs.writeFileSync(path.join(dir, "draft.md"), "draft\n");
+    const targets = snapshotReviewTargets(dir, ["draft.md"]);
+    const state = createQwenStreamState({ cwd: dir, targets });
+    consumeQwenEvent(state, { ...initEvent(), tools: ["read_file"] });
+    consumeQwenEvent(state, {
+      type: "assistant",
+      session_id: "session-1",
+      message: {
+        parts: [{
+          functionCall: {
+            name: "read_file",
+            args: { file_path: path.join(dir, "draft.md") },
+          },
+        }],
+      },
+    });
+
+    // A result carrying an id must not consume the anonymous pending call.
+    assert.throws(
+      () => consumeQwenEvent(state, { type: "tool_result", session_id: "session-1", tool_use_id: "tool-9" }),
+      (error) => error.code === "unsolicited_tool_result"
+    );
+    // The id-less result pairs with the anonymous call; a second one is unsolicited.
+    consumeQwenEvent(state, { type: "tool_result", session_id: "session-1" });
+    assert.throws(
+      () => consumeQwenEvent(state, { type: "tool_result", session_id: "session-1" }),
+      (error) => error.code === "unsolicited_tool_result"
+    );
+  } finally {
+    cleanupDir(dir);
+  }
+});
+
 test("non-read tools are rejected even when a target is declared", () => {
   const dir = makeTempDir("qwen-stream-");
   try {

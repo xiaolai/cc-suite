@@ -18,8 +18,10 @@ No-op (exit 0) when .cc-suite.md does not exist — init creates it first.
 
 from __future__ import annotations
 
+import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 CONFIG = Path(".cc-suite.md")
@@ -50,8 +52,13 @@ and Antigravity are effectively VPN-only there.
 
 
 def has_section(text: str, heading: str) -> bool:
-    """True if an ATX heading with this exact text already exists (any level)."""
-    pattern = rf"^[ \t]*#{{1,6}}[ \t]*{re.escape(heading)}[ \t]*$"
+    """True if an ATX heading with this exact text already exists (any level).
+
+    Requires whitespace after the opening hashes (`##Enabled Tools` is not a
+    valid ATX heading) and permits an optional closing hash sequence
+    (`## Enabled Tools ##`), per CommonMark.
+    """
+    pattern = rf"^[ \t]*#{{1,6}}[ \t]+{re.escape(heading)}(?:[ \t]+#+)?[ \t]*$"
     return re.search(pattern, text, re.IGNORECASE | re.MULTILINE) is not None
 
 
@@ -73,7 +80,20 @@ def main() -> int:
         print("· .cc-suite.md already has all managed sections")
         return 0
 
-    CONFIG.write_text(result + "\n", encoding="utf-8")
+    # Atomic commit: write a same-directory temp file, then replace — a direct
+    # overwrite could truncate the config on interruption.
+    fd, tmp_name = tempfile.mkstemp(dir=CONFIG.parent, prefix=f".{CONFIG.name}.", suffix=".tmp")
+    try:
+        os.fchmod(fd, CONFIG.stat().st_mode & 0o7777)
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
+            tmp_file.write(result + "\n")
+        os.replace(tmp_name, CONFIG)
+    except BaseException:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
     print(f"✓ .cc-suite.md: added missing section(s): {', '.join(added)}")
     return 0
 

@@ -23,7 +23,7 @@ set -euo pipefail
 
 SENTINEL_START="# >>> cc-suite >>>"
 SENTINEL_END="# <<< cc-suite <<<"
-SCHEMA_MARKER="# cc-suite-schema: 6"
+SCHEMA_MARKER="# cc-suite-schema: 7"
 
 GITIGNORE_FILE=".gitignore"
 PRIVATE="${PRIVATE:-0}"
@@ -41,11 +41,43 @@ fi
 ok()   { printf '✓ %s\n' "$*"; }
 skip() { printf '· %s\n' "$*"; }
 
+# Self-heal an already-leaked plugin repo: if .mcp.json is ignored but was
+# committed by an earlier cc-suite version, drop it from the index so the
+# ignore takes effect. The working-tree file is kept for local dev. No-op
+# outside a git repo or when nothing is tracked. Runs on every invocation,
+# including the fast already-current exit.
+self_heal_tracked_mcp() {
+  if [ "$IS_PLUGIN_REPO" = "1" ] && [ "$PRIVATE" != "1" ]; then
+    if git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+       && git ls-files --error-unmatch .mcp.json >/dev/null 2>&1; then
+      git rm --cached --quiet .mcp.json
+      ok ".mcp.json untracked (was shipping in the published plugin — kept locally)"
+    fi
+  fi
+}
+
 [ -f "$GITIGNORE_FILE" ] || touch "$GITIGNORE_FILE"
 
 EXISTING_PRIVATE=0
 EXISTING_SCHEMA_CURRENT=0
-if grep -qF "$SENTINEL_START" "$GITIGNORE_FILE"; then
+if grep -qF "$SENTINEL_START" "$GITIGNORE_FILE" || grep -qF "$SENTINEL_END" "$GITIGNORE_FILE"; then
+  # Validate exactly one ordered sentinel pair before touching the block: a
+  # lone, duplicated, or reversed marker means hand-editing or an interrupted
+  # run, and rewriting through it would splice unrelated user content.
+  if ! python3 - <<'PY'; then
+import sys
+from pathlib import Path
+text = Path(".gitignore").read_text()
+start = "# >>> cc-suite >>>"
+end   = "# <<< cc-suite <<<"
+valid = (text.count(start) == 1 and text.count(end) == 1
+         and text.find(start) < text.find(end))
+sys.exit(0 if valid else 1)
+PY
+    printf '! .gitignore cc-suite sentinel block is malformed (missing, duplicated, or out-of-order marker) — repair it by hand, then re-run\n' >&2
+    exit 1
+  fi
+
   grep -qF "cc-suite: PRIVATE mode" "$GITIGNORE_FILE" && EXISTING_PRIVATE=1 || EXISTING_PRIVATE=0
   grep -qF "$SCHEMA_MARKER" "$GITIGNORE_FILE" && EXISTING_SCHEMA_CURRENT=1 || EXISTING_SCHEMA_CURRENT=0
 
@@ -55,6 +87,7 @@ if grep -qF "$SENTINEL_START" "$GITIGNORE_FILE"; then
 
   if [ "$PRIVATE" = "$EXISTING_PRIVATE" ] && [ "$EXISTING_SCHEMA_CURRENT" = "1" ]; then
     skip ".gitignore already has current cc-suite block"
+    self_heal_tracked_mcp
     exit 0
   fi
 
@@ -148,14 +181,4 @@ GI
 mode_label=$([ "$PRIVATE" = "1" ] && echo private || echo public)
 ok ".gitignore: cc-suite block written ($mode_label mode, schema ${SCHEMA_MARKER##*: })"
 
-# Self-heal an already-leaked plugin repo: if .mcp.json is now ignored but was
-# committed by an earlier cc-suite version, drop it from the index so the ignore
-# takes effect. The working-tree file is kept for local dev. No-op outside a git
-# repo or when nothing is tracked.
-if [ "$IS_PLUGIN_REPO" = "1" ] && [ "$PRIVATE" != "1" ]; then
-  if git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-     && git ls-files --error-unmatch .mcp.json >/dev/null 2>&1; then
-    git rm --cached --quiet .mcp.json
-    ok ".mcp.json untracked (was shipping in the published plugin — kept locally)"
-  fi
-fi
+self_heal_tracked_mcp

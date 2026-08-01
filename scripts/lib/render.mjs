@@ -23,10 +23,10 @@ function pushJobDetails(lines, job, options = {}) {
   if (job.threadId) lines.push(`  Thread ID: ${job.threadId}`);
   if (job.threadId) lines.push(`  Continue: /continue ${job.threadId}`);
   if ((job.status === "queued" || job.status === "running") && options.showCancelHint) {
-    lines.push(`  Cancel: /codex-toolkit:cancel ${job.id}`);
+    lines.push(`  Cancel: /cc-suite:cancel ${job.id}`);
   }
   if (job.status !== "queued" && job.status !== "running" && options.showResultHint) {
-    lines.push(`  Result: /codex-toolkit:result ${job.id}`);
+    lines.push(`  Result: /cc-suite:result ${job.id}`);
   }
   if (job.progressPreview?.length) {
     lines.push("  Progress:");
@@ -135,7 +135,7 @@ export function renderCancelReport(job) {
   ];
   if (job.summary) lines.push(`- Summary: ${job.summary}`);
   if (job.kind) lines.push(`- Kind: ${job.kind}`);
-  lines.push("- Check `/codex-toolkit:status` for the updated queue.");
+  lines.push("- Check `/cc-suite:status` for the updated queue.");
   return `${lines.join("\n").trimEnd()}\n`;
 }
 

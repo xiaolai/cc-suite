@@ -10,9 +10,11 @@ edit is still structurally safe).
 Used as the auto-fix for the diagnose engine's `plugin_hooks` check.
 """
 
+import os
 import pathlib
 import re
 import sys
+import tempfile
 
 
 def apply(path: pathlib.Path) -> str:
@@ -50,7 +52,21 @@ def apply(path: pathlib.Path) -> str:
         raise
     except Exception as exc:  # noqa: BLE001 — refuse to write anything invalid
         sys.exit(f"refusing to write invalid TOML: {exc}")
-    path.write_text(text)
+    # Atomic commit: write a same-directory temp file, then replace. A direct
+    # overwrite could truncate the user's global Codex config on interruption.
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        if path.exists():
+            os.fchmod(fd, path.stat().st_mode & 0o7777)
+        with os.fdopen(fd, "w") as tmp_file:
+            tmp_file.write(text)
+        os.replace(tmp_name, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
     return f"plugin_hooks = true set under [features] in {path}"
 
 

@@ -15,7 +15,7 @@ if [ -f .mcp.json ]; then
   # One pass: validate shape, then skip / migrate / merge as needed.
   # Exit 2 = invalid shape (leave the file alone); exit 0 = success.
   python3 - <<'PY'
-import json, sys
+import json, os, sys
 from pathlib import Path
 
 CANONICAL = {"type": "stdio", "command": "codex", "args": ["mcp-server"]}
@@ -43,11 +43,20 @@ if servers.get("codex-cli") == CANONICAL:
 
 verb = "updated" if "codex-cli" in servers else "merged"
 servers["codex-cli"] = CANONICAL
-p.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+# Same-directory temp + atomic rename: an interrupted write must never leave
+# a truncated .mcp.json behind.
+tmp = p.with_name(p.name + ".cc-suite-tmp")
+tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+os.replace(tmp, p)
 print(f"✓ .mcp.json: codex-cli server {verb} (codex mcp-server)")
 PY
 else
-  cat > .mcp.json <<'JSON'
+  # Write to a temp file, then hard-link it into place: ln fails if .mcp.json
+  # appeared since the check above, so a concurrent creation is never
+  # clobbered, and the destination is complete or absent — never partial.
+  tmp=".mcp.json.cc-suite-tmp.$$"
+  trap 'rm -f "$tmp"' EXIT
+  cat > "$tmp" <<'JSON'
 {
   "mcpServers": {
     "codex-cli": {
@@ -58,5 +67,12 @@ else
   }
 }
 JSON
-  printf '✓ %s\n' ".mcp.json created with codex-cli server (codex mcp-server)"
+  if ln "$tmp" .mcp.json 2>/dev/null; then
+    rm -f "$tmp"
+    printf '✓ %s\n' ".mcp.json created with codex-cli server (codex mcp-server)"
+  else
+    rm -f "$tmp"
+    printf '! %s\n' ".mcp.json appeared while creating it — re-run to merge the codex-cli entry" >&2
+    exit 1
+  fi
 fi

@@ -31,10 +31,14 @@ else
   mark "AGENTS.md" miss
 fi
 
-# CLAUDE.md
+# CLAUDE.md — mirror the stricter GEMINI check below: a real @AGENTS.md line
+# AND nothing else in the file. A hybrid (@AGENTS.md + extra content) means
+# Claude reads instructions the other tools do not.
 if [ -f CLAUDE.md ]; then
-  if grep -qE '^@AGENTS\.md\s*$' CLAUDE.md; then
+  if grep -qE '^@AGENTS\.md\s*$' CLAUDE.md && [ "$(tr -d '[:space:]' < CLAUDE.md)" = "@AGENTS.md" ]; then
     mark "CLAUDE.md" ok "@AGENTS.md import"
+  elif grep -qE '^@AGENTS\.md\s*$' CLAUDE.md; then
+    mark "CLAUDE.md" warn "@AGENTS.md import + other content (hybrid) — merge extras into AGENTS.md"
   else
     mark "CLAUDE.md" warn "substantive content (not @import) — consider /cc-suite:init"
   fi
@@ -138,11 +142,26 @@ except Exception:
 s = d.get("mcpServers") if isinstance(d, dict) else None
 if not isinstance(s, dict) or "codex-cli" not in s:
     sys.exit(2)
-sys.exit(0 if s["codex-cli"] == CANONICAL else 1)
+entry = s["codex-cli"]
+if entry == CANONICAL:
+    sys.exit(0)
+# Distinguish the known npm legacy shape — an npx/npm launcher whose args
+# reference the old codex MCP package — from an unknown user-customized
+# registration. A substring test on the command alone would mislabel every
+# command merely containing "npx"/"npm" (wrappers, unrelated launchers).
+cmd = entry.get("command") if isinstance(entry, dict) else None
+raw_args = entry.get("args") if isinstance(entry, dict) else None
+args = raw_args if isinstance(raw_args, list) else []
+launcher = isinstance(cmd, str) and cmd.rsplit("/", 1)[-1] in ("npx", "npm")
+legacy_pkg = any(isinstance(a, str)
+                 and ("codex-mcp-server" in a or a.startswith("@openai/codex"))
+                 for a in args)
+sys.exit(1 if (launcher and legacy_pkg) else 4)
 PY
   case "$_codex_cli_rc" in
     0) mark ".mcp.json → Claude" ok   "codex-cli registered (codex mcp-server)" ;;
     1) mark ".mcp.json → Claude" warn "codex-cli stale (legacy npm registration) — run /cc-suite:repair" ;;
+    4) mark ".mcp.json → Claude" warn "codex-cli noncanonical (custom registration) — review, or run /cc-suite:repair to restore the canonical form" ;;
     2) mark ".mcp.json → Claude" miss "codex-cli not registered (run /cc-suite:init step 8)" ;;
     *) mark ".mcp.json → Claude" warn ".mcp.json unreadable" ;;
   esac
@@ -174,27 +193,48 @@ else
   mark ".codex/config.toml → Codex" miss "(run /cc-suite:init)"
 fi
 
-# .cc-suite/agents — declared advisor agents
+# .cc-suite/agents — declared advisor agents. Compare exact NAMES, not counts:
+# different advisor sets with equal counts must not be reported healthy.
 if [ -d .cc-suite/agents ] && ls .cc-suite/agents/*.md >/dev/null 2>&1; then
-  _declared_count=$(find .cc-suite/agents -maxdepth 1 -name "*.md" -type f 2>/dev/null | wc -l | tr -d ' ')
-  _registered_count=0
-  if [ -f .mcp.json ]; then
-    _registered_count=$(python3 -c "
-import json
+  _advisor_report=$(python3 - <<'PY' 2>/dev/null
+import json, re
+from pathlib import Path
+declared = set()
+for f in sorted(Path(".cc-suite/agents").glob("*.md")):
+    try:
+        text = f.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        text = ""
+    # Filename stem, overridden by an explicit `name:` key (mirrors bridge_agents.py).
+    m = re.search(r"(?m)^name:\s*(\S+)\s*$", text)
+    declared.add(m.group(1) if m else f.stem)
+registered = set()
 try:
-    d = json.loads(open('.mcp.json').read())
-    s = d.get('mcpServers', {})
-    n = sum(1 for v in s.values() if isinstance(v, dict) and v.get('_cc_suite_agent'))
-    print(n)
+    d = json.loads(Path(".mcp.json").read_text())
+    s = d.get("mcpServers") if isinstance(d, dict) else None
+    if isinstance(s, dict):
+        registered = {k for k, v in s.items() if isinstance(v, dict) and v.get("_cc_suite_agent")}
 except Exception:
-    print(0)
-" 2>/dev/null || echo 0)
-  fi
-  if [ "$_declared_count" = "$_registered_count" ]; then
-    mark ".cc-suite/agents/" ok "${_declared_count} advisor(s) declared and registered"
-  else
-    mark ".cc-suite/agents/" warn "${_declared_count} declared, ${_registered_count} registered — run /cc-suite:repair"
-  fi
+    pass
+problems = []
+missing = sorted(declared - registered)
+orphaned = sorted(registered - declared)
+if missing:
+    problems.append("declared but not registered: " + ", ".join(missing))
+if orphaned:
+    problems.append("registered but no longer declared: " + ", ".join(orphaned))
+if problems:
+    print("warn\t" + "; ".join(problems))
+else:
+    print(f"ok\t{len(declared)} advisor(s) declared and registered")
+PY
+)
+  _tab=$'\t'
+  case "$_advisor_report" in
+    ok"$_tab"*)   mark ".cc-suite/agents/" ok   "${_advisor_report#ok"$_tab"}" ;;
+    warn"$_tab"*) mark ".cc-suite/agents/" warn "${_advisor_report#warn"$_tab"} — run /cc-suite:repair" ;;
+    *)            mark ".cc-suite/agents/" warn "could not compare declared vs registered advisors (python3 unavailable?)" ;;
+  esac
 else
   mark ".cc-suite/agents/" miss "(no advisor agents declared — add one with /cc-suite:add-agent)"
 fi

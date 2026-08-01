@@ -17,6 +17,13 @@ ok()   { printf '✓ %s\n' "$*"; }
 skip() { printf '· %s\n' "$*"; }
 warn() { printf '! %s\n' "$*" >&2; }
 
+# The plugin skills tree must exist before linking to it — a missing source
+# would otherwise produce a broken symlink and a misleading success message.
+if [ ! -d "$PLUGIN_SKILLS" ]; then
+  warn "plugin skills directory missing: ${PLUGIN_SKILLS} — cannot bridge skills"
+  exit 1
+fi
+
 # ── Step 1: expose cc-suite plugin skills in .claude/skills/cc-suite/ ────────
 
 mkdir -p .claude/skills
@@ -26,12 +33,21 @@ if [ -L .claude/skills/cc-suite ]; then
   if [ "$existing" = "$PLUGIN_SKILLS" ]; then
     skip ".claude/skills/cc-suite already symlinked → ${PLUGIN_SKILLS}"
   else
-    # Plugin was updated — repoint the symlink.
-    # Use rm+ln instead of ln -sf: on macOS, ln -sf follows a symlink that
-    # resolves to a directory and creates the new link INSIDE it rather than
-    # replacing the outer symlink.
-    rm .claude/skills/cc-suite
-    ln -s "$PLUGIN_SKILLS" .claude/skills/cc-suite
+    # Plugin was updated — repoint the symlink atomically. rename(2) replaces
+    # the link itself without following it, so there is no window where the
+    # bridge is absent, and (unlike macOS `ln -sf`) the new link can never be
+    # created INSIDE the directory the old symlink resolves to.
+    python3 - "$PLUGIN_SKILLS" <<'PY'
+import os, sys
+target = sys.argv[1]
+tmp = f".claude/skills/.cc-suite-repoint-{os.getpid()}"
+os.symlink(target, tmp)
+try:
+    os.replace(tmp, ".claude/skills/cc-suite")
+except BaseException:
+    os.unlink(tmp)
+    raise
+PY
     ok ".claude/skills/cc-suite repointed → ${PLUGIN_SKILLS}"
   fi
 elif [ -e .claude/skills/cc-suite ]; then

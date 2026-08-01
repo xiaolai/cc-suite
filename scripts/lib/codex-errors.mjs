@@ -11,8 +11,10 @@
 // never reach the stream at all — an unknown CLI flag, for instance, which clap
 // rejects before any event is emitted.
 
-// Not an error: emitted whenever stdin is a pipe rather than a TTY.
-const STDIN_NOTICE_LINE = /^[ \t]*Reading additional input from stdin\.\.\.[ \t]*$/;
+// Not an error: emitted whenever stdin is a pipe rather than a TTY. The
+// optional trailing \r matches the notice inside CRLF-terminated stderr, where
+// splitting on \n leaves the \r on the line.
+const STDIN_NOTICE_LINE = /^[ \t]*Reading additional input from stdin\.\.\.[ \t]*\r?$/;
 
 // How authoritative each error-carrying event shape is. `item.completed` error
 // items include non-fatal notices (degraded model metadata, for one), so they
@@ -123,7 +125,10 @@ export function resolveFailureMessage({
   const detail = fromEvent || cleanStderr(stderr);
 
   if (code === null) {
-    return detail ? `signal ${signal}: ${detail}` : `signal ${signal}`;
+    const cause = signal
+      ? `signal ${signal}`
+      : "process terminated without an exit code";
+    return detail ? `${cause}: ${detail}` : cause;
   }
   return detail || `exit ${code}`;
 }

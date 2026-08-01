@@ -59,14 +59,33 @@ def yaml_scalar(s: str) -> str:
     return s
 
 
+def skill_name(stem: str) -> str:
+    """Normalize a command filename to the skill-name grammar: lowercase
+    kebab-case ([a-z0-9] runs joined by single hyphens), capped so the full
+    name with the cmd- prefix stays within the 64-character skill-name limit."""
+    name = re.sub(r'[^a-z0-9]+', '-', stem.lower()).strip('-') or 'command'
+    return name[:60].rstrip('-') or 'command'
+
+
 def main() -> None:
     files = sys.argv[1:]
     skills_base = Path(".claude/skills")
     skills_base.mkdir(parents=True, exist_ok=True)
     count = 0
+    last_name = ""
+    seen: dict[str, str] = {}
     for path_str in files:
         src = Path(path_str)
-        name = src.stem
+        name = skill_name(src.stem)
+        if name != src.stem:
+            print(f"! {src.name}: skill name normalized to cmd-{name}", file=sys.stderr)
+        if name in seen:
+            print(
+                f"! {src.name}: skill name cmd-{name} collides with {seen[name]} — skipped",
+                file=sys.stderr,
+            )
+            continue
+        seen[name] = src.name
         skill_dir = skills_base / f"cmd-{name}"
         skill_file = skill_dir / "SKILL.md"
 
@@ -100,13 +119,13 @@ def main() -> None:
             encoding="utf-8",
         )
 
-        print(f"✓ cmd-{name}: .claude/skills/cmd-{name}/ (from .claude/commands/{name}.md)")
+        print(f"✓ cmd-{name}: .claude/skills/cmd-{name}/ (from .claude/commands/{src.name})")
         count += 1
+        last_name = name
 
     if count > 0:
-        last = Path(files[-1]).stem
         print(f"\n  Skills written to .claude/skills/ and visible to Codex via .agents/skills symlink.")
-        print(f"  Invoke in Codex with $cmd-<name>  (e.g. $cmd-{last})")
+        print(f"  Invoke in Codex with $cmd-<name>  (e.g. $cmd-{last_name})")
 
 
 if __name__ == "__main__":

@@ -12,20 +12,24 @@ export class QwenStreamError extends Error {
   }
 }
 
-function sha256File(filePath) {
+function sha256Fd(fd) {
   const hash = createHash("sha256");
   const buffer = Buffer.allocUnsafe(64 * 1024);
+  let bytesRead;
+  do {
+    bytesRead = fs.readSync(fd, buffer, 0, buffer.length, null);
+    if (bytesRead > 0) hash.update(buffer.subarray(0, bytesRead));
+  } while (bytesRead > 0);
+  return hash.digest("hex");
+}
+
+function sha256File(filePath) {
   const fd = fs.openSync(filePath, "r");
   try {
-    let bytesRead;
-    do {
-      bytesRead = fs.readSync(fd, buffer, 0, buffer.length, null);
-      if (bytesRead > 0) hash.update(buffer.subarray(0, bytesRead));
-    } while (bytesRead > 0);
+    return sha256Fd(fd);
   } finally {
     fs.closeSync(fd);
   }
-  return hash.digest("hex");
 }
 
 function isInside(root, candidate) {
@@ -53,19 +57,34 @@ export function snapshotReviewTargets(cwd, targetArgs = []) {
         `Review target must stay inside the workspace: ${rawTarget}`
       );
     }
-    if (!fs.statSync(realPath).isFile()) {
-      throw new QwenStreamError("target_not_file", `Review target is not a file: ${rawTarget}`);
+
+    // Open the approved path once with no-follow semantics, then validate and
+    // hash through that descriptor, so a concurrent rename/symlink swap cannot
+    // make the stat or the hash inspect a different file than the one the
+    // containment check above approved.
+    let fd;
+    try {
+      fd = fs.openSync(realPath, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+    } catch {
+      throw new QwenStreamError("target_missing", `Review target could not be opened: ${rawTarget}`);
     }
-    if (seen.has(realPath)) continue;
-    seen.add(realPath);
-    const stat = fs.statSync(realPath);
-    snapshots.push({
-      requestedPath: rawTarget,
-      displayPath: path.relative(root, realPath),
-      realPath,
-      sha256: sha256File(realPath),
-      size: stat.size,
-    });
+    try {
+      const stat = fs.fstatSync(fd);
+      if (!stat.isFile()) {
+        throw new QwenStreamError("target_not_file", `Review target is not a file: ${rawTarget}`);
+      }
+      if (seen.has(realPath)) continue;
+      seen.add(realPath);
+      snapshots.push({
+        requestedPath: rawTarget,
+        displayPath: path.relative(root, realPath),
+        realPath,
+        sha256: sha256Fd(fd),
+        size: stat.size,
+      });
+    } finally {
+      fs.closeSync(fd);
+    }
   }
 
   return snapshots;
@@ -132,6 +151,12 @@ export function verifyReviewTargets(snapshots) {
   return { ok: changed.length === 0, changed };
 }
 
+// Cap the un-newline-terminated remainder so a child that streams bytes
+// without ever emitting a newline (each chunk resets the runner's idle timer)
+// cannot grow the buffer until the attempt deadline or an out-of-memory
+// failure. 16M UTF-16 code units is far beyond any legitimate stream-json line.
+const MAX_JSONL_BUFFER_LENGTH = 16 * 1024 * 1024;
+
 export class JsonlDecoder {
   constructor() {
     this.decoder = new StringDecoder("utf8");
@@ -140,7 +165,14 @@ export class JsonlDecoder {
 
   push(chunk) {
     this.buffer += this.decoder.write(chunk);
-    return this.#drain(false);
+    const lines = this.#drain(false);
+    if (this.buffer.length > MAX_JSONL_BUFFER_LENGTH) {
+      throw new QwenStreamError(
+        "stream_overflow",
+        `Qwen emitted a stream-json line longer than ${MAX_JSONL_BUFFER_LENGTH} characters without a newline`
+      );
+    }
+    return lines;
   }
 
   finish() {
@@ -237,12 +269,66 @@ function validateReadTool(state, call) {
     );
   }
 
+  const callId = call.id ?? null;
   state.toolCalls.push({
-    id: call.id ?? null,
+    id: callId,
     name,
     realPath,
     displayPath: state.allowedTargets.get(realPath).displayPath,
   });
+  if (callId !== null) state.pendingToolCallIds.add(callId);
+  else state.pendingAnonymousToolCalls += 1;
+}
+
+// Collect the tool-result correlation ids carried by a `tool_result` event or
+// by tool_result/function_response blocks inside a `user` event. A `user`
+// event carrying no tool-result payload yields no ids.
+function toolResultIds(event) {
+  if (event.type === "tool_result") {
+    return [event.tool_use_id ?? event.toolUseId ?? event.id ?? null];
+  }
+  const message = event.message ?? {};
+  const blocks = Array.isArray(message.content)
+    ? message.content
+    : Array.isArray(message.parts)
+      ? message.parts
+      : [];
+  const ids = [];
+  for (const block of blocks) {
+    if (!block || typeof block !== "object") continue;
+    if (block.type === "tool_result" || block.type === "function_response" || block.functionResponse) {
+      ids.push(block.tool_use_id ?? block.toolUseId ?? block.id ?? null);
+    }
+  }
+  return ids;
+}
+
+// Every tool result must pair exactly with the previously validated read_file
+// call it answers: a result carrying an id may only consume the pending call
+// with that same id, and an id-less result may only consume an id-less
+// (anonymous) pending call. Cross-pairing would mean the correlation cannot be
+// proven — a tool may have run without passing validateReadTool — so fail
+// closed on any mismatch.
+function consumeToolResults(state, event) {
+  for (const id of toolResultIds(event)) {
+    if (id !== null) {
+      if (!state.pendingToolCallIds.has(id)) {
+        throw new QwenStreamError(
+          "unsolicited_tool_result",
+          `Qwen emitted a tool result (${id}) with no matching validated read_file call`
+        );
+      }
+      state.pendingToolCallIds.delete(id);
+      continue;
+    }
+    if (state.pendingAnonymousToolCalls === 0) {
+      throw new QwenStreamError(
+        "unsolicited_tool_result",
+        "Qwen emitted an id-less tool result with no matching id-less validated read_file call"
+      );
+    }
+    state.pendingAnonymousToolCalls -= 1;
+  }
 }
 
 function toolCallFromBlock(block) {
@@ -387,6 +473,8 @@ export function createQwenStreamState({ cwd, targets = [] }) {
     toolBoundaryVerified: false,
     sessionId: null,
     toolCalls: [],
+    pendingToolCallIds: new Set(),
+    pendingAnonymousToolCalls: 0,
     resultSeen: false,
     resultSubtype: null,
     isError: null,
@@ -428,6 +516,7 @@ export function consumeQwenEvent(state, event) {
       if (!state.initSeen) {
         throw new QwenStreamError("tool_result_before_init", "Qwen emitted tool output before init");
       }
+      consumeToolResults(state, event);
       return;
     case "result":
       inspectResult(state, event);

@@ -33,6 +33,7 @@
 //   danger-full-access → --always-approve (Grok has no stricter tier via ACP).
 
 import fs from "node:fs";
+import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
@@ -129,6 +130,7 @@ function executeGrok(cwd, args, logFile) {
     let settled = false;
     let timedOut = false;
     let acpSessionId = args.resume || null;
+    let resumeFellBack = false; // resume requested, but session/load failed and a fresh session was started
 
     const send = (obj) => { try { child.stdin.write(JSON.stringify(obj) + "\n"); } catch { /* child gone */ } };
     const rpc = (method, params) => new Promise((res, rej) => {
@@ -157,7 +159,9 @@ function executeGrok(cwd, args, logFile) {
       clearInterval(heartbeat);
       clearTimeout(deadline);
       try { child.kill(); } catch { /* already dead */ }
-      resolve(result);
+      // When a resume was requested, report explicitly whether it held; a
+      // silent fresh-session fallback must not masquerade as continuation.
+      resolve(args.resume ? { ...result, resumed: !resumeFellBack } : result);
     }
 
     // ── ACP message dispatch (newline-delimited JSON-RPC) ────────────────────
@@ -189,20 +193,49 @@ function executeGrok(cwd, args, logFile) {
       else if (u.sessionUpdate === "tool_call") { toolCalls++; appendLog(logFile, `tool_call: ${u.title || u.tool || u.toolCallId || "?"}`); }
     }
 
+    // Resolve an ACP-supplied path against the session cwd, canonicalize it,
+    // and — except under danger-full-access — refuse anything that escapes the
+    // workspace. Returns the resolved path, or null when containment fails.
+    let workspaceRoot = cwd;
+    try { workspaceRoot = fs.realpathSync.native(cwd); } catch { /* keep cwd */ }
+    function resolveClientPath(rawPath, forWrite) {
+      const resolved = path.resolve(cwd, String(rawPath ?? ""));
+      if (args.sandbox === "danger-full-access") return resolved;
+      let canonical = resolved;
+      try {
+        canonical = forWrite
+          ? path.join(fs.realpathSync.native(path.dirname(resolved)), path.basename(resolved))
+          : fs.realpathSync.native(resolved);
+      } catch { /* target missing — containment-check the literal resolved path */ }
+      const rel = path.relative(workspaceRoot, canonical);
+      const inside = rel === "" || (!rel.startsWith(`..${path.sep}`) && rel !== ".." && !path.isAbsolute(rel));
+      return inside ? resolved : null;
+    }
+
     // Grok mostly uses its own tools, but ACP lets it call back to the client for
     // permissions and file I/O. Honor the sandbox here.
     function handleAgentRequest(m) {
       if (m.method === "session/request_permission") {
         const opts = m.params?.options || [];
         const want = alwaysApprove ? /allow|approve|yes/i : /reject|deny|no/i;
-        const pick = opts.find((o) => want.test(o.optionId || o.kind || o.name || "")) || opts[0];
-        respond(m.id, { outcome: { outcome: "selected", optionId: pick?.optionId } });
+        const pick = opts.find((o) => want.test(o.optionId || o.kind || o.name || ""));
+        if (!pick && !alwaysApprove) {
+          // read-only: no reject-labelled option found — never select an
+          // arbitrary fallback that could approve the operation.
+          respond(m.id, { outcome: { outcome: "cancelled" } });
+          return;
+        }
+        respond(m.id, { outcome: { outcome: "selected", optionId: (pick || opts[0])?.optionId } });
       } else if (m.method === "fs/read_text_file") {
-        try { respond(m.id, { content: fs.readFileSync(m.params.path, "utf8") }); }
+        const target = resolveClientPath(m.params?.path, false);
+        if (!target) { respondErr(m.id, `path outside workspace: ${m.params?.path}`); return; }
+        try { respond(m.id, { content: fs.readFileSync(target, "utf8") }); }
         catch (e) { respondErr(m.id, String(e)); }
       } else if (m.method === "fs/write_text_file") {
         if (!alwaysApprove) { respondErr(m.id, "read-only: write denied"); return; }
-        try { fs.writeFileSync(m.params.path, m.params.content ?? ""); respond(m.id, {}); }
+        const target = resolveClientPath(m.params?.path, true);
+        if (!target) { respondErr(m.id, `path outside workspace: ${m.params?.path}`); return; }
+        try { fs.writeFileSync(target, m.params.content ?? ""); respond(m.id, {}); }
         catch (e) { respondErr(m.id, String(e)); }
       } else {
         respondErr(m.id, `unsupported client method: ${m.method}`);
@@ -228,7 +261,9 @@ function executeGrok(cwd, args, logFile) {
       const rawOutput = answer.join("").trim();
       if (timedOut) {
         finish({ status: "stalled", errorMessage: `Timed out after ${Math.round(args.timeoutMs / 1000)}s`, sessionId: acpSessionId, rawOutput });
-      } else if (code !== 0 && !rawOutput) {
+      } else if (code !== 0) {
+        // A nonzero exit is a failure even when partial answer chunks arrived;
+        // rawOutput still carries whatever was received.
         const msg = code === null ? `signal ${signal}` : `exit ${code}`;
         finish({ status: "failed", errorMessage: stderrTail.trim() || msg, sessionId: acpSessionId, rawOutput });
       } else {
@@ -252,6 +287,7 @@ function executeGrok(cwd, args, logFile) {
             acpSessionId = args.resume;
             appendLog(logFile, `Resumed session ${args.resume}`);
           } catch {
+            resumeFellBack = true;
             appendLog(logFile, `session/load unsupported or failed — starting a fresh session`);
             const s = await rpc("session/new", { cwd, mcpServers: [] });
             acpSessionId = s?.sessionId || null;
@@ -329,6 +365,7 @@ async function runForeground(cwd, args) {
   writeJobFile(cwd, jobId, {
     rawOutput: result.rawOutput || "",
     threadId: result.sessionId || null,
+    ...(typeof result.resumed === "boolean" ? { resumed: result.resumed } : {}),
     ...(result.errorMessage ? { error: result.errorMessage } : {}),
   });
 
@@ -336,6 +373,7 @@ async function runForeground(cwd, args) {
     jobId, status: result.status,
     threadId: result.sessionId || null,
     rawOutput: result.rawOutput || "",
+    ...(typeof result.resumed === "boolean" ? { resumed: result.resumed } : {}),
     ...(result.errorMessage ? { error: result.errorMessage } : {}),
   };
   process.stdout.write(JSON.stringify(output) + "\n");
@@ -371,10 +409,15 @@ function runBackground(cwd, args) {
     env: { ...process.env, CODEX_TOOLKIT_BACKGROUND_JOB_ID: jobId },
   });
 
-  upsertJob(cwd, {
-    id: jobId, status: "running", pid: child.pid,
-    startedAt: new Date().toISOString(),
-    deadlineAt: new Date(Date.now() + args.timeoutMs).toISOString(),
+  // The worker records the running transition itself (with its own pid), so a
+  // fast worker completion can never be overwritten with `running` here.
+  child.on("error", (err) => {
+    appendLog(logFile, `Background spawn error: ${err.message}`);
+    upsertJob(cwd, {
+      id: jobId, status: "failed",
+      errorMessage: `Failed to start background worker: ${err.message}`,
+      completedAt: new Date().toISOString(),
+    });
   });
   child.unref();
 
@@ -383,6 +426,11 @@ function runBackground(cwd, args) {
 
 async function runBackgroundWorker(cwd, args, jobId) {
   const logFile = resolveJobLogFile(cwd, jobId);
+  upsertJob(cwd, {
+    id: jobId, status: "running", pid: process.pid,
+    startedAt: new Date().toISOString(),
+    deadlineAt: new Date(Date.now() + args.timeoutMs).toISOString(),
+  });
   appendLog(logFile, "Background worker started (backend=grok/ACP)");
 
   const result = await executeGrok(cwd, args, logFile);
@@ -396,6 +444,7 @@ async function runBackgroundWorker(cwd, args, jobId) {
   writeJobFile(cwd, jobId, {
     rawOutput: result.rawOutput || "",
     threadId: result.sessionId || null,
+    ...(typeof result.resumed === "boolean" ? { resumed: result.resumed } : {}),
     ...(result.errorMessage ? { error: result.errorMessage } : {}),
   });
 }
