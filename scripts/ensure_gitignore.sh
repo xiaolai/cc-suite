@@ -108,6 +108,9 @@ CLAUDE.local.md
 # .cc-suite/agents/ holds declared advisors and IS meant to be committed.
 .cc-suite/provenance
 .cc-suite/original-claude.md
+# Audit findings files written by /cc-suite:audit and the audit-fix loop —
+# per-run working state (findings + fix statuses), not authored content.
+.cc-suite/audits/
 GI
   if [ "$IS_PLUGIN_REPO" = "1" ] && [ "$PRIVATE" != "1" ]; then
     cat <<'GI'

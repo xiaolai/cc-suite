@@ -234,7 +234,7 @@ Codex-backed commands delegate through the CLI runner (`scripts/codex-runner.mjs
 | Command | What it does |
 |---------|--------------|
 | `/cc-suite:audit` | Run a mini (5-dimension) or full (9-dimension) audit via Codex |
-| `/cc-suite:audit-fix` | Audit → fix → verify loop. Iterates up to 3 rounds. |
+| `/cc-suite:audit-fix` | Audit → fix → verify loop. Iterates up to 3 rounds; findings persist to `.cc-suite/audits/` before any fix, so the loop survives context compaction and interruptions. |
 | `/cc-suite:audit-agent` | Audit Claude Code agent definitions (triggering, prompt quality, tools, examples) |
 | `/cc-suite:audit-plugin` | Audit Claude Code plugin artifacts (local analysis, no Codex call) |
 | `/cc-suite:audit-skill` | Audit Claude Code SKILL.md files |

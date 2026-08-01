@@ -56,7 +56,17 @@ Save `session_id` as `{cycle_session_id}`.
 
 If **no findings** → report CLEAN and stop.
 
-Display findings table to the user.
+Write the findings to `.cc-suite/audits/audit-fix-{YYYYMMDD-HHMMSS}-findings.md` **before any fix** (create the directory if missing; store the path as `{findings_file}`), one row per finding:
+
+```markdown
+| # | File | Line | Severity | Dimension | Finding | Suggested fix | Status | Round |
+|---|------|------|----------|-----------|---------|---------------|--------|-------|
+| 1 | {path} | {line} | {sev} | {dim} | {description} | {fix} | open | - |
+```
+
+Status values: `open` | `fixed` | `not-fixed` | `partial` | `regressed` | `skipped`. The file — not conversation memory — is the ground truth for the fix loop: a 3-round cycle accumulates diffs, test output, and verdicts, and a findings list held only in context gets silently corrupted if compaction hits mid-loop. Re-reading the file each round makes that impossible, and an interrupted run keeps its audit.
+
+Display the findings table and `{findings_file}` to the user.
 
 ### Step 2: Severity filter
 
@@ -72,7 +82,7 @@ Options:
   - Stop here (keep audit, fix manually)
 ```
 
-If "Stop here" → display final report and stop.
+If "Stop here" → mark every `open` row in `{findings_file}` as `skipped`, display final report, and stop.
 
 Otherwise apply the flag/default silently:
 - `--severity=all` (default) → fix all findings
@@ -80,11 +90,11 @@ Otherwise apply the flag/default silently:
 
 ### Step 3: Fix loop (max {--rounds} iterations, default 3)
 
-Set `round = 1`. Track `{remaining_issues}` = issues from the active severity filter.
+Set `round = 1`. Mark rows excluded by the severity filter as `skipped` in `{findings_file}`. Each round's fix set is every row with Status `open`, `not-fixed`, or `partial` — **re-read from `{findings_file}` at the start of every round**, never recalled from context.
 
 #### 3a: Codex fixes
 
-For each issue in `{remaining_issues}`:
+For each finding in the round's fix set:
 - Read the file at the reported location
 - Apply a minimal, correct fix — no refactoring of surrounding code, no deletions unless the issue calls for removal
 - Only touch the reported location and directly related code
@@ -106,13 +116,17 @@ mcp__claude-code__claude_code_reply:
     The following issues from your audit have been addressed. Verify each one.
 
     ISSUES:
-    {remaining_issues in file:line | severity | description format}
+    {this round's fix set, re-read from {findings_file}, in file:line | severity | description format}
 
     For each issue report: FIXED / NOT FIXED / PARTIAL / REGRESSED
     Read the files at the reported locations. Do not assume correctness without reading.
 ```
 
+After the verdicts arrive, update `{findings_file}`: set each verified row's Status (`fixed` / `not-fixed` / `partial` / `regressed`) and Round.
+
 #### 3c: Evaluate
+
+Read the statuses from `{findings_file}`, not from context.
 
 - **All FIXED** → proceed to Step 4
 - **Issues remain** and `round < {--rounds}`:
@@ -127,6 +141,8 @@ mcp__claude-code__claude_code_reply:
 
 ### Step 4: Final report
 
+Render from `{findings_file}` — counts and per-finding tables come from the file's rows, so the report cannot drift from the recorded verdicts. Include the file path in the report.
+
 ```markdown
 ## Audit-Fix Report
 
@@ -140,6 +156,8 @@ Rounds: {round count}
 | Not Fixed | N |
 | Partial | N |
 | Regressed | N |
+| Skipped | N |
+| Total | N |
 
 ### Fixed
 

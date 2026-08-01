@@ -54,7 +54,7 @@ Follow `commands/shared/scope-parse.md` for remaining argument parsing, skip pat
 
 Follow `commands/shared/codex-call.md` for the call pattern (CLI runner — no MCP bridge, no availability ping).
 
-If the runner returns `failed`/`stalled`, fall back to a manual Claude audit per `commands/shared/fallback.md` and report the findings — but do not attempt the fix loop. The fix loop requires Codex to apply edits autonomously; without it, report what was found and ask the user to fix manually.
+If the runner returns `failed`/`stalled`, fall back to a manual Claude audit per `commands/shared/fallback.md`, write the findings file per Step 2b, and report the findings — but do not attempt the fix loop. The fix loop requires Codex to apply edits autonomously; without it, report what was found and ask the user to fix manually.
 
 - **Command persona**: "You are a thorough code auditor. Report every issue with exact file:line locations."
 - **Sandbox**: `read-only`
@@ -64,9 +64,29 @@ Use the audit prompts from `commands/audit.md` (full or mini, matching the chose
 
 **Save the `threadId`** from the audit result as `{audit_threadId}` for the final report. Note: the fix step changes the sandbox to `workspace-write`, which `resume` cannot do — so the fix and verify steps use **fresh calls** carrying the findings explicitly, not `--resume`.
 
-Collect all findings into a structured audit report. Display it to the user.
+#### Step 2b: Write the findings file (before any fix)
 
-If **no issues found** → report CLEAN and STOP.
+Merge all per-file findings and write them to `.cc-suite/audits/audit-fix-{YYYYMMDD-HHMMSS}-findings.md` (create the directory if missing) **before starting the fix loop**. Store the path as `{findings_file}`.
+
+This file — not conversation memory — is the ground truth for every later step. The fix loop can span 3 rounds of diffs, test output, and verify verdicts; if context compaction happens mid-loop, a findings list held only in memory gets silently summarized, and later fix/verify prompts inherit wrong locations or dropped findings. Re-reading the file makes that impossible, and an interrupted run keeps its audit.
+
+```markdown
+# Audit Findings
+
+**Run**: audit-fix {YYYYMMDD-HHMMSS} | **Scope**: {scope} | **Audit type**: full/mini
+**Model**: {chosen_model} | **Effort**: {chosen_effort} | **Audit thread**: {audit_threadId}
+**Status values**: open | fixed | not-fixed | partial | regressed | skipped (severity filter) | skipped (user stop)
+
+| # | File | Line | Severity | Dimension | Finding | Suggested fix | Status | Round |
+|---|------|------|----------|-----------|---------|---------------|--------|-------|
+| 1 | {path} | {line} | {sev} | {dim} | {description} | {fix} | open | - |
+```
+
+If the write fails (permission denied, disk full, directory creation refused), report the failure, display the full findings table inline so nothing is lost, and continue the loop from conversation context as a degraded mode — state explicitly that persistence is unavailable.
+
+Display the findings table to the user along with `{findings_file}`.
+
+If **no findings** → report CLEAN and STOP (no file is written for a clean audit).
 
 ### Step 3: Fix loop
 
@@ -110,11 +130,13 @@ AskUserQuestion:
       description: "Keep the audit report, fix manually"
 ```
 
-If "Stop here" → display final report and STOP.
+If "Stop here" → mark every `open` row in `{findings_file}` as `skipped (user stop)`, display the final report, and STOP.
 
 Otherwise (no `--ask`), apply the flag/default silently:
 - `--severity=all` (default) → fix all findings
 - `--severity=high` → filter to Critical+High (full audit) or High-only (mini audit)
+
+Mark rows excluded by the severity filter as `skipped (severity filter)` in `{findings_file}`.
 
 **Fixer**:
 
@@ -139,6 +161,8 @@ Store as `{chosen_fixer}`.
 
 #### 3b: Fix findings
 
+**Re-read `{findings_file}` first.** The fix set for this round is every row with Status `open`, `not-fixed`, or `partial` — never a findings list recalled from conversation memory (it may have been compacted since the audit).
+
 ##### If `{chosen_fixer}` is **Claude**:
 
 1. For each finding in the filtered set:
@@ -161,7 +185,7 @@ Use a **fresh** runner call (per `commands/shared/codex-call.md`) at the fix san
   Fix the following findings. For each, make the smallest targeted fix at the exact file:line location.
 
   FINDINGS TO FIX:
-  {filtered findings in file:line | severity | finding | fix format}
+  {the open rows from {findings_file}, in file:line | severity | finding | fix format}
 
   RULES:
   - Fix each finding at the exact location reported
@@ -187,7 +211,7 @@ Verification is `read-only`, so it always uses a **fresh** runner call (per `com
   Verify whether the following findings have been fixed. Check each file at the exact location.
 
   ORIGINAL FINDINGS:
-  {the findings sent for fixing}
+  {the rows sent for fixing this round, re-read from {findings_file}}
 
   For each finding report:
   - FIXED — finding resolved, no new problems introduced
@@ -198,7 +222,11 @@ Verification is `read-only`, so it always uses a **fresh** runner call (per `com
 
 Save the result `threadId` as `{verify_threadId}`. If the runner returns `failed`/`stalled`, report the `{jobId}` and fall back per `commands/shared/fallback.md`.
 
+After the verify result arrives, update `{findings_file}`: set each verified row's Status to `fixed` / `not-fixed` / `partial` / `regressed` and its Round to the current iteration. Rows verdicted `not-fixed` or `partial` return to the next round's fix set; `regressed` rows stay `regressed` and are reported.
+
 #### 3d: Evaluate results
+
+Read the statuses from `{findings_file}` — do not evaluate from memory. If the file is missing or unreadable at any re-read or update point, stop the loop and report which step lost it — do not continue on a reconstructed findings list.
 
 - **All FIXED** → proceed to Step 4
 - **Issues remain (NOT FIXED / PARTIAL / REGRESSED)** and `iteration < 3`:
@@ -223,6 +251,8 @@ Save the result `threadId` as `{verify_threadId}`. If the runner returns `failed
 
 ### Step 4: Final report
 
+Render the report **from `{findings_file}`**, not from conversation memory — the file's per-row statuses are the record of what happened, so the report cannot drift from it. Counts in the Summary table are row counts by Status.
+
 ```markdown
 # Audit Fix Report
 
@@ -233,6 +263,7 @@ Save the result `threadId` as `{verify_threadId}`. If the runner returns `failed
 **Model**: {chosen_model} | **Effort**: {chosen_effort} | **Sandbox**: {chosen_sandbox}
 **Thread ID**: `{verify_threadId or fix_threadId or audit_threadId}` _(use `/continue {threadId}` to iterate further — sessions persist on disk across restarts)_
 **Rounds**: {iteration count}
+**Findings file**: `{findings_file}` _(per-finding statuses survive this session)_
 
 ## Result: {ACCEPTED / PARTIAL / UNCHANGED}
 
@@ -244,18 +275,19 @@ Save the result `threadId` as `{verify_threadId}`. If the runner returns `failed
 | Not Fixed | {n} |
 | Partial | {n} |
 | Regressed | {n} |
+| Skipped | {n} |
 | Total | {n} |
 
-## Fixed Issues
+## Fixed Findings
 
-| File:Line | Severity | Issue | Status |
-|-----------|----------|-------|--------|
+| File:Line | Severity | Finding | Status |
+|-----------|----------|---------|--------|
 | ... | ... | ... | FIXED |
 
-## Remaining Issues (if any)
+## Remaining Findings (if any)
 
-| File:Line | Severity | Issue | Status | Notes |
-|-----------|----------|-------|--------|-------|
+| File:Line | Severity | Finding | Status | Notes |
+|-----------|----------|---------|--------|-------|
 | ... | ... | ... | NOT FIXED | {why} |
 
 ## Changes Made

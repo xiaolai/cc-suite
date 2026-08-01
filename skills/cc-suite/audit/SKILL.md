@@ -92,7 +92,9 @@ Display findings as a table, then a severity summary:
 
 **Summary**: Critical: N | High: N | Medium: N | Low: N | Total: N
 
-If clean: report CLEAN with the scope audited.
+If at least one finding, also write the table to `.cc-suite/audits/audit-{YYYYMMDD-HHMMSS}-findings.md` (create the directory if missing) with a `Status` column set to `open`, and report the path — a durable copy survives context compaction and lets a later `$audit-fix` pass start from this audit's exact output instead of re-auditing.
+
+If clean: report CLEAN with the scope audited (no file is written).
 
 ## Notes
 
