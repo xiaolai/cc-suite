@@ -1,5 +1,4 @@
 ---
-name: result
 description: Fetch stored output from a completed Codex job
 argument-hint: "[job-id]"
 ---

@@ -1,5 +1,4 @@
 ---
-name: bridge-skills
 description: Symlink .agents/skills/ → .claude/skills/ so Codex CLI sees all Claude skills without duplication.
 allowed-tools:
   - Bash

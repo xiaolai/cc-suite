@@ -1,5 +1,4 @@
 ---
-name: add-agent
 description: Create a new cc-suite advisor agent — a project-scoped value-over-rules persona registered as an MCP server in both .mcp.json and .codex/config.toml. Optional preset arg copies a curated template.
 argument-hint: "[preset-name | --custom]"
 ---

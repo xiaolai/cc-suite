@@ -1,5 +1,4 @@
 ---
-name: review-plan
 description: Send a plan to Codex for architectural review — checks consistency, completeness, feasibility, ambiguity, and risk
 argument-hint: "[plan-file] [--background | --wait]"
 ---

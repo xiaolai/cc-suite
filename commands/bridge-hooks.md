@@ -1,5 +1,4 @@
 ---
-name: bridge-hooks
 description: Mirror .claude/settings.json hooks into .codex/hooks.json so Codex runs the same hook scripts on the overlapping events.
 allowed-tools:
   - Bash

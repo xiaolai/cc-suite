@@ -1,5 +1,4 @@
 ---
-name: implement
 description: Send a plan to Codex MCP for full autonomous implementation — choose model, effort, and sandbox level
 argument-hint: "<plan-file-or-inline-plan> [--background | --wait]"
 ---

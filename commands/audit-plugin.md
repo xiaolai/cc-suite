@@ -1,5 +1,4 @@
 ---
-name: audit-plugin
 description: Plugin auditor — audit Claude Code plugin artifacts for schema, specification, security, and structural defects
 argument-hint: "[plugin-dir-path] [--full | --mini]"
 ---

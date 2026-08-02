@@ -1,5 +1,4 @@
 ---
-name: audit-command
 description: Command auditor — audit Claude Code slash commands for schema, workflow clarity, tool selection, error handling, and output specification
 argument-hint: "[command-path-or-dir] [--full | --mini]"
 ---

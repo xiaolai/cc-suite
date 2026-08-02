@@ -1,6 +1,6 @@
 {
   "name": "cc-suite",
-  "version": "0.2.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "description": "One plugin to bridge Claude Code, Codex CLI, and Gemini CLI \u2014 shared AGENTS.md, mirrored hooks and MCP servers, bidirectional delegation",

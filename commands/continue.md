@@ -1,5 +1,4 @@
 ---
-name: continue
 description: Continue a previous Codex session — iterate on findings, request fixes, or drill deeper
 argument-hint: "<threadId> <follow-up prompt>"
 ---

@@ -1,5 +1,4 @@
 ---
-name: status
 description: Show active and recent Codex jobs — background tasks, running audits, completed results
 argument-hint: "[job-id] [--all] [--json]"
 ---

@@ -1,5 +1,4 @@
 ---
-name: bridge-mcp
 description: Mirror MCP servers from .mcp.json into .codex/config.toml so Codex CLI sees the same project MCP surface as Claude Code.
 allowed-tools:
   - Bash

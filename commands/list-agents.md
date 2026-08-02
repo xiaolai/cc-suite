@@ -1,5 +1,4 @@
 ---
-name: list-agents
 description: List every cc-suite advisor agent registered in this project — name, consult tool, model, tool scope, and one-line description.
 ---
 
