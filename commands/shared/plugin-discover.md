@@ -46,7 +46,7 @@ Glob for all plugin artifacts under `{plugin_root}`:
 | Shared partials | `commands/shared/*.md` | `user-invocable: false` (required) |
 | Agents | `agents/*.md` | `description` (required) |
 | Skills | `skills/*/SKILL.md` | Skill metadata |
-| Hooks | `hooks/hooks.json` | JSON array of hook objects |
+| Hooks | `hooks/hooks.json` | JSON object; `hooks` keyed by event (`SessionStart`, `PostToolUse`, …), each an array of hook groups |
 | MCP config | `.mcp.json` | JSON with `mcpServers` |
 | Marketplace | `.claude-plugin/marketplace.json` | Marketplace manifest |
 
