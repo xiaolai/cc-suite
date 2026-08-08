@@ -178,7 +178,7 @@ This skill covers **cc-suite advisor agent design** — claude-octopus-backed MC
 
 It does **not** cover:
 
-- **Claude Code's native subagent system** (Task tool, `.claude/agents/`) — a different mechanism with different semantics. Use those when you want to spawn a one-shot subagent in isolated context, not when you want a persistent consultative persona. See [`claude-architecture`](../../../../claude-architecture) for the native-agent surface.
+- **Claude Code's native subagent system** (Task tool, `.claude/agents/`) — a different mechanism with different semantics. Use those when you want to spawn a one-shot subagent in isolated context, not when you want a persistent consultative persona. See the Claude Code subagents documentation (https://code.claude.com/docs/en/sub-agents) for the native-agent surface.
 - **Skill authoring** — for writing skills (knowledge that loads on demand, no model invocation), refer to `cc-suite/claude-code-conventions` and the `nlpm:conventions` family.
 - **MCP server authoring from scratch** — `claude-octopus` is the MCP server; this skill describes how to *configure* it per advisor, not how to build a new MCP server.
 - **The bridge mechanics** — how `bridge_agents.py` writes `.mcp.json` and `.codex/config.toml`. See `scripts/bridge_agents.py` itself, plus `commands/init.md` / `repair.md` / `update.md` for when the bridge runs.

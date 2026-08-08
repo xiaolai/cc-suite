@@ -21,10 +21,10 @@ Determine the plugin directory from `{plugin_dir}` (extracted from `$ARGUMENTS` 
 
 - **2a.** If the current working directory contains `.claude-plugin/plugin.json` → use it as `{plugin_root}` (you are inside a plugin under development) and continue.
 - **2b.** Otherwise, enumerate the user's installed plugins and let them choose:
-  1. Read `~/.claude/plugins/installed_plugins.json` (schema `{version, plugins}` where each key is `"<name>@<marketplace>"` and each value is a list whose first entry holds `installPath` and `version`).
+  1. Read `~/.claude/plugins/installed_plugins.json` (schema `{version, plugins}` where each key is `"<name>@<marketplace>"` and each value is a list of install records, each holding `scope`, an optional `projectPath`, `installPath`, and `version`).
   2. If that file is missing or empty, fall back to globbing `~/.claude/plugins/cache/*/*/*/.claude-plugin/plugin.json` and `~/.claude/plugins/marketplaces/*/plugins/*/.claude-plugin/plugin.json`.
   3. Present the discovered plugins with `AskUserQuestion` (option label = `<name>@<marketplace> vX.Y.Z`; up to 4 per question — page through groups if there are more; the user may also type a path via "Other").
-  4. Set `{plugin_root}` to the chosen plugin's `installPath` and continue.
+  4. Set `{plugin_root}` to the chosen plugin's `installPath` and continue. When a plugin has more than one install record, pick the record whose `projectPath` equals the current working directory's project root; if none matches, pick the `scope: "user"` record; if there is none, pick the first record.
 - **2c.** If NO installed plugins are found either → respond: "No plugin directory given and the current directory is not a plugin, and no installed plugins were found. Pass a path: `/cc-suite:audit-plugin <path-to-plugin>`." and STOP.
 
 ### Read Plugin Manifest
