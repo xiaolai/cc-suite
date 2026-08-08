@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-import fs from "node:fs";
 import process from "node:process";
 import { spawnSync } from "node:child_process";
 
+import { readHookInput } from "./lib/hook-input.mjs";
 import { getConfig, listJobs } from "./lib/state.mjs";
 import { sortJobsNewestFirst, SESSION_ID_ENV } from "./lib/job-control.mjs";
 import { binaryAvailable } from "./lib/process.mjs";
@@ -13,12 +13,6 @@ const STOP_REVIEW_TIMEOUT_MS = 15 * 60 * 1000;
 // Use the user's configured Codex default unless an explicit override is
 // supplied. A plugin-wide model slug is not valid for every account.
 const STOP_REVIEW_MODEL = process.env.CC_SUITE_REVIEW_MODEL?.trim() || null;
-
-function readHookInput() {
-  const raw = fs.readFileSync(0, "utf8").trim();
-  if (!raw) return {};
-  return JSON.parse(raw);
-}
 
 function emitDecision(payload) {
   process.stdout.write(`${JSON.stringify(payload)}\n`);
