@@ -336,10 +336,23 @@ test("SIGTERM removes the private review stage and stops the runner", async () =
   });
 
   try {
-    for (let attempt = 0; attempt < 100 && !fs.existsSync(cwdFile); attempt += 1) {
+    // The fake qwen writes cwdFile then pidFile as separate non-atomic
+    // writes, so wait until BOTH have content — polling only for cwdFile's
+    // existence can win the gap and read a missing or empty pidFile.
+    const stageReady = () => {
+      try {
+        return (
+          fs.readFileSync(cwdFile, "utf8") !== "" &&
+          fs.readFileSync(pidFile, "utf8") !== ""
+        );
+      } catch {
+        return false;
+      }
+    };
+    for (let attempt = 0; attempt < 100 && !stageReady(); attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    assert.equal(fs.existsSync(cwdFile), true);
+    assert.equal(stageReady(), true);
     const stageRoot = fs.readFileSync(cwdFile, "utf8");
     const qwenPid = Number(fs.readFileSync(pidFile, "utf8"));
     assert.equal(fs.existsSync(stageRoot), true);
