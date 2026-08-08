@@ -1,5 +1,4 @@
 ---
-name: diagnose
 description: Diagnose the cc-suite setup in the current project. Runs a full health check, explains every issue found, and offers to fix everything that can be fixed automatically.
 ---
 

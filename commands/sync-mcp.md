@@ -1,5 +1,4 @@
 ---
-name: sync-mcp
 description: Synchronize Claude Code project MCP servers into Codex and Antigravity workspace configs.
 allowed-tools:
   - Bash

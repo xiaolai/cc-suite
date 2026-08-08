@@ -1,5 +1,4 @@
 ---
-name: bridge-tools
 description: Bridge the project MCP surface into additional coding agents (Grok Build, opencode, Qwen Code, Kimi CLI) selected in .cc-suite.md. Grok, opencode, and Kimi read AGENTS.md and the shared skills tree natively, so only MCP config is mirrored, each to its own native format; Qwen Code also needs a skills symlink and does not read AGENTS.md by default.
 allowed-tools:
   - Bash

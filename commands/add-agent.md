@@ -1,5 +1,4 @@
 ---
-name: add-agent
 description: Create a new cc-suite advisor agent — a project-scoped value-over-rules persona registered as an MCP server for Claude and Codex, then available to agy after the MCP projection is refreshed. Optional preset arg copies a curated template.
 argument-hint: "[preset-name | --custom]"
 ---

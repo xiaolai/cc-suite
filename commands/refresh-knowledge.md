@@ -1,5 +1,4 @@
 ---
-name: refresh-knowledge
 description: Refresh Claude Code convention knowledge — fetch latest docs via context7 and update the reference skill
 argument-hint: "[--check | --update]"
 ---

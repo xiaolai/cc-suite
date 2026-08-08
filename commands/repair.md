@@ -1,5 +1,4 @@
 ---
-name: repair
 description: Non-interactive re-run of all cc-suite bridge and registration scripts. No questions asked — idempotent, safe to re-run at any time. Use when /cc-suite:diagnose finds issues it could not auto-fix, or when the setup is in an inconsistent state.
 ---
 

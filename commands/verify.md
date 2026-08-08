@@ -1,5 +1,4 @@
 ---
-name: verify
 description: Verification auditor — confirms fixes from a previous audit report
 argument-hint: "<audit-report-file>"
 ---

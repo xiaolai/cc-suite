@@ -1,5 +1,4 @@
 ---
-name: migrate-google
 description: Migrate a legacy Gemini CLI setup to Antigravity CLI and establish the cc-suite workspace bridge
 argument-hint: "[--skip-import] [--keep-legacy]"
 allowed-tools:

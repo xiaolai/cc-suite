@@ -1,5 +1,4 @@
 ---
-name: agy
 description: Delegate a prompt directly to Antigravity CLI with bounded execution and shared job tracking
 argument-hint: "[--model <name>] [--sandbox read-only|workspace-write|danger-full-access] [--background] [--resume <conversation-id>] <prompt>"
 allowed-tools:

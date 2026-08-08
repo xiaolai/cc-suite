@@ -1,5 +1,4 @@
 ---
-name: agy-preflight
 description: Check Antigravity CLI (agy) availability, authentication, models, and workspace MCP parity
 allowed-tools:
   - Bash

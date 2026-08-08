@@ -1,6 +1,7 @@
 ---
 name: agent-design
 description: Use when creating, editing, or reviewing a cc-suite advisor agent (a value-over-rules persona under `.cc-suite/agents/`). Covers system-prompt phrasing, model choice, tool restrictions, working-dir scoping, budget/turn limits, and the file format. Use proactively whenever the user asks to "add an agent", "make an advisor", "write a reviewer", or edits anything under `.cc-suite/agents/`.
+version: 0.1.0
 ---
 
 # Designing cc-suite Advisor Agents

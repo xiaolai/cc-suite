@@ -1,5 +1,4 @@
 ---
-name: qwen-review
 description: Send a bounded, read-only review to Qwen Code with sandboxing, isolated target copies, strict completion detection, verified hashes, and limited session resume.
 argument-hint: "[--model <id>] [--target <workspace-file>]... [--background] [--debug-capture] <review prompt>"
 allowed-tools:

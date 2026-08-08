@@ -1,5 +1,4 @@
 ---
-name: bridge-mcp
 description: Mirror MCP servers from .mcp.json into Codex and Antigravity workspace configs
 allowed-tools:
   - Bash

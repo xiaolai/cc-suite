@@ -1,5 +1,4 @@
 ---
-name: audit-agent
 description: Agent auditor — audit Claude Code agent definitions for triggering accuracy, system prompt quality, tool appropriateness, and example coverage
 argument-hint: "[agent-path-or-dir] [--full | --mini]"
 ---

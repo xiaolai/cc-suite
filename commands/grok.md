@@ -1,5 +1,4 @@
 ---
-name: grok
 description: Delegate a prompt to Grok Build (xAI) over the Agent Client Protocol (ACP), with bounded execution and shared job tracking. The Claude → Grok delegation lane.
 argument-hint: "[--model <id>] [--effort <level>] [--sandbox read-only|workspace-write|danger-full-access] [--background] [--resume <session-id>] <prompt>"
 allowed-tools:

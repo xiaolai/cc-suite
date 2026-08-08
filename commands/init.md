@@ -1,5 +1,4 @@
 ---
-name: init
 description: Initialize cc-suite for the current project — sets up the AGENTS.md bridge, registers Codex, Claude, and Antigravity MCP surfaces, and generates a .cc-suite.md config
 ---
 

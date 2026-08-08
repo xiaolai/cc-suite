@@ -1,5 +1,4 @@
 ---
-name: codex-preflight
 description: Check Codex connectivity, authentication, and discover available models
 ---
 

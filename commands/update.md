@@ -1,5 +1,4 @@
 ---
-name: update
 description: Refresh the cc-suite bridge after updating the plugin. Re-renders MCP registrations, pre-warms the npx cache for the pinned claude-octopus, and verifies the pin actually boots and speaks MCP.
 ---
 

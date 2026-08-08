@@ -1,5 +1,4 @@
 ---
-name: remove-agent
 description: Remove a cc-suite advisor agent — deletes the `.cc-suite/agents/<name>.md` file and re-runs the bridge to clean up its registrations and (optionally) its timeline.
 argument-hint: "<agent-name>"
 ---

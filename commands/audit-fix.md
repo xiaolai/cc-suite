@@ -1,5 +1,4 @@
 ---
-name: audit-fix
 description: Audit→fix→verify loop — finds issues, fixes them, verifies fixes, repeats until clean or you stop
 argument-hint: "[scope] [--full | --mini] [--severity=all|high] [--fixer=claude|codex] [--ask]"
 ---

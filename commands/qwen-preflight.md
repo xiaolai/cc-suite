@@ -1,5 +1,4 @@
 ---
-name: qwen-preflight
 description: Check local Qwen Code readiness for the bounded review runner without sending a model prompt or inspecting credentials.
 allowed-tools:
   - Bash
