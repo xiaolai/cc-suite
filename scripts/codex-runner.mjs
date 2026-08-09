@@ -23,12 +23,19 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
 import {
+  claimJob,
   generateJobId,
   upsertJob,
   writeJobFile,
-  resolveJobLogFile,
+  createJobLogFile,
 } from "./lib/state.mjs";
 import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
+import {
+  installChildSignalForwarding,
+  readProcessStartTime,
+  terminateProcessTree,
+  waitForExit,
+} from "./lib/process.mjs";
 import { extractErrorEvent, resolveFailureMessage } from "./lib/codex-errors.mjs";
 
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
@@ -112,8 +119,10 @@ function parseArgs(argv) {
       case "--summary": args.summary = value; break;
       case "--timeout-ms": {
         const n = Number(value);
-        if (!Number.isFinite(n) || n <= 0) {
-          process.stderr.write(`Error: --timeout-ms requires a positive number of milliseconds, got '${value}'\n`);
+        // Node timers cap at 2^31-1 ms; larger values wrap to ~1ms and fire
+        // an immediate false timeout.
+        if (!Number.isInteger(n) || n <= 0 || n > 2147483647) {
+          process.stderr.write(`Error: --timeout-ms requires a positive integer of milliseconds (max 2147483647), got '${value}'\n`);
           process.exit(1);
         }
         args.timeoutMs = n;
@@ -195,34 +204,83 @@ function executeCodex(cwd, args, logFile) {
     // shell. Required because `codex exec` can hang on stdin in background /
     // hook contexts that lack a controlling TTY. Do not change to "pipe" or
     // "inherit" without preserving an explicit /dev/null on stdin.
+    // detached:true makes the child a process-group leader (POSIX), so the
+    // deadline can terminate the whole group — codex tool subprocesses
+    // included — instead of only the direct child.
     const child = spawn("codex", codexArgs, {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env },
+      detached: true,
     });
+    const releaseSignals = installChildSignalForwarding(child);
 
-    const heartbeat = setInterval(() => {
-      const elapsed = Math.round((Date.now() - startedAt) / 1000);
-      appendLog(logFile, `…still running (${elapsed}s elapsed)`);
-    }, HEARTBEAT_MS);
-
-    const deadline = setTimeout(() => {
-      timedOut = true;
-      appendLog(logFile, `Deadline exceeded (${Math.round(args.timeoutMs / 1000)}s) — terminating`);
-      child.kill("SIGTERM");
-      setTimeout(() => {
-        if (!settled) child.kill("SIGKILL");
-      }, SIGKILL_GRACE_MS);
-    }, args.timeoutMs);
+    let killTimer = null;
 
     function finish(result) {
       if (settled) return;
       settled = true;
       clearInterval(heartbeat);
       clearTimeout(deadline);
+      if (killTimer) clearTimeout(killTimer);
+      releaseSignals();
       try { fs.unlinkSync(lastMessageFile); } catch { /* ignore */ }
       resolve(result);
     }
+
+
+    // Terminate the child before settling on a failure path. Synchronous and
+    // bounded on purpose: arming an escalation timer here would be cancelled by
+    // finish(), which clears every timer, leaving a SIGTERM-resistant child
+    // alive as a detached orphan.
+    function killChildNow() {
+      try { terminateProcessTree(child.pid, { signal: "SIGTERM" }); } catch {}
+      if (waitForExit([child.pid], 1000).size > 0) {
+        try { terminateProcessTree(child.pid, { signal: "SIGKILL" }); } catch {}
+      }
+    }
+
+    // Timer and stream callbacks run outside the Promise chain: a synchronous
+    // write failure (full disk, deleted log dir) would otherwise become an
+    // uncaught exception that kills the runner and strands the job as running.
+    function guarded(fn) {
+      return (...callbackArgs) => {
+        try {
+          fn(...callbackArgs);
+        } catch (error) {
+          killChildNow();
+          finish({
+            status: "failed",
+            errorMessage: `Runner callback failed: ${error?.message || error}`,
+            threadId,
+            // The answer may already be complete on disk; a logging failure
+            // must not throw it away.
+            rawOutput: readLastMessage(lastMessageFile),
+          });
+        }
+      };
+    }
+
+    const heartbeat = setInterval(
+      guarded(() => {
+        const elapsed = Math.round((Date.now() - startedAt) / 1000);
+        appendLog(logFile, `…still running (${elapsed}s elapsed)`);
+      }),
+      HEARTBEAT_MS
+    );
+
+    const deadline = setTimeout(
+      guarded(() => {
+        timedOut = true;
+        appendLog(logFile, `Deadline exceeded (${Math.round(args.timeoutMs / 1000)}s) — terminating`);
+        terminateProcessTree(child.pid, { signal: "SIGTERM" });
+        killTimer = setTimeout(() => {
+          if (!settled) terminateProcessTree(child.pid, { signal: "SIGKILL" });
+        }, SIGKILL_GRACE_MS);
+        killTimer.unref?.();
+      }),
+      args.timeoutMs
+    );
 
     function processLine(line) {
       if (!line.trim()) return;
@@ -242,27 +300,35 @@ function executeCodex(cwd, args, logFile) {
       }
     }
 
-    child.stdout.on("data", (chunk) => {
-      stdoutBuf += chunk.toString();
-      let nl;
-      while ((nl = stdoutBuf.indexOf("\n")) !== -1) {
-        processLine(stdoutBuf.slice(0, nl));
-        stdoutBuf = stdoutBuf.slice(nl + 1);
-      }
-    });
+    child.stdout.on(
+      "data",
+      guarded((chunk) => {
+        stdoutBuf += chunk.toString();
+        let nl;
+        while ((nl = stdoutBuf.indexOf("\n")) !== -1) {
+          processLine(stdoutBuf.slice(0, nl));
+          stdoutBuf = stdoutBuf.slice(nl + 1);
+        }
+      })
+    );
 
-    child.stderr.on("data", (chunk) => {
-      const text = chunk.toString();
-      stderrTail = (stderrTail + text).slice(-2000);
-      fs.appendFileSync(logFile, text, "utf8");
-    });
+    child.stderr.on(
+      "data",
+      guarded((chunk) => {
+        const text = chunk.toString();
+        stderrTail = (stderrTail + text).slice(-2000);
+        fs.appendFileSync(logFile, text, "utf8");
+      })
+    );
 
     child.on("error", (err) => {
-      appendLog(logFile, `Spawn error: ${err.message}`);
+      try {
+        appendLog(logFile, `Spawn error: ${err.message}`);
+      } catch {}
       finish({ status: "failed", errorMessage: err.message, threadId, rawOutput: "" });
     });
 
-    child.on("close", (code, signal) => {
+    child.on("close", guarded((code, signal) => {
       if (stdoutBuf.trim()) processLine(stdoutBuf); // flush a final unterminated line
       stdoutBuf = "";
       const rawOutput = readLastMessage(lastMessageFile);
@@ -291,14 +357,14 @@ function executeCodex(cwd, args, logFile) {
       }
       appendLog(logFile, "Completed successfully");
       finish({ status: "completed", threadId, rawOutput });
-    });
+    }));
   });
 }
 
 async function runForeground(cwd, args) {
   const jobId = generateJobId(args.kind);
   activeJobId = jobId;
-  const logFile = resolveJobLogFile(cwd, jobId);
+  const logFile = createJobLogFile(cwd, jobId);
   const sessionId = args.sessionId || process.env.CODEX_TOOLKIT_SESSION_ID || null;
   const deadlineAt = new Date(Date.now() + args.timeoutMs).toISOString();
 
@@ -309,6 +375,7 @@ async function runForeground(cwd, args) {
     summary: args.summary || `${args.kind} task`,
     sessionId,
     pid: process.pid,
+    pidStartedAt: readProcessStartTime(process.pid),
     startedAt: new Date().toISOString(),
     deadlineAt,
     logFile,
@@ -346,7 +413,7 @@ async function runForeground(cwd, args) {
 function runBackground(cwd, args) {
   const jobId = generateJobId(args.kind);
   activeJobId = jobId;
-  const logFile = resolveJobLogFile(cwd, jobId);
+  const logFile = createJobLogFile(cwd, jobId);
   const sessionId = args.sessionId || process.env.CODEX_TOOLKIT_SESSION_ID || null;
 
   upsertJob(cwd, {
@@ -403,14 +470,21 @@ function runBackground(cwd, args) {
 }
 
 async function runBackgroundWorker(cwd, args, jobId) {
-  const logFile = resolveJobLogFile(cwd, jobId);
-  upsertJob(cwd, {
-    id: jobId,
+  const logFile = createJobLogFile(cwd, jobId);
+  // Claim the queued job atomically. SessionEnd can cancel a job in the gap
+  // between queueing and worker startup; resurrecting it to running would
+  // leave a process nobody is tracking.
+  const claimed = claimJob(cwd, jobId, {
     status: "running",
     pid: process.pid,
+    pidStartedAt: readProcessStartTime(process.pid),
     startedAt: new Date().toISOString(),
     deadlineAt: new Date(Date.now() + args.timeoutMs).toISOString(),
   });
+  if (!claimed) {
+    appendLog(logFile, "Background worker exiting — job was cancelled before startup");
+    return;
+  }
   appendLog(logFile, "Background worker started");
 
   const result = await executeCodex(cwd, args, logFile);

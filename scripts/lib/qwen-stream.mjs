@@ -186,13 +186,27 @@ export class JsonlDecoder {
     while ((newline = this.buffer.indexOf("\n")) !== -1) {
       const line = this.buffer.slice(0, newline).replace(/\r$/, "");
       this.buffer = this.buffer.slice(newline + 1);
+      // The cap applies to every record, terminated or not — checking only the
+      // remainder would let an oversized line that arrived with its newline
+      // through.
+      this.#checkLength(line.length);
       if (line.trim()) lines.push(line);
     }
     if (flush && this.buffer.trim()) {
+      this.#checkLength(this.buffer.length);
       lines.push(this.buffer.replace(/\r$/, ""));
       this.buffer = "";
     }
     return lines;
+  }
+
+  #checkLength(length) {
+    if (length > MAX_JSONL_BUFFER_LENGTH) {
+      throw new QwenStreamError(
+        "stream_overflow",
+        `Qwen emitted a stream-json record longer than ${MAX_JSONL_BUFFER_LENGTH} characters`
+      );
+    }
   }
 }
 
@@ -270,6 +284,14 @@ function validateReadTool(state, call) {
   }
 
   const callId = call.id ?? null;
+  if (callId !== null && state.pendingToolCallIds.has(callId)) {
+    // A duplicate id would collapse in the pending set, letting one result
+    // "answer" two calls and making the exchange ambiguous.
+    throw new QwenStreamError(
+      "duplicate_tool_call",
+      `Qwen issued two tool calls with the same id (${callId})`
+    );
+  }
   state.toolCalls.push({
     id: callId,
     name,
@@ -309,25 +331,29 @@ function toolResultIds(event) {
 // (anonymous) pending call. Cross-pairing would mean the correlation cannot be
 // proven — a tool may have run without passing validateReadTool — so fail
 // closed on any mismatch.
-function consumeToolResults(state, event) {
-  for (const id of toolResultIds(event)) {
-    if (id !== null) {
-      if (!state.pendingToolCallIds.has(id)) {
-        throw new QwenStreamError(
-          "unsolicited_tool_result",
-          `Qwen emitted a tool result (${id}) with no matching validated read_file call`
-        );
-      }
-      state.pendingToolCallIds.delete(id);
-      continue;
-    }
-    if (state.pendingAnonymousToolCalls === 0) {
+function consumeToolResultId(state, id) {
+  if (id !== null) {
+    if (!state.pendingToolCallIds.has(id)) {
       throw new QwenStreamError(
         "unsolicited_tool_result",
-        "Qwen emitted an id-less tool result with no matching id-less validated read_file call"
+        `Qwen emitted a tool result (${id}) with no matching validated read_file call`
       );
     }
-    state.pendingAnonymousToolCalls -= 1;
+    state.pendingToolCallIds.delete(id);
+    return;
+  }
+  if (state.pendingAnonymousToolCalls === 0) {
+    throw new QwenStreamError(
+      "unsolicited_tool_result",
+      "Qwen emitted an id-less tool result with no matching id-less validated read_file call"
+    );
+  }
+  state.pendingAnonymousToolCalls -= 1;
+}
+
+function consumeToolResults(state, event) {
+  for (const id of toolResultIds(event)) {
+    consumeToolResultId(state, id);
   }
 }
 
@@ -370,11 +396,20 @@ function inspectAssistant(state, event) {
     if (typeof block.text === "string" && !block.thought) continue;
     const kind = block.type ?? (block.thought ? "thinking" : null);
     if (
-      kind === "thinking" ||
       kind === "tool_result" ||
       kind === "function_response" ||
       block.functionResponse
     ) {
+      // Assistant-embedded tool results go through the same correlation as
+      // user-carried ones — accepting them silently would let a tool run
+      // without passing validateReadTool.
+      consumeToolResultId(
+        state,
+        block.tool_use_id ?? block.toolUseId ?? block.id ?? null
+      );
+      continue;
+    }
+    if (kind === "thinking") {
       continue;
     }
     if (kind) {
@@ -455,6 +490,16 @@ function inspectResult(state, event) {
         ? event.result.trim()
         : `Qwen terminal result was ${state.resultSubtype ?? "unknown"} (is_error=${String(state.isError)})`;
     return;
+  }
+  if (state.pendingToolCallIds.size > 0 || state.pendingAnonymousToolCalls > 0) {
+    // A successful terminal result with unanswered validated calls means the
+    // exchange never completed — the correlation invariant cannot be proven.
+    throw new QwenStreamError(
+      "incomplete_tool_exchange",
+      `Qwen reported success with ${
+        state.pendingToolCallIds.size + state.pendingAnonymousToolCalls
+      } unanswered tool call(s)`
+    );
   }
   if (typeof event.result !== "string" || !event.result.trim()) {
     state.emptyResult = true;

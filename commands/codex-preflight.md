@@ -53,14 +53,20 @@ version, and does not hardcode a model name or select review-only models.
 
 ### Step 3: Handle errors
 
+Failures are reported **in band**: the script prints the same field set with `"status": "error"`, a stable `error_code`, and empty `models`, and still exits 0. Switch on `status`, never on the exit code.
+
 - If `status` is `"error"`:
-  - Display the error message prominently
-  - Suggest fixes:
-    - `"codex CLI not found"` → `npm install -g @openai/codex`
-    - `"Not authenticated"` → `codex login`
+  - Display the `error` message prominently
+  - Suggest the fix for its `error_code` (branch on the code, not the message text):
+
+    | `error_code` | Fix |
+    |--------------|-----|
+    | `codex_not_found` | `npm install -g @openai/codex` |
+    | `codex_not_authenticated` | `codex login` |
+    | `codex_no_models_cache` | Run any codex session once (e.g. `codex exec 'say ok'`) to repopulate `~/.codex/models_cache.json` |
 - If `models` is empty:
   - Warn: "No models are currently available"
-  - Suggest: Check subscription status, try `codex login`
+  - Suggest: Check subscription status, then run any codex session once (e.g. `codex exec 'say ok'`) to repopulate the model cache — `codex login` does not refresh the model list
 
 ### Step 4: Summary
 

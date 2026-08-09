@@ -43,8 +43,12 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+from pin import PinError, read_pin as read_validated_pin  # noqa: E402
 
 # ── locations ────────────────────────────────────────────────────────────────
 AGENT_DIR = Path(".cc-suite/agents")
@@ -62,6 +66,16 @@ DEFAULT_ALLOWED_TOOLS = ["Read", "Grep", "Glob"]
 DEFAULT_MAX_TURNS = 5
 DEFAULT_PROMPT_MODE = "append"
 DEFAULT_MODEL = None  # let claude-octopus pick
+
+# ── schema ───────────────────────────────────────────────────────────────────
+KNOWN_KEYS = {
+    "name", "description", "model", "tool_name", "allowed_tools",
+    "disallowed_tools", "permission_mode", "max_turns", "max_budget_usd",
+    "effort", "cwd", "additional_dirs", "prompt_mode",
+}
+# Server names cc-suite registers itself. An advisor claiming one of these would
+# be projected over the reverse-delegation registration Codex and agy depend on.
+RESERVED_NAMES = {"claude-code", "codex-cli"}
 
 
 def enabled_tools() -> set:
@@ -92,17 +106,14 @@ def read_pin() -> str:
         candidates.append(Path(plugin_root) / "scripts/lib/claude-octopus-pin.txt")
     # Also try the path relative to this script's location.
     candidates.append(Path(__file__).parent / "lib/claude-octopus-pin.txt")
-    for p in candidates:
-        if p.is_file():
-            pin = p.read_text().strip()
-            if pin:
-                return pin
-    print(
-        "! claude-octopus-pin.txt missing or empty — refusing to register advisors "
-        "against an unpinned claude-octopus",
-        file=sys.stderr,
-    )
-    raise SystemExit(2)
+    try:
+        return read_validated_pin(*candidates)
+    except PinError as exc:
+        print(
+            f"! {exc} — refusing to register advisors against an unpinned claude-octopus",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
 
 
 # ── frontmatter parser ───────────────────────────────────────────────────────
@@ -161,6 +172,22 @@ def _split_csv(s: str) -> List[str]:
     return [x for x in out if x]
 
 
+def _validate_str_list(agent: Dict[str, Any], key: str) -> None:
+    """Require a list of non-empty, comma-free strings.
+
+    The comma rule is load-bearing: these lists are emitted as comma-joined
+    env values, so an entry containing a comma would silently become two.
+    """
+    value = agent[key]
+    if not isinstance(value, list):
+        raise ValueError(f"{key} must be a list, got {value!r}")
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(f"{key} entries must be non-empty strings, got {item!r}")
+        if "," in item:
+            raise ValueError(f"{key} entry {item!r} contains a comma — use one list entry per value")
+
+
 def _validate_agent(agent: Dict[str, Any]) -> None:
     """Validate the documented agent schema beyond the name check.
 
@@ -169,6 +196,15 @@ def _validate_agent(agent: Dict[str, Any]) -> None:
     still be a non-empty string — an empty or non-string value would be
     silently stringified into a broken CLAUDE_MODEL registration.
     """
+    unknown = sorted(k for k in agent if not k.startswith("_") and k not in KNOWN_KEYS)
+    if unknown:
+        raise ValueError(
+            f"unknown frontmatter key(s) {unknown} — supported keys: {sorted(KNOWN_KEYS)}"
+        )
+    if "description" in agent and not (
+        isinstance(agent["description"], str) and agent["description"].strip()
+    ):
+        raise ValueError(f"description must be a non-empty string, got {agent['description']!r}")
     if "model" in agent and not (isinstance(agent["model"], str) and agent["model"].strip()):
         raise ValueError(f"model must be a non-empty string, got {agent['model']!r}")
     if "prompt_mode" in agent and str(agent["prompt_mode"]).lower() not in ("append", "replace"):
@@ -198,6 +234,22 @@ def _validate_agent(agent: Dict[str, Any]) -> None:
             "allowed_tools is an explicit empty list — claude-octopus would fall back to its "
             "own defaults; use disallowed_tools to block tools instead"
         )
+    # An unrecognized shape here is never inert: agent_to_env would drop the
+    # restriction and claude-octopus would fall back to its own broader defaults.
+    if "allowed_tools" in agent:
+        if isinstance(agent["allowed_tools"], str):
+            if not agent["allowed_tools"].strip():
+                raise ValueError("allowed_tools must not be empty")
+        else:
+            _validate_str_list(agent, "allowed_tools")
+    if "disallowed_tools" in agent:
+        _validate_str_list(agent, "disallowed_tools")
+    if "additional_dirs" in agent:
+        _validate_str_list(agent, "additional_dirs")
+    if "cwd" in agent and not (isinstance(agent["cwd"], str) and agent["cwd"].strip()):
+        raise ValueError(f"cwd must be a non-empty string, got {agent['cwd']!r}")
+    if not str(agent.get("_body") or "").strip():
+        raise ValueError("empty body — agent file must contain a system prompt")
 
 
 def parse_agent_file(path: Path) -> Dict[str, Any]:
@@ -281,6 +333,11 @@ def parse_agent_file(path: Path) -> Dict[str, Any]:
     # Validate name — must be a valid MCP server key (alphanumeric, dash, underscore).
     if not re.match(r"^[A-Za-z][A-Za-z0-9_-]*$", str(agent["name"])):
         raise ValueError(f"{path}: invalid agent name {agent['name']!r}")
+    if str(agent["name"]).lower() in RESERVED_NAMES:
+        raise ValueError(
+            f"{path}: agent name {agent['name']!r} is reserved for cc-suite infrastructure "
+            f"({sorted(RESERVED_NAMES)}) — rename the advisor"
+        )
     _validate_agent(agent)
     return agent
 
@@ -345,13 +402,30 @@ def agent_to_env(agent: Dict[str, Any]) -> Dict[str, str]:
 
 
 # ── TOML scalar emitter (small, just enough for env values) ──────────────────
+_TOML_ESCAPES = {
+    "\\": "\\\\", '"': '\\"', "\b": "\\b", "\t": "\\t",
+    "\n": "\\n", "\f": "\\f", "\r": "\\r",
+}
+
+
 def _toml_str(v: str) -> str:
-    """Emit a TOML basic-string literal for v. Multi-line strings use triple quotes."""
-    if "\n" in v:
-        # Use TOML's multi-line basic string (triple-quoted).
-        escaped = v.replace("\\", "\\\\").replace('"""', '"\\""')
-        return '"""\n' + escaped + '\n"""'
-    return '"' + v.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    """Emit a single-line TOML basic-string literal for v.
+
+    Always single-line, including for multi-line values: TOML's triple-quoted
+    form trims a newline directly after the opening delimiter and would need a
+    trailing one before the closing delimiter, so the parsed value would differ
+    from the same value in .mcp.json. Control characters other than the escapes
+    below are forbidden in basic strings and must be emitted as \\uXXXX.
+    """
+    out = []
+    for ch in v:
+        if ch in _TOML_ESCAPES:
+            out.append(_TOML_ESCAPES[ch])
+        elif ch < "\x20" or ch == "\x7f":
+            out.append(f"\\u{ord(ch):04X}")
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'
 
 
 def _toml_quote_key(name: str) -> str:
@@ -361,9 +435,38 @@ def _toml_quote_key(name: str) -> str:
     return '"' + name.replace('\\', '\\\\').replace('"', '\\"') + '"'
 
 
+# ── atomic commit ────────────────────────────────────────────────────────────
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write text through a same-directory temp file + os.replace, so a crash
+    or a concurrent reader never sees a partially written registry."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        mode = path.stat().st_mode & 0o777
+    except FileNotFoundError:
+        umask = os.umask(0)
+        os.umask(umask)
+        mode = 0o666 & ~umask
+    fd, tmp = tempfile.mkstemp(prefix=".tmp-", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+        raise
+
+
 # ── .mcp.json update ─────────────────────────────────────────────────────────
-def update_mcp_json(agents: List[Dict[str, Any]], pin: str) -> List[str]:
-    """Rewrite cc-suite-managed advisor entries in .mcp.json. Returns conflicts."""
+def plan_mcp_json(agents: List[Dict[str, Any]], pin: str) -> Tuple[str, List[str]]:
+    """Render .mcp.json with cc-suite-managed advisor entries rewritten.
+
+    Returns the full file text and the conflicting names; writes nothing, so a
+    later validation failure cannot leave one registry ahead of the other.
+    """
     if MCP_FILE.exists():
         try:
             data = json.loads(MCP_FILE.read_text())
@@ -401,14 +504,15 @@ def update_mcp_json(agents: List[Dict[str, Any]], pin: str) -> List[str]:
             "env": agent_to_env(agent),
         }
 
-    MCP_FILE.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    return conflicts
+    return json.dumps(data, indent=2) + "\n", conflicts
 
 
 # ── .codex/config.toml update ────────────────────────────────────────────────
-def update_codex_toml(agents: List[Dict[str, Any]], pin: str) -> List[str]:
-    """Rewrite cc-suite-managed advisor blocks in .codex/config.toml. Returns conflicts."""
-    CODEX_FILE.parent.mkdir(parents=True, exist_ok=True)
+def plan_codex_toml(agents: List[Dict[str, Any]], pin: str) -> Tuple[str, List[str]]:
+    """Render .codex/config.toml with cc-suite-managed advisor blocks rewritten.
+
+    Returns the full file text and the conflicting names; writes nothing.
+    """
     text = CODEX_FILE.read_text(encoding="utf-8") if CODEX_FILE.exists() else ""
 
     # Refuse to rewrite when sentinel blocks are unbalanced or mismatched: an
@@ -513,8 +617,7 @@ def update_codex_toml(agents: List[Dict[str, Any]], pin: str) -> List[str]:
     else:
         final = (cleaned + "\n") if cleaned else ""
 
-    CODEX_FILE.write_text(final, encoding="utf-8")
-    return conflicts
+    return final, conflicts
 
 
 # ── timeline dirs + .gitignore ───────────────────────────────────────────────
@@ -550,10 +653,15 @@ def main() -> int:
         # just to write an empty mcpServers map.
         conflicts_mcp: List[str] = []
         conflicts_toml: List[str] = []
+        pending: List[Tuple[Path, str]] = []
         if MCP_FILE.exists():
-            conflicts_mcp = update_mcp_json([], read_pin())
+            mcp_text, conflicts_mcp = plan_mcp_json([], read_pin())
+            pending.append((MCP_FILE, mcp_text))
         if CODEX_FILE.exists():
-            conflicts_toml = update_codex_toml([], read_pin())
+            codex_text, conflicts_toml = plan_codex_toml([], read_pin())
+            pending.append((CODEX_FILE, codex_text))
+        for path, text in pending:
+            _atomic_write_text(path, text)
         if AGENT_DIR.exists():
             print(f"· no agents in {AGENT_DIR}/ — cleared any prior advisor registrations")
         else:
@@ -575,21 +683,27 @@ def main() -> int:
         print(f"! duplicate agent names: {dupes}", file=sys.stderr)
         return 1
 
-    conflicts_mcp = update_mcp_json(agents, pin)
+    mcp_text, conflicts_mcp = plan_mcp_json(agents, pin)
 
     # Project advisors into Codex only when Codex is an enabled tool. When it
     # is disabled, clean up managed blocks in an existing config, but never
     # create .codex/ for a deselected tool.
     codex_enabled = "codex" in enabled_tools()
+    codex_text = None
     if codex_enabled:
-        conflicts_toml = update_codex_toml(agents, pin)
+        codex_text, conflicts_toml = plan_codex_toml(agents, pin)
         codex_target = " + .codex/config.toml"
     elif CODEX_FILE.exists():
-        conflicts_toml = update_codex_toml([], pin)
+        codex_text, conflicts_toml = plan_codex_toml([], pin)
         codex_target = " (codex not enabled — cleared its advisor blocks)"
     else:
         conflicts_toml = []
         codex_target = " (codex not enabled — skipped)"
+
+    # Both projections are rendered and validated before either is committed.
+    _atomic_write_text(MCP_FILE, mcp_text)
+    if codex_text is not None:
+        _atomic_write_text(CODEX_FILE, codex_text)
     ensure_timeline_layout(agents)
 
     conflict_set = set(conflicts_mcp) | set(conflicts_toml)

@@ -11,6 +11,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The embedded Python blocks below are quoted heredocs, so they read the script
+# location from the environment to import scripts/lib modules.
+export CC_SUITE_SCRIPT_DIR="$SCRIPT_DIR"
 
 # Honor the project's tool selection (.cc-suite.md `## Enabled Tools`). Falls
 # back to claude/codex/antigravity when the file or section is absent, so
@@ -30,6 +33,9 @@ if python3 - <<'PY'
 from __future__ import annotations
 import json, os, re, sys, tempfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(os.environ["CC_SUITE_SCRIPT_DIR"]) / "lib"))
+from toml_escape import escape_ctrl, quote_string  # noqa: E402
 
 SENTINEL_START = "# >>> cc-suite-mcp >>>"
 SENTINEL_END   = "# <<< cc-suite-mcp <<<"
@@ -111,6 +117,7 @@ def main() -> int:
         base = existing
 
     # Only add servers not already declared in the non-sentinel portion.
+    declared = _declared_servers(base)
     new_blocks: list[str] = []
     skipped: list[str] = []
     skipped_names: set[str] = set()
@@ -141,7 +148,7 @@ def main() -> int:
         if codex_name != name:
             normalized.append(f"{name} → {codex_name}")
 
-        if f"[mcp_servers.{codex_name}]" in base:
+        if codex_name in declared:
             skipped.append(name)
             skipped_names.add(name)
             continue
@@ -208,12 +215,59 @@ def _codex_name(name: str) -> str:
     return normalized or 'mcp-server'
 
 
+KEY_TOKEN = r'"(?:[^"\\]|\\.)*"|\'[^\']*\'|[A-Za-z0-9_-]+'
+
+
+def _unquote(tok: str) -> str:
+    tok = tok.strip()
+    if len(tok) >= 2 and tok[0] == tok[-1] == "'":
+        return tok[1:-1]
+    if len(tok) >= 2 and tok[0] == tok[-1] == '"':
+        return re.sub(r"\\(.)", r"\1", tok[1:-1])
+    return tok
+
+
+def _key_parts(s: str) -> list[str]:
+    return [_unquote(t) for t in re.findall(KEY_TOKEN, s)]
+
+
+def _declared_servers(text: str) -> set[str]:
+    """Server names already declared under `mcp_servers` in TOML `text`.
+
+    Structural rather than substring, because every TOML spelling of the same
+    key must be recognized — quoted segments, whitespace around dots, trailing
+    comments, sub-tables, array-of-table headers, and dotted-key assignments —
+    while a commented-out header must not count. Emitting a second table for a
+    key that is already declared would make the file invalid TOML.
+    """
+    found: set[str] = set()
+    current: list[str] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        header = (re.match(r"^\[\[\s*(.+?)\s*\]\]\s*(?:#.*)?$", line)
+                  or re.match(r"^\[\s*(.+?)\s*\]\s*(?:#.*)?$", line))
+        if header:
+            current = _key_parts(header.group(1))
+            if len(current) >= 2 and current[0] == "mcp_servers":
+                found.add(current[1])
+            continue
+        assign = re.match(
+            r"^((?:%(tok)s)(?:\s*\.\s*(?:%(tok)s))*)\s*=" % {"tok": KEY_TOKEN}, line
+        )
+        if assign:
+            parts = current + _key_parts(assign.group(1))
+            if len(parts) >= 2 and parts[0] == "mcp_servers":
+                found.add(parts[1])
+    return found
+
+
 def _toml_block(name: str, codex_name: str, cfg: dict) -> str | None:
     transport = cfg.get("type", "stdio")
     lines: list[str] = [f"[mcp_servers.{codex_name}]"]
     if name != codex_name:
-        comment_name = name.replace('\\', '\\\\').replace('\r', '\\r').replace('\n', '\\n')
-        lines.append(f"# Claude MCP name: {comment_name}")
+        lines.append(f"# Claude MCP name: {_escape_ctrl(name)}")
 
     if transport == "stdio":
         cmd = cfg.get("command")
@@ -239,7 +293,7 @@ def _toml_block(name: str, codex_name: str, cfg: dict) -> str | None:
         if env:
             # Env values are not mirrored — embedding secrets in config.toml risks
             # committing them. Document the required vars as TOML comments instead.
-            env_var_names = sorted(env.keys())
+            env_var_names = [_escape_ctrl(k) for k in sorted(env.keys())]
             lines.append(f"# env vars required — add [mcp_servers.{codex_name}.env] manually:")
             for k in env_var_names:
                 lines.append(f"# {k} = \"<value>\"")
@@ -267,8 +321,11 @@ def _toml_block(name: str, codex_name: str, cfg: dict) -> str | None:
     return "\n".join(lines)
 
 
-def _qs(s: str) -> str:
-    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+# Escaping lives in scripts/lib/toml_escape.py because diagnose.py predicts
+# what this script writes and compares the two; a second copy here is how those
+# predictions silently drifted from the file.
+_escape_ctrl = escape_ctrl
+_qs = quote_string
 
 
 if __name__ == "__main__":
@@ -282,9 +339,13 @@ fi
 
 # Keep the same project MCP surface available to Antigravity. This also adds
 # the cc-suite-managed claude-code server so agy can delegate back to Claude.
-# Skipped entirely when Antigravity is not enabled — never create its tree.
-# (Existing cc-suite-owned agy artifacts are left in place when deselected;
-# /cc-suite:unbridge or re-enabling the tool manages them.)
+# When Antigravity is not enabled the tree is never created, and an existing
+# projection is reconciled to an empty managed set — like the Codex sentinel
+# block above, deselecting the tool must actually withdraw its MCP surface.
+# Only servers recorded in the provenance file are withdrawn here; entries
+# cc-suite did not write, and sibling top-level keys, stay. That holds for the
+# withdrawal alone — re-enabling rebuilds the file from bridge_agy_mcp.py's
+# projection, which currently keeps no top-level key other than mcpServers.
 if tool_enabled antigravity; then
   if python3 "$SCRIPT_DIR/bridge_agy_mcp.py";
   then
@@ -292,12 +353,111 @@ if tool_enabled antigravity; then
   else
     AGY_RC=$?
   fi
-else
-  if [ -f .agents/mcp_config.json ]; then
-    echo "· antigravity not enabled — leaving existing .agents/mcp_config.json alone (see /cc-suite:unbridge)"
+elif [ -f .agents/.cc-suite-mcp.provenance.json ]; then
+  if python3 - <<'PY'
+from __future__ import annotations
+import json, os, sys, tempfile
+from pathlib import Path
+
+SCHEMA = 1
+TARGET = Path(".agents/mcp_config.json")
+PROVENANCE = Path(".agents/.cc-suite-mcp.provenance.json")
+
+
+def load(path: Path) -> object:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        print(f"! {path}: invalid JSON: {exc} — leaving the Antigravity config alone", file=sys.stderr)
+        raise SystemExit(2)
+
+
+def atomic_write_json(path: Path, payload: object) -> None:
+    fd, tmp = tempfile.mkstemp(prefix=".tmp-", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, indent=2) + "\n")
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+meta = load(PROVENANCE)
+if not isinstance(meta, dict) or meta.get("schema") != SCHEMA:
+    print(f"! {PROVENANCE}: unsupported provenance schema — leaving the Antigravity config alone", file=sys.stderr)
+    raise SystemExit(2)
+managed = meta.get("managed_servers")
+if not isinstance(managed, list) or not all(isinstance(n, str) for n in managed):
+    print(f"! {PROVENANCE}: managed_servers is invalid — leaving the Antigravity config alone", file=sys.stderr)
+    raise SystemExit(2)
+
+if not TARGET.exists():
+    PROVENANCE.unlink()
+    print("· antigravity not enabled — cleared stale cc-suite MCP provenance")
+    raise SystemExit(0)
+
+# Nothing is recorded as ours, so there is nothing to withdraw and the target
+# is never written. Check that BEFORE reading it: parsing first meant an
+# unparseable file the run would not have touched still aborted with exit 2,
+# failing /cc-suite:sync-mcp, /cc-suite:repair and /cc-suite:init on every
+# subsequent run. Reads that a write depends on stay fail-loud below.
+if not managed:
+    print(f"· antigravity not enabled — no cc-suite servers recorded in {TARGET}")
+    raise SystemExit(0)
+
+data = load(TARGET)
+if not isinstance(data, dict) or not isinstance(data.get("mcpServers", {}), dict):
+    print(f"! {TARGET}: unexpected shape — leaving it alone", file=sys.stderr)
+    raise SystemExit(2)
+
+servers = data.get("mcpServers", {})
+managed_names = set(managed)
+withdrawn = [n for n in servers if n in managed_names]
+remaining = {k: v for k, v in servers.items() if k not in managed_names}
+
+# Recorded, but already gone from the target: an earlier run withdrew them, so
+# both files stay untouched. Rewriting here would churn mtimes and print a
+# success marker for work that did not happen.
+if not withdrawn:
+    print(f"· antigravity not enabled — no cc-suite servers left in {TARGET}")
+    raise SystemExit(0)
+
+if remaining:
+    data["mcpServers"] = remaining
+else:
+    data.pop("mcpServers", None)
+
+if not data:
+    TARGET.unlink()
+    PROVENANCE.unlink()
+    print(f"✓ antigravity not enabled — removed cc-suite-generated {TARGET}")
+    raise SystemExit(0)
+
+# Target first, provenance second: a crash in between leaves provenance
+# claiming names the target no longer has, which the next run treats as inert.
+if withdrawn:
+    atomic_write_json(TARGET, data)
+    atomic_write_json(PROVENANCE, {"schema": SCHEMA, "managed_servers": [], "source": ".mcp.json"})
+    print(f"✓ antigravity not enabled — withdrew cc-suite servers from {TARGET} ({len(remaining)} user server(s) kept)")
+else:
+    atomic_write_json(PROVENANCE, {"schema": SCHEMA, "managed_servers": [], "source": ".mcp.json"})
+    print(f"· antigravity not enabled — recorded cc-suite servers are already gone from {TARGET}; cleared stale provenance")
+raise SystemExit(0)
+PY
+  then
+    AGY_RC=0
   else
-    echo "· antigravity not enabled — skipping .agents/mcp_config.json projection"
+    AGY_RC=$?
   fi
+elif [ -f .agents/mcp_config.json ]; then
+  echo "· antigravity not enabled — .agents/mcp_config.json has no cc-suite provenance, left alone"
+  AGY_RC=0
+else
+  echo "· antigravity not enabled — skipping .agents/mcp_config.json projection"
   AGY_RC=0
 fi
 

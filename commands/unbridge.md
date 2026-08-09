@@ -17,21 +17,30 @@ Ask the user via AskUserQuestion before doing anything. List exactly what will b
 - Legacy `GEMINI.md` — only if it contains nothing but `@AGENTS.md` (bare import); hybrid files are left alone
 - `.agents/skills` symlink (not the `.claude/skills/` target it points to)
 - `.agents/mcp_config.json` only if it carries cc-suite provenance; user-managed entries are preserved
-- `.codex/prompts/` (if empty), `.codex/hooks.json`, `.codex/hooks.cc-suite.json`, `.codex/config.toml`
+- `.codex/prompts/` (if empty), `.codex/hooks.json` and `.codex/hooks.cc-suite.json` (each only if cc-suite generated it), `.codex/config.toml` (sentinel block only)
 - Empty legacy `.gemini/skills/` and `.gemini/commands/` directories
 - the cc-suite sentinel block in `.gitignore`
 
 AGENTS.md restore behavior:
+- cc-suite migrated a pre-existing `CLAUDE.md` at init → that original is restored to `CLAUDE.md` verbatim, without the scaffolding `AGENTS.md` wraps around it
 - `CLAUDE.md` is a bare `@AGENTS.md` import (nothing else) → content is restored to `CLAUDE.md` automatically
-- `CLAUDE.md` has its own content → `AGENTS.md` is backed up as `AGENTS.md.cc-suite-backup` before removal; if that name already exists, a numbered suffix is added (`AGENTS.md.cc-suite-backup.1`, `.2`, …)
+- `CLAUDE.md` has its own content → `AGENTS.md` is backed up before removal
 - `CLAUDE.md` does not exist → `AGENTS.md` content is moved to a new `CLAUDE.md`
+
+Backups the script may leave behind — report every one it prints, they are files the user has to deal with:
+- `AGENTS.md.cc-suite-backup` — written whenever `AGENTS.md` is about to be deleted and its content is not already preserved somewhere else. Two paths reach it:
+  - `CLAUDE.md` has its own content, so the restore cannot happen — the backup is written unconditionally, even when `AGENTS.md` still matches `init.sh` output byte-for-byte.
+  - The content *was* restored, but `AGENTS.md` no longer matches byte-for-byte what `init.sh` generated. init.sh tells users to write their instructions into `AGENTS.md`, so drift from the generated file is content that exists nowhere else.
+- `CLAUDE.md.cc-suite-backup` — the pre-bridge `CLAUDE.md` that init saved, kept because it could not be restored (the current `CLAUDE.md` has content of its own). It is moved out of `.cc-suite/`, whose copy a later `/cc-suite:init` would overwrite.
+- If either name is taken, a numbered suffix is added (`.1`, `.2`, …). An existing backup is never overwritten.
 
 What is **never** touched:
 - `.claude/`, `.mcp.json`, custom `GEMINI.md`, and non-empty legacy `.gemini/` content
 
 What is removed **only if cc-suite generated it**:
-- `.codex/hooks.json` — only if it was written by `bridge_hooks.py` (carries a `_cc_bridge_version` marker) AND contains only the five shared events; otherwise left alone
-- `.codex/config.toml` — only the cc-suite-mcp sentinel block is removed; other config is preserved
+- `.codex/hooks.json` — only if it was written by `bridge_hooks.py`: `_cc_bridge_version` must be exactly the string `"1"`, the only top-level keys may be `_cc_bridge_version` and `hooks`, and every event in it must be one of the five shared events. Anything else is left alone.
+- `.codex/hooks.cc-suite.json` — the pending-merge side file, held to the same test. A hand-written or hand-edited file at that path is left alone.
+- `.codex/config.toml` — only the cc-suite-mcp sentinel block is removed; other config is preserved. If the managed blocks are nested or interleaved, the file is left untouched and the script exits non-zero rather than risk splicing it.
 
 If the user does not confirm, stop.
 
@@ -62,6 +71,9 @@ Unbridge complete:
   ✓ <artifact>   removed
   · <artifact>   skipped — <reason>
   ✓ CLAUDE.md    restored from AGENTS.md  (or: left alone — had own content)
+  ! <backup>     kept — <what it holds>
 
 .mcp.json and .claude/ were not modified.
 ```
+
+Include one `!` line per backup file the script reported, naming what it holds. Omit the line entirely when there were none.

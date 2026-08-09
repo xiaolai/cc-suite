@@ -112,7 +112,11 @@ Add `--background`. Returns `{"jobId":"…","status":"queued"}` immediately; pol
 ```
 
 `reasoning_efforts` is deliberately empty — see limit (1).
-`workspace_mcp_registered` reports whether the cc-suite-generated workspace
-profile contains claude-octopus. `claude_mcp_registered` is true when either
-the workspace or global profile contains it, i.e. whether the reverse direction
-(`agy` → Claude Code) is available.
+`workspace_mcp_registered` is true when the cc-suite-generated workspace profile
+declares a `claude-code` server whose arguments carry an exactly pinned
+`claude-octopus@<semver>` — not merely when the string appears somewhere in the
+file, which a comment or an unrelated entry could satisfy. `claude_mcp_registered`
+is true when either the workspace or the global profile registers it, i.e.
+whether the reverse direction (`agy` → Claude Code) is available at all; the
+global profile is user-managed, so it is matched more loosely than the
+workspace one.

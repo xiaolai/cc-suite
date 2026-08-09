@@ -22,44 +22,70 @@ import os
 import re
 import sys
 import tempfile
+import textwrap
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+import bridge_tools  # noqa: E402  (canonical tool-profile registry)
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+from md_sections import has_section  # noqa: E402
+
 CONFIG = Path(".cc-suite.md")
+
+
+def _join(names: list[str]) -> str:
+    if len(names) < 3:
+        return " and ".join(names)
+    return ", ".join(names[:-1]) + f", and {names[-1]}"
+
+
+def _enabled_tools_section() -> str:
+    """The `## Enabled Tools` section, rendered from the bridge's tool-profile
+    registry. The inventory, the default selection, and the China tiers all come
+    from `bridge_tools.PROFILES`/`DEFAULT_TOOLS`, so adding or renaming a tool
+    there cannot leave this template describing a different set of tools.
+
+    Prose stays in paragraphs on purpose: `bridge_tools.parse_enabled_tools()`
+    reads a leading `- <tool>` bullet as a selection, so a bulleted sentence
+    starting with a tool name would enable that tool.
+    """
+    profiles = bridge_tools.PROFILES
+    defaults = set(bridge_tools.DEFAULT_TOOLS)
+    own = [t for t, p in profiles.items() if p.get("bridged_by") == "existing"]
+    registry = [t for t, p in profiles.items() if p.get("bridged_by") == "registry"]
+    native_cn = [t for t, p in profiles.items() if p.get("china_tier") == "A"]
+    vpn_cn = [t for t, p in profiles.items() if p.get("china_tier") == "C"]
+    intro = textwrap.fill(
+        "Which coding agents cc-suite bridges in this project. Tick a tool to "
+        "enable it, then run `/cc-suite:bridge-tools`. "
+        f"{_join(own)} use their own bridges (ticked by default). "
+        f"{_join(registry)} read AGENTS.md and shared skills natively — only "
+        "their MCP config is mirrored, each to its own format.",
+        width=80,
+    )
+    china = textwrap.fill(
+        f"China note: {_join(native_cn)} work natively in mainland China; "
+        f"{_join(vpn_cn)} are effectively VPN-only there.",
+        width=80,
+    )
+    checklist = "\n".join(
+        f"- [{'x' if tool_id in defaults else ' '}] {tool_id}" for tool_id in profiles
+    )
+    return f"## Enabled Tools\n\n{intro}\n\n{china}\n\n{checklist}\n"
+
 
 # Managed sections: heading text -> the full section (heading + body) appended
 # verbatim when that heading is absent from the file. Keep this the ONLY place the
 # section templates live so init and migration never drift.
 MANAGED_SECTIONS: dict[str, str] = {
-    "Enabled Tools": """## Enabled Tools
-
-Which coding agents cc-suite bridges in this project. Tick a tool to enable it,
-then run `/cc-suite:bridge-tools`. Claude, Codex, and Antigravity use their own
-bridges (on by default). Grok / opencode / Qwen / Kimi read AGENTS.md and shared
-skills natively — only their MCP config is mirrored, each to its own format.
-
-China note: Qwen, Kimi, and opencode work natively in mainland China; Grok Build
-and Antigravity are effectively VPN-only there.
-
-- [x] claude
-- [x] codex
-- [x] antigravity
-- [ ] grok
-- [ ] opencode
-- [ ] qwen
-- [ ] kimi
-""",
+    "Enabled Tools": _enabled_tools_section(),
 }
 
-
-def has_section(text: str, heading: str) -> bool:
-    """True if an ATX heading with this exact text already exists (any level).
-
-    Requires whitespace after the opening hashes (`##Enabled Tools` is not a
-    valid ATX heading) and permits an optional closing hash sequence
-    (`## Enabled Tools ##`), per CommonMark.
-    """
-    pattern = rf"^[ \t]*#{{1,6}}[ \t]+{re.escape(heading)}(?:[ \t]+#+)?[ \t]*$"
-    return re.search(pattern, text, re.IGNORECASE | re.MULTILINE) is not None
+# Fence-aware heading detection lives in scripts/lib/md_sections.py because
+# bridge_tools.py needs the same rule when it reads `## Enabled Tools`; a second
+# copy is how one of them ended up reading a fenced example as the real section.
 
 
 def main() -> int:

@@ -16,8 +16,12 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+from pin import PinError, read_pin as read_validated_pin  # noqa: E402
+
 
 SCHEMA = 1
+DELEGATION_SERVER = "claude-code"
 ROOT = Path.cwd()
 SOURCE = ROOT / ".mcp.json"
 AGENTS_DIR = ROOT / ".agents"
@@ -88,12 +92,9 @@ def translate_server(name: str, config: object) -> dict | None:
 
 def claude_code_server() -> dict:
     try:
-        pin = "".join(PIN_FILE.read_text(encoding="utf-8").split())
-    except FileNotFoundError:
-        report(f"missing claude-octopus pin file: {PIN_FILE}", error=True)
-        raise SystemExit(2)
-    if not pin:
-        report("claude-octopus pin file is empty", error=True)
+        pin = read_validated_pin(PIN_FILE)
+    except PinError as exc:
+        report(str(exc), error=True)
         raise SystemExit(2)
     return {
         "type": "stdio",
@@ -101,6 +102,66 @@ def claude_code_server() -> dict:
         "args": ["-y", f"claude-octopus@{pin}"],
         "env": {},
     }
+
+
+class ReservedNameConflict(RuntimeError):
+    """.mcp.json claims the reserved delegation name for a different program."""
+
+
+def is_delegation_package(config: object) -> bool:
+    """True when an entry under the reserved name really is claude-octopus over
+    npx — the same program, possibly at a different version or with the optional
+    keys left at their defaults. Mirrors bridge_tools._is_delegation_package so
+    the two bridges reserve the name on identical terms."""
+    if not isinstance(config, dict):
+        return False
+    args = config.get("args")
+    if not isinstance(args, list):
+        return False
+    return (
+        config.get("type", "stdio") == "stdio"
+        and config.get("command") == "npx"
+        and any(isinstance(a, str) and (a == "claude-octopus" or a.startswith("claude-octopus@"))
+                for a in args)
+    )
+
+
+def apply_delegation_reservation(desired: dict[str, dict]) -> dict[str, dict]:
+    """Add the canonical pinned delegation server to `desired`, refusing when the
+    source claimed that name for a different program.
+
+    diagnose.py projects through this same function, so what it predicts cannot
+    drift from what the bridge writes.
+    """
+    canonical = claude_code_server()
+    existing = desired.get(DELEGATION_SERVER)
+    if existing is not None:
+        if not is_delegation_package(existing):
+            raise ReservedNameConflict(
+                f".mcp.json defines a {DELEGATION_SERVER!r} server that is not the pinned "
+                "cc-suite delegation server — that name is reserved for agy → Claude "
+                "delegation; rename it and rerun"
+            )
+        if existing.get("args") != canonical["args"]:
+            report(f"{DELEGATION_SERVER}: .mcp.json runs a different claude-octopus spec "
+                   "— projecting the cc-suite pin instead")
+        # Enforce the pin, keep everything the user set. Replacing the whole
+        # entry discarded any `env` on the delegation server — a proxy or
+        # base-URL override, say — with no warning, because the warning above is
+        # gated on `args`. bridge_tools.desired_servers() preserves those keys,
+        # so overwriting here also made the two bridges emit different
+        # claude-code entries from identical input. Only the keys that ARE the
+        # pin may be overwritten; canonical's empty `env` is a default, not a
+        # value to impose.
+        merged = dict(existing)
+        merged["command"] = canonical["command"]
+        merged["args"] = canonical["args"]
+        for key, value in canonical.items():
+            merged.setdefault(key, value)
+        desired[DELEGATION_SERVER] = merged
+        return desired
+    desired[DELEGATION_SERVER] = canonical
+    return desired
 
 
 def read_source_servers() -> dict[str, object]:
@@ -145,7 +206,11 @@ def main() -> int:
 
     # mcp_claude.sh owns the Codex registration, but agy needs the same
     # claude-octopus server in its workspace MCP profile for agy → Claude.
-    desired.setdefault("claude-code", claude_code_server())
+    try:
+        apply_delegation_reservation(desired)
+    except ReservedNameConflict as exc:
+        report(str(exc), error=True)
+        return 2
 
     managed = read_provenance()
     if TARGET.exists() and managed is None:

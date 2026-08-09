@@ -16,11 +16,14 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
 import {
+  claimJob,
   generateJobId,
+  createJobLogFile,
   resolveJobLogFile,
   upsertJob,
   writeJobFile,
 } from "./lib/state.mjs";
+import { readProcessStartTime } from "./lib/process.mjs";
 import { withDelegationBoundary } from "./lib/delegation-boundary.mjs";
 import {
   JsonlDecoder,
@@ -452,19 +455,50 @@ function executeQwenAttempt(cwd, args, targets, logFile, attempt, resumeId, prom
     ACTIVE_QWEN_CHILDREN.add(child);
 
     const startedAt = Date.now();
-    const heartbeat = setInterval(() => {
-      appendLog(
-        logFile,
-        `Attempt ${attempt}: still running (${Math.round((Date.now() - startedAt) / 1000)}s, events=${state.events}, tools=${state.toolCalls.length})`
-      );
-    }, HEARTBEAT_MS);
+
+    // Timer and stream callbacks run outside the Promise chain: a synchronous
+    // write failure (full disk, deleted log dir) would otherwise become an
+    // uncaught exception that kills the runner and strands the job as running.
+    // Declared before first use inside the heartbeat callback; finish and
+    // terminate are function declarations hoisted within this scope.
+    function guarded(fn) {
+      return (...callbackArgs) => {
+        try {
+          fn(...callbackArgs);
+        } catch (error) {
+          try {
+            terminate("runner_callback_failure");
+          } catch {}
+          finish({
+            outcome: "failed",
+            errorCode: "runner_callback_failure",
+            errorMessage: `Runner callback failed: ${error?.message || error}`,
+            rawOutput: "",
+          });
+        }
+      };
+    }
+
+    const heartbeat = setInterval(
+      guarded(() => {
+        appendLog(
+          logFile,
+          `Attempt ${attempt}: still running (${Math.round((Date.now() - startedAt) / 1000)}s, events=${state.events}, tools=${state.toolCalls.length})`
+        );
+      }),
+      HEARTBEAT_MS
+    );
 
     function clearTimers() {
       clearInterval(heartbeat);
       clearTimeout(deadline);
       clearTimeout(idleTimer);
       clearTimeout(exitGrace);
-      clearTimeout(killTimer);
+      // killTimer is deliberately NOT cleared here: it carries the SIGKILL
+      // escalation for a child that ignored SIGTERM. finish() runs before the
+      // child exits on failure paths, so clearing it would cancel the only
+      // thing that stops a detached orphan. The close handler clears it once
+      // the child is confirmed gone.
     }
 
     function finish(result) {
@@ -502,13 +536,13 @@ function executeQwenAttempt(cwd, args, targets, logFile, attempt, resumeId, prom
     function resetIdleTimer() {
       clearTimeout(idleTimer);
       idleTimer = setTimeout(
-        () => triggerTimeout(`no stdout/stderr event for ${Math.round(args.idleTimeoutMs / 1000)}s`),
+        guarded(() => triggerTimeout(`no stdout/stderr event for ${Math.round(args.idleTimeoutMs / 1000)}s`)),
         args.idleTimeoutMs
       );
     }
 
     const deadline = setTimeout(
-      () => triggerTimeout(`attempt deadline ${Math.round(attemptTimeoutMs / 1000)}s exceeded`),
+      guarded(() => triggerTimeout(`attempt deadline ${Math.round(attemptTimeoutMs / 1000)}s exceeded`)),
       attemptTimeoutMs
     );
     resetIdleTimer();
@@ -519,13 +553,13 @@ function executeQwenAttempt(cwd, args, targets, logFile, attempt, resumeId, prom
       appendLog(logFile, `Attempt ${attempt}: ${describeQwenEvent(event)}`);
       if (event.type === "result" && !exitGrace) {
         exitGrace = setTimeout(
-          () => terminate(`process did not exit within ${Math.round(EXIT_GRACE_MS / 1000)}s after result`),
+          guarded(() => terminate(`process did not exit within ${Math.round(EXIT_GRACE_MS / 1000)}s after result`)),
           EXIT_GRACE_MS
         );
       }
     }
 
-    child.stdout.on("data", (chunk) => {
+    child.stdout.on("data", guarded((chunk) => {
       resetIdleTimer();
       if (capture) appendPrivate(capture.stdout, chunk);
       if (protocolError) return;
@@ -540,19 +574,23 @@ function executeQwenAttempt(cwd, args, targets, logFile, attempt, resumeId, prom
         appendLog(logFile, `Attempt ${attempt}: ${protocolError.code}: ${redactDiagnostic(protocolError.message)}`);
         terminate(protocolError.code);
       }
-    });
+    }));
 
-    child.stderr.on("data", (chunk) => {
+    child.stderr.on("data", guarded((chunk) => {
       resetIdleTimer();
       if (capture) appendPrivate(capture.stderr, chunk);
       stderrTail = (stderrTail + chunk.toString("utf8")).slice(-4000);
-    });
+    }));
 
     child.on("error", (error) => {
       const message = error.code === "ENOENT"
         ? "qwen not found on PATH — install Qwen Code, then run /cc-suite:qwen-preflight"
         : error.message;
-      appendLog(logFile, `Attempt ${attempt}: spawn error: ${redactDiagnostic(message)}`);
+      try {
+        appendLog(logFile, `Attempt ${attempt}: spawn error: ${redactDiagnostic(message)}`);
+      } catch {
+        // Log unwritable — the structured result below is the only signal.
+      }
       finish({
         outcome: "failed",
         errorCode: error.code === "ENOENT" ? "qwen_not_found" : "spawn_failure",
@@ -770,7 +808,7 @@ function jobPayload(result) {
 async function runForeground(cwd, args) {
   const jobId = generateJobId(args.kind);
   const jobContext = { cwd, jobId };
-  const logFile = resolveJobLogFile(cwd, jobId);
+  const logFile = createJobLogFile(cwd, jobId);
   const hostSessionId = args.sessionId || process.env.CODEX_TOOLKIT_SESSION_ID || null;
   const sourceTargets = snapshotReviewTargets(cwd, args.targets);
 
@@ -783,6 +821,7 @@ async function runForeground(cwd, args) {
     summary: args.summary || "qwen review",
     sessionId: hostSessionId,
     pid: process.pid,
+    pidStartedAt: readProcessStartTime(process.pid),
     startedAt: new Date().toISOString(),
     deadlineAt: new Date(Date.now() + args.timeoutMs).toISOString(),
     logFile,
@@ -895,7 +934,7 @@ function childArgs(args) {
 
 function runBackground(cwd, args) {
   const jobId = generateJobId(args.kind);
-  const logFile = resolveJobLogFile(cwd, jobId);
+  const logFile = createJobLogFile(cwd, jobId);
   const hostSessionId = args.sessionId || process.env.CODEX_TOOLKIT_SESSION_ID || null;
   snapshotReviewTargets(cwd, args.targets);
 
@@ -958,44 +997,54 @@ function runBackground(cwd, args) {
 
 async function runBackgroundWorker(cwd, args, jobId) {
   const jobContext = { cwd, jobId };
-  const logFile = resolveJobLogFile(cwd, jobId);
+  const logFile = createJobLogFile(cwd, jobId);
   const sourceTargets = snapshotReviewTargets(cwd, args.targets);
-  upsertJob(cwd, {
-    id: jobId,
+  // Claim the queued job atomically — SessionEnd can cancel it in the gap
+  // between queueing and worker startup, and resurrecting it to running would
+  // leave a process nobody is tracking.
+  const claimed = claimJob(cwd, jobId, {
     status: "running",
     phase: "qwen-review",
     pid: process.pid,
+    pidStartedAt: readProcessStartTime(process.pid),
     startedAt: new Date().toISOString(),
     deadlineAt: new Date(Date.now() + args.timeoutMs).toISOString(),
   });
-  ACTIVE_JOB_CONTEXTS.add(jobContext);
-  let result;
-  let stage = null;
-  try {
-    stage = stageReviewTargets(sourceTargets);
-    ACTIVE_REVIEW_STAGES.add(stage);
-    appendLog(logFile, `Background worker started (backend=qwen, targets=${stage.targets.length}, isolated=true)`);
-    result = await executeQwen(
-      stage.root,
-      args,
-      stage.targets,
-      [...sourceTargets, ...stage.targets],
-      logFile
-    );
-  } finally {
-    if (stage) cleanupReviewStage(stage);
+  if (!claimed) {
+    appendLog(logFile, "Background worker exiting — job was cancelled before startup");
+    return;
   }
-  upsertJob(cwd, {
-    id: jobId,
-    status: result.status,
-    phase: result.status,
-    threadId: result.sessionId || null,
-    attempts: result.attempts.length,
-    completedAt: new Date().toISOString(),
-    ...(result.errorMessage ? { errorMessage: result.errorMessage, errorCode: result.errorCode } : {}),
-  });
-  writeJobFile(cwd, jobId, jobPayload(result));
-  ACTIVE_JOB_CONTEXTS.delete(jobContext);
+  ACTIVE_JOB_CONTEXTS.add(jobContext);
+  try {
+    let result;
+    let stage = null;
+    try {
+      stage = stageReviewTargets(sourceTargets);
+      ACTIVE_REVIEW_STAGES.add(stage);
+      appendLog(logFile, `Background worker started (backend=qwen, targets=${stage.targets.length}, isolated=true)`);
+      result = await executeQwen(
+        stage.root,
+        args,
+        stage.targets,
+        [...sourceTargets, ...stage.targets],
+        logFile
+      );
+    } finally {
+      if (stage) cleanupReviewStage(stage);
+    }
+    upsertJob(cwd, {
+      id: jobId,
+      status: result.status,
+      phase: result.status,
+      threadId: result.sessionId || null,
+      attempts: result.attempts.length,
+      completedAt: new Date().toISOString(),
+      ...(result.errorMessage ? { errorMessage: result.errorMessage, errorCode: result.errorCode } : {}),
+    });
+    writeJobFile(cwd, jobId, jobPayload(result));
+  } finally {
+    ACTIVE_JOB_CONTEXTS.delete(jobContext);
+  }
 }
 
 async function main() {
@@ -1046,22 +1095,32 @@ async function main() {
     if (backgroundJobId) {
       const message = redactDiagnostic(error.message);
       // Finalize job state first: a logging failure must never leave the job
-      // recorded as running.
-      upsertJob(cwd, {
-        id: backgroundJobId,
-        status: "failed",
-        phase: "failed",
-        errorCode: code,
-        errorMessage: message,
-        completedAt: new Date().toISOString(),
-      });
-      writeJobFile(cwd, backgroundJobId, {
-        rawOutput: "",
-        threadId: null,
-        attempts: [],
-        error: message,
-        errorCode: code,
-      });
+      // recorded as running. Each write is guarded independently — if
+      // persistence is the thing that failed, this catch block must not
+      // reject and strand the job.
+      try {
+        upsertJob(cwd, {
+          id: backgroundJobId,
+          status: "failed",
+          phase: "failed",
+          errorCode: code,
+          errorMessage: message,
+          completedAt: new Date().toISOString(),
+        });
+      } catch (persistError) {
+        process.stderr.write(`Error: failed to persist job failure: ${persistError?.message || persistError}\n`);
+      }
+      try {
+        writeJobFile(cwd, backgroundJobId, {
+          rawOutput: "",
+          threadId: null,
+          attempts: [],
+          error: message,
+          errorCode: code,
+        });
+      } catch {
+        // Result file unwritable — the job state above is the primary record.
+      }
       try {
         appendLog(resolveJobLogFile(cwd, backgroundJobId), `Background worker failed: ${code}: ${message}`);
       } catch {
@@ -1084,4 +1143,22 @@ async function main() {
   }
 }
 
-main();
+main().catch((error) => {
+  // Terminal backstop: a rejection escaping main()'s own handling (for
+  // example a persistence failure inside the catch) must still produce a
+  // structured failure line and a non-zero exit instead of an unhandled
+  // rejection with the job left as running.
+  const message = redactDiagnostic(error?.message || String(error));
+  process.stdout.write(JSON.stringify({
+    jobId: process.env.CODEX_TOOLKIT_BACKGROUND_JOB_ID || null,
+    status: "failed",
+    threadId: null,
+    rawOutput: "",
+    attempts: [],
+    targetsVerified: false,
+    errorCode: "runner_failure",
+    error: message,
+  }) + "\n");
+  process.stderr.write(`Error: ${message}\n`);
+  process.exitCode = 1;
+});

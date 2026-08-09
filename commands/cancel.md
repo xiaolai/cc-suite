@@ -11,61 +11,61 @@ $ARGUMENTS
 
 ## Workflow
 
-### Step 1: Find the job to cancel
+### Step 1: Resolve, terminate, and persist
 
-Parse `$ARGUMENTS`:
-
-| Input | Action |
-|-------|--------|
-| (empty) | Cancel the only active job (error if 0 or >1 active) |
-| `<job-id>` | Cancel the specified job (prefix match supported) |
-
-If no active jobs:
-```
-No active Codex jobs to cancel.
-```
-And STOP.
-
-If multiple active jobs and no id specified:
-```
-Multiple jobs are active. Specify which one to cancel:
-
-| Job | Kind | Status | Elapsed | Summary |
-| --- | --- | --- | --- | --- |
-| {job-id} | {kind} | running | {elapsed} | {summary} |
-
-Usage: /cc-suite:cancel <job-id>
-```
-And STOP.
-
-### Step 2: Kill the job process
-
-1. Read the job's PID from the state file. If the state file does not exist or is unreadable, report "Job {job-id} not found or already complete." and stop.
-2. Send SIGTERM to the process group (kills the job and any child processes)
-3. Update the job status to `cancelled` in the state file
-4. Log the cancellation
+One call resolves the reference (empty → the only active job; otherwise exact or prefix match among active jobs), terminates the job's process tree, confirms the exit, and records the cancellation:
 
 ```bash
-kill -- -{pid} 2>/dev/null || kill {pid} 2>/dev/null || true
+node -e "
+  const { cancelJob } = await import('${CLAUDE_PLUGIN_ROOT}/scripts/lib/job-control.mjs');
+  try {
+    const reference = process.argv[1] || undefined;
+    const result = cancelJob(process.cwd(), reference);
+    console.log(JSON.stringify(result, null, 2));
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
+" -- "$ARGUMENTS"
 ```
 
-Verify the process terminated:
+Do **not** shell out to `kill` directly. `cancelJob` verifies that the recorded PID still belongs to this job (via its recorded process start time) before signalling — a bare `kill -- -{pid}` on a recycled PID would terminate an unrelated process. It also escalates SIGTERM → SIGKILL and only reports success once the process is confirmed gone.
 
-```bash
-sleep 0.5 && kill -0 {pid} 2>/dev/null && echo "warning: process still running" || echo "terminated"
-```
+If the command errors:
 
-If the process was already gone before SIGTERM (stale PID), mark the job as `cancelled` in the state file and report success — the job was already terminated.
+- `"No active Codex jobs to cancel."` → relay it and STOP.
+- `"Multiple jobs are active..."` → list the active jobs (via `buildStatusSnapshot` as in `/cc-suite:status`) and STOP:
+  ```
+  Multiple jobs are active. Specify which one to cancel:
 
-### Step 3: Report
+  | Job | Kind | Status | Elapsed | Summary |
+  | --- | --- | --- | --- | --- |
+  | {job-id} | {kind} | running | {elapsed} | {summary} |
+
+  Usage: /cc-suite:cancel <job-id>
+  ```
+- `"No job found for ..."` / `"...is ambiguous..."` → relay it and STOP.
+
+### Step 2: Report the actual outcome
+
+The result carries `outcome`, `terminated`, and `detail`. Report what really happened rather than assuming the kill worked:
+
+| `outcome` | Meaning | Report |
+|-----------|---------|--------|
+| `terminated` | Signalled and confirmed exited | Cancelled {job-id}. |
+| `already-exited` | Process was already gone (or its PID had been recycled) | Cancelled {job-id} — it had already finished. |
+| `not-confirmed` | SIGTERM and SIGKILL sent, process still alive | Cancelled {job-id} in the job list, but **the process has not exited yet** — {detail}. |
+| `unverifiable` | Job predates process-identity tracking; not signalled | Marked {job-id} cancelled, but **it was not signalled** — {detail}. |
+| `no-pid` | No PID recorded (queued, worker never started) | Marked {job-id} cancelled — {detail}. |
+| `signal-failed` | Signalling raised an error | Marked {job-id} cancelled, but **termination failed** — {detail}. |
 
 ```markdown
 # Codex Cancel
 
-Cancelled {job-id}.
+{verdict line from the table above}
 
-- Kind: {kind}
-- Summary: {summary}
+- Kind: {job.kind}
+- Summary: {job.summary}
 - Was running for: {elapsed}
 
 Check `/cc-suite:status` for the updated queue.

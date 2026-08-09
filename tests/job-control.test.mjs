@@ -3,7 +3,8 @@ import test, { before, after } from "node:test";
 import assert from "node:assert/strict";
 
 import { makeTempDir, cleanupDir, isolateEnv } from "./helpers.mjs";
-import { upsertJob } from "../scripts/lib/state.mjs";
+import { listJobs, upsertJob } from "../scripts/lib/state.mjs";
+import { processAlive, readProcessStartTime } from "../scripts/lib/process.mjs";
 import {
   sortJobsNewestFirst,
   enrichJob,
@@ -11,6 +12,7 @@ import {
   resolveResultJob,
   resolveCancelableJob,
   readJobProgressPreview,
+  cancelJob,
 } from "../scripts/lib/job-control.mjs";
 
 // buildStatusSnapshot and resolveResultJob filter jobs by the ambient session
@@ -184,6 +186,143 @@ test("readJobProgressPreview reads last N lines from log", () => {
     assert.equal(preview[0], "Step 7");
     assert.equal(preview[2], "Step 9");
   } finally {
+    cleanupDir(workspace);
+  }
+});
+
+test("resolveResultJob treats stalled jobs as finished results", () => {
+  const workspace = makeTempDir();
+  try {
+    upsertJob(workspace, { id: "stalled-1", kind: "audit", status: "stalled" });
+    const { job } = resolveResultJob(workspace);
+    assert.equal(job.id, "stalled-1");
+  } finally {
+    cleanupDir(workspace);
+  }
+});
+
+test("enrichJob labels non-enumerated kinds by their kind, not 'job'", () => {
+  const enriched = enrichJob({ id: "x", kind: "agy", status: "completed" });
+  assert.equal(enriched.kindLabel, "agy");
+});
+
+test("cancelJob refuses to signal a PID it cannot prove is the job's own", async () => {
+  const workspace = makeTempDir();
+  const { spawn } = await import("node:child_process");
+  const bystander = spawn(process.execPath, ["-e", "setTimeout(()=>{},60000)"], {
+    detached: true,
+    stdio: "ignore",
+  });
+  bystander.unref();
+  await new Promise((r) => setTimeout(r, 300));
+  try {
+    upsertJob(workspace, {
+      id: "cancel-recycled",
+      kind: "audit",
+      status: "running",
+      pid: bystander.pid,
+      pidStartedAt: "Mon Jan  1 00:00:00 2020", // stale identity
+    });
+    const result = cancelJob(workspace, "cancel-recycled");
+    assert.equal(result.outcome, "already-exited");
+
+    let alive = true;
+    try {
+      process.kill(bystander.pid, 0);
+    } catch (error) {
+      alive = error?.code === "EPERM";
+    }
+    assert.equal(alive, true, "cancelJob killed an unrelated process");
+    assert.equal(listJobs(workspace)[0].status, "cancelled");
+  } finally {
+    try {
+      process.kill(bystander.pid, "SIGKILL");
+    } catch {}
+    cleanupDir(workspace);
+  }
+});
+
+test("cancelJob terminates a job process it owns and confirms the exit", async () => {
+  const workspace = makeTempDir();
+  const { spawn } = await import("node:child_process");
+  const child = spawn(process.execPath, ["-e", "setTimeout(()=>{},60000)"], {
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+  await new Promise((r) => setTimeout(r, 300));
+  try {
+    upsertJob(workspace, {
+      id: "cancel-live",
+      kind: "audit",
+      status: "running",
+      pid: child.pid,
+      pidStartedAt: readProcessStartTime(child.pid),
+    });
+    const result = cancelJob(workspace, "cancel-live");
+    assert.equal(result.outcome, "terminated");
+    assert.equal(result.terminated, true);
+    assert.equal(processAlive(child.pid), false);
+    assert.equal(listJobs(workspace)[0].status, "cancelled");
+  } finally {
+    try {
+      process.kill(child.pid, "SIGKILL");
+    } catch {}
+    cleanupDir(workspace);
+  }
+});
+
+test("cancelJob records why a job with no PID could not be signalled", () => {
+  const workspace = makeTempDir();
+  try {
+    upsertJob(workspace, { id: "cancel-queued", kind: "audit", status: "queued" });
+    const result = cancelJob(workspace, "cancel-queued");
+    assert.equal(result.outcome, "no-pid");
+    assert.equal(result.terminated, false);
+    const job = listJobs(workspace)[0];
+    assert.equal(job.status, "cancelled");
+    assert.match(job.errorMessage, /no recorded PID/);
+  } finally {
+    cleanupDir(workspace);
+  }
+});
+
+test("cancelJob does not claim success when process identity cannot be checked", async () => {
+  const workspace = makeTempDir();
+  const { spawn } = await import("node:child_process");
+  const child = spawn(process.execPath, ["-e", "setTimeout(()=>{},60000)"], {
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+  await new Promise((r) => setTimeout(r, 300));
+  const realPath = process.env.PATH;
+  try {
+    upsertJob(workspace, {
+      id: "cancel-nops",
+      kind: "audit",
+      status: "running",
+      pid: child.pid,
+      pidStartedAt: readProcessStartTime(child.pid),
+    });
+    // No `ps` on PATH: identity cannot be proven. The process is demonstrably
+    // alive, so reporting it as already-exited would be a lie that also lets
+    // SessionEnd delete the record of a running process.
+    process.env.PATH = "/nonexistent";
+    const result = cancelJob(workspace, "cancel-nops");
+    process.env.PATH = realPath;
+
+    assert.equal(result.outcome, "unverifiable");
+    assert.equal(result.terminated, false);
+    assert.equal(processAlive(child.pid), true, "an unverifiable job must not be signalled");
+    const job = listJobs(workspace)[0];
+    assert.equal(job.terminationConfirmed, false);
+    assert.match(job.errorMessage, /process-identity/);
+  } finally {
+    process.env.PATH = realPath;
+    try {
+      process.kill(child.pid, "SIGKILL");
+    } catch {}
     cleanupDir(workspace);
   }
 });

@@ -447,3 +447,92 @@ test("targets cannot escape the workspace through relative paths", () => {
     cleanupDir(dir);
   }
 });
+
+test("JsonlDecoder rejects oversized records even when newline-terminated", () => {
+  const decoder = new JsonlDecoder();
+  const oversized = `${"x".repeat(16 * 1024 * 1024 + 1)}\n`;
+  assert.throws(
+    () => decoder.push(Buffer.from(oversized)),
+    (error) => error instanceof QwenStreamError && error.code === "stream_overflow"
+  );
+});
+
+test("duplicate tool-call ids fail closed", () => {
+  const dir = makeTempDir("qwen-stream-");
+  try {
+    fs.writeFileSync(path.join(dir, "draft.md"), "draft\n");
+    const targets = snapshotReviewTargets(dir, ["draft.md"]);
+    const state = createQwenStreamState({ cwd: dir, targets });
+    consumeQwenEvent(state, { ...initEvent(), tools: ["read_file"] });
+    const call = {
+      type: "assistant",
+      session_id: "session-1",
+      message: {
+        content: [{
+          type: "tool_use",
+          id: "tool-1",
+          name: "read_file",
+          input: { file_path: path.join(dir, "draft.md") },
+        }],
+      },
+    };
+    consumeQwenEvent(state, call);
+    assert.throws(
+      () => consumeQwenEvent(state, call),
+      (error) => error.code === "duplicate_tool_call"
+    );
+  } finally {
+    cleanupDir(dir);
+  }
+});
+
+test("assistant-embedded tool_result blocks correlate like user-carried ones", () => {
+  const dir = makeTempDir("qwen-stream-");
+  try {
+    fs.writeFileSync(path.join(dir, "draft.md"), "draft\n");
+    const targets = snapshotReviewTargets(dir, ["draft.md"]);
+    const state = createQwenStreamState({ cwd: dir, targets });
+    consumeQwenEvent(state, { ...initEvent(), tools: ["read_file"] });
+    // Unsolicited assistant-embedded result: nothing pending — must throw.
+    assert.throws(
+      () => consumeQwenEvent(state, {
+        type: "assistant",
+        session_id: "session-1",
+        message: {
+          content: [{ type: "tool_result", tool_use_id: "tool-9", content: "sneaky" }],
+        },
+      }),
+      (error) => error.code === "unsolicited_tool_result"
+    );
+  } finally {
+    cleanupDir(dir);
+  }
+});
+
+test("a success result with unanswered tool calls fails closed", () => {
+  const dir = makeTempDir("qwen-stream-");
+  try {
+    fs.writeFileSync(path.join(dir, "draft.md"), "draft\n");
+    const targets = snapshotReviewTargets(dir, ["draft.md"]);
+    const state = createQwenStreamState({ cwd: dir, targets });
+    consumeQwenEvent(state, { ...initEvent(), tools: ["read_file"] });
+    consumeQwenEvent(state, {
+      type: "assistant",
+      session_id: "session-1",
+      message: {
+        content: [{
+          type: "tool_use",
+          id: "tool-1",
+          name: "read_file",
+          input: { file_path: path.join(dir, "draft.md") },
+        }],
+      },
+    });
+    assert.throws(
+      () => consumeQwenEvent(state, resultEvent()),
+      (error) => error.code === "incomplete_tool_exchange"
+    );
+  } finally {
+    cleanupDir(dir);
+  }
+});

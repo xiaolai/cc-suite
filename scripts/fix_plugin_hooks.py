@@ -4,8 +4,8 @@
 Section-scoped and idempotent: an existing assignment inside `[features]` is
 replaced; otherwise one is inserted there; a `plugin_hooks` key in any other
 table is a different TOML key and is left alone. The result is parse-validated
-with tomllib before writing (skipped on Python < 3.11, where the section-scoped
-edit is still structurally safe).
+with tomllib (or tomli on Python < 3.11) before writing; without a parser the
+script refuses to write rather than commit an unverified regex edit.
 
 Used as the auto-fix for the diagnose engine's `plugin_hooks` check.
 """
@@ -36,22 +36,29 @@ def apply(path: pathlib.Path) -> str:
         text = text[: m.start(2)] + body + text[m.end(2) :]
     else:
         text = text.rstrip("\n") + ("\n\n" if text.strip() else "") + "[features]\nplugin_hooks = true\n"
+    # A regex edit is only safe when its result can be semantically checked, so
+    # an unavailable parser is a refusal, not a silent write.
     try:
         import tomllib
-
-        parsed = tomllib.loads(text)
-        features = parsed.get("features")
-        if not (isinstance(features, dict) and features.get("plugin_hooks") is True):
-            sys.exit(
-                "the edit would not result in features.plugin_hooks = true "
-                "(unusual TOML layout?) — refusing to write; set it manually"
-            )
     except ModuleNotFoundError:
-        pass
-    except SystemExit:
-        raise
+        try:
+            import tomli as tomllib  # type: ignore[no-redef]
+        except ModuleNotFoundError:
+            sys.exit(
+                f"cannot validate the edited TOML on Python {sys.version_info.major}."
+                f"{sys.version_info.minor} (no tomllib, no tomli) — refusing to write; "
+                f"add [features] plugin_hooks = true to {path} by hand"
+            )
+    try:
+        parsed = tomllib.loads(text)
     except Exception as exc:  # noqa: BLE001 — refuse to write anything invalid
         sys.exit(f"refusing to write invalid TOML: {exc}")
+    features = parsed.get("features")
+    if not (isinstance(features, dict) and features.get("plugin_hooks") is True):
+        sys.exit(
+            "the edit would not result in features.plugin_hooks = true "
+            "(unusual TOML layout?) — refusing to write; set it manually"
+        )
     # Atomic commit: write a same-directory temp file, then replace. A direct
     # overwrite could truncate the user's global Codex config on interruption.
     fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")

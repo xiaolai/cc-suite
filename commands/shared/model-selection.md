@@ -40,8 +40,9 @@ Parse the JSON output. The structure is:
 
 ```json
 {
+  "backend": "codex",
   "status": "ok",
-  "preflight_schema": 3,
+  "preflight_schema": 4,
   "codex_version": "...",
   "auth_mode": "...",
   "codex_cloud": false,
@@ -59,11 +60,17 @@ Parse the JSON output. The structure is:
 
 ### Step B: Handle errors
 
+Failures are reported **in band**: the script prints the same field set with `"status": "error"`, an `error_code`, a human-readable `error`, and empty `models` — and still exits 0. Switch on `status`, never on the exit code.
+
 - If the script itself fails to run, prints nothing, or prints unparseable JSON → treat it exactly like `status: "error"`, using the raw output (or exit error) as the message.
-- If `status` is `"error"` → display the `error` message to the user and **STOP**. Common fixes:
-  - `"codex CLI not found"` → tell user to run `npm install -g @openai/codex`
-  - `"Not authenticated"` → tell user to run `codex login`
-- If `models` is an empty array → tell user "No Codex models are currently available. Check your account/subscription and try `codex login`." and **STOP**.
+- If `status` is `"error"` → display the `error` message to the user and **STOP**. Branch on `error_code`, which is stable, rather than matching the message text:
+
+| `error_code` | Fix to suggest |
+|--------------|----------------|
+| `codex_not_found` | `npm install -g @openai/codex` |
+| `codex_not_authenticated` | `codex login` |
+| `codex_no_models_cache` | Run any codex session once (e.g. `codex exec 'say ok'`) to repopulate `~/.codex/models_cache.json` |
+- If `models` is an empty array → tell user "No Codex models are currently available. Check your account/subscription, then run any codex session once (e.g. `codex exec 'say ok'`) to repopulate the model cache." and **STOP**. (`codex login` does not refresh the model list — the cache is only written when a session starts.)
 
 ### Step C: Present choices via AskUserQuestion
 

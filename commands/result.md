@@ -11,32 +11,30 @@ $ARGUMENTS
 
 ## Workflow
 
-### Step 1: Resolve the job
+### Step 1: Resolve the job and read its stored result
 
-Parse `$ARGUMENTS` to find the job:
+Resolve the reference (empty → most recent finished job for this session; otherwise exact or prefix match) and load the stored result in one call:
 
-| Input | Action |
-|-------|--------|
-| (empty) | Show the most recent completed job for this session |
-| `<job-id>` | Show results for the specified job (prefix match supported) |
-
-If the job is still running:
+```bash
+node -e "
+  const { resolveResultJob, readStoredJob } = await import('${CLAUDE_PLUGIN_ROOT}/scripts/lib/job-control.mjs');
+  try {
+    const reference = process.argv[1] || undefined;
+    const { workspaceRoot, job } = resolveResultJob(process.cwd(), reference);
+    const stored = readStoredJob(workspaceRoot, job.id);
+    console.log(JSON.stringify({ job, stored }, null, 2));
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
+" -- "$ARGUMENTS"
 ```
-Job {id} is still running. Check /cc-suite:status and try again when it finishes.
-```
-And STOP.
 
-If no completed jobs found:
-```
-No finished Codex jobs found. Run /audit, /implement, or /bug-analyze first.
-```
-And STOP.
+If the command exits non-zero, relay the single-line message it printed to stderr verbatim (it already distinguishes still-running jobs, unknown references, ambiguous prefixes, and no-finished-jobs) and STOP.
 
-### Step 2: Read the stored result
+### Step 2: Check the stored payload
 
-Read the job's result file from the state directory (`{cwd}/.codex-jobs/{job-id}/result.json`). The result file contains the raw Codex output and metadata.
-
-If the result file does not exist, or does not parse as JSON, report `Result file missing or unreadable for job {job-id} — it may have been pruned. Run /cc-suite:status to see available jobs.` and STOP.
+`stored` contains the raw Codex output and metadata. If `stored` is `null` or does not contain usable output, report `Result file missing or unreadable for job {job-id} — it may have been pruned. Run /cc-suite:status to see available jobs.` and STOP.
 
 ### Step 3: Display the result
 

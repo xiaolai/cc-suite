@@ -127,46 +127,107 @@ def _exclusive_create(target: Path, content: str) -> bool:
     return True
 
 
-def _clear_stale_outputs(reason: str) -> None:
+def _owned_identity(path: Path) -> tuple | None:
+    """(device, inode, mtime, size) of `path` when the bytes read through one
+    descriptor carry the cc-suite marker; None when it is missing, unreadable,
+    or user-owned.
+
+    The identity is taken from the same descriptor as the content, so it
+    provably describes the bytes that were validated. Callers re-take it
+    immediately before replacing or deleting and refuse on any difference —
+    an ownership check made earlier says nothing about the file that is about
+    to be destroyed.
+    """
+    try:
+        fd = os.open(str(path), os.O_RDONLY)
+    except OSError:
+        return None
+    try:
+        handle = os.fdopen(fd, "r", encoding="utf-8")
+    except OSError:
+        os.close(fd)
+        return None
+    with handle:
+        try:
+            st = os.fstat(handle.fileno())
+            data = json.loads(handle.read())
+        except (OSError, ValueError):
+            return None
+    if isinstance(data, dict) and data.get(MARKER_KEY) == MARKER_VALUE:
+        return (st.st_dev, st.st_ino, st.st_mtime_ns, st.st_size)
+    return None
+
+
+def _replace_if_owned(target: Path, content: str, identity: tuple) -> bool:
+    """Atomically overwrite `target` only while it is still the bridge-owned
+    file `identity` was captured from."""
+    if _owned_identity(target) != identity:
+        return False
+    _atomic_write(target, content)
+    return True
+
+
+def _unlink_if_owned(path: Path, identity: tuple) -> bool:
+    """Delete `path` only while it is still the bridge-owned file `identity`
+    was captured from."""
+    if _owned_identity(path) != identity:
+        return False
+    path.unlink(missing_ok=True)
+    return True
+
+
+def _clear_stale_outputs(reason: str) -> bool:
     """Remove previously mirrored output when there is nothing left to mirror,
     so hooks removed on the Claude side do not stay active in Codex. Only files
-    carrying the cc-suite marker are deleted; user-owned files are left alone."""
+    carrying the cc-suite marker are deleted; user-owned files are left alone.
+
+    Returns False when a file stopped being bridge-owned mid-run and was
+    therefore left in place."""
+    clean = True
     for path in (Path(".codex/hooks.json"), Path(".codex/hooks.cc-suite.json")):
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        identity = _owned_identity(path)
+        if identity is None:
             continue
-        if isinstance(data, dict) and data.get(MARKER_KEY) == MARKER_VALUE:
-            path.unlink(missing_ok=True)
+        if _unlink_if_owned(path, identity):
             print(f"· removed stale {path} ({reason})")
+        else:
+            print(
+                f"! {path} changed while the bridge was clearing it — left in place; re-run",
+                file=sys.stderr,
+            )
+            clean = False
+    return clean
 
 
 def _write_fallback(fallback: Path, content: str) -> bool:
     """Write mirror output to the review side file. The bridge owns this path,
     but if something without our marker already sits there, refuse rather than
     clobber what may be a user's in-progress merge or unrelated file."""
-    if fallback.exists():
-        try:
-            existing = json.loads(fallback.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            existing = None
-        if not (isinstance(existing, dict) and existing.get(MARKER_KEY) == MARKER_VALUE):
-            print(
-                f"! {fallback} exists without the cc-suite marker — refusing to overwrite; "
-                "remove it and re-run",
-                file=sys.stderr,
-            )
-            return False
-    _atomic_write(fallback, content)
+    if not fallback.exists() and _exclusive_create(fallback, content):
+        return True
+    identity = _owned_identity(fallback)
+    if identity is None:
+        print(
+            f"! {fallback} exists without the cc-suite marker — refusing to overwrite; "
+            "remove it and re-run",
+            file=sys.stderr,
+        )
+        return False
+    if not _replace_if_owned(fallback, content, identity):
+        print(
+            f"! {fallback} changed while the bridge was writing it — refusing to overwrite; re-run",
+            file=sys.stderr,
+        )
+        return False
     return True
 
 
 def main() -> int:
     src = Path(".claude/settings.json")
     if not src.exists():
-        _clear_stale_outputs("source settings removed")
+        cleared = _clear_stale_outputs("source settings removed")
         print("· .claude/settings.json does not exist — nothing to bridge")
-        return 0
+        return 0 if cleared else 1
     try:
         claude = json.loads(src.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
@@ -178,9 +239,9 @@ def main() -> int:
         print(f"! {err}", file=sys.stderr)
         return 1
     if not hooks:
-        _clear_stale_outputs("no hooks in source")
+        cleared = _clear_stale_outputs("no hooks in source")
         print("· .claude/settings.json has no hooks section — nothing to bridge")
-        return 0
+        return 0 if cleared else 1
 
     mirrored: dict[str, list] = {}
     skipped: list[str] = []
@@ -193,9 +254,9 @@ def main() -> int:
             skipped.append(f"{event} (unknown)")
 
     if not mirrored:
-        _clear_stale_outputs("no Codex-compatible hooks in source")
+        cleared = _clear_stale_outputs("no Codex-compatible hooks in source")
         print("· no Codex-compatible hook events found in .claude/settings.json")
-        return 0
+        return 0 if cleared else 1
 
     # Warn about relative .claude/ paths — verify Codex invokes from repo root.
     for event, handlers in mirrored.items():
@@ -217,13 +278,16 @@ def main() -> int:
 
     if primary.exists():
         # Existing file: re-read, decide based on marker.
-        try:
-            existing = json.loads(primary.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            existing = None
-        if isinstance(existing, dict) and existing.get(MARKER_KEY) == MARKER_VALUE:
+        identity = _owned_identity(primary)
+        if identity is not None:
             target = primary
-            _atomic_write(target, output_json)
+            if not _replace_if_owned(target, output_json, identity):
+                print(
+                    f"! {primary} changed while the bridge was writing it — refusing to "
+                    "overwrite; re-run",
+                    file=sys.stderr,
+                )
+                return 1
         else:
             target = fallback
             if not _write_fallback(target, output_json):
@@ -237,14 +301,17 @@ def main() -> int:
             target = primary
         else:
             # Lost the race — re-evaluate whether the newcomer is bridge-owned.
-            try:
-                newcomer = json.loads(primary.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                newcomer = None
-            if isinstance(newcomer, dict) and newcomer.get(MARKER_KEY) == MARKER_VALUE:
+            identity = _owned_identity(primary)
+            if identity is not None:
                 # Concurrent bridge run wrote the same shape — accept and refresh.
                 target = primary
-                _atomic_write(target, output_json)
+                if not _replace_if_owned(target, output_json, identity):
+                    print(
+                        f"! {primary} changed while the bridge was writing it — refusing to "
+                        "overwrite; re-run",
+                        file=sys.stderr,
+                    )
+                    return 1
             else:
                 target = fallback
                 if not _write_fallback(target, output_json):

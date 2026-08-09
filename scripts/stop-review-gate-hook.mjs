@@ -4,6 +4,7 @@ import process from "node:process";
 import { spawnSync } from "node:child_process";
 
 import { readHookInput } from "./lib/hook-input.mjs";
+import { redactSecrets } from "./lib/redact.mjs";
 import { getConfig, listJobs } from "./lib/state.mjs";
 import { sortJobsNewestFirst, SESSION_ID_ENV } from "./lib/job-control.mjs";
 import { binaryAvailable } from "./lib/process.mjs";
@@ -13,6 +14,27 @@ const STOP_REVIEW_TIMEOUT_MS = 15 * 60 * 1000;
 // Use the user's configured Codex default unless an explicit override is
 // supplied. A plugin-wide model slug is not valid for every account.
 const STOP_REVIEW_MODEL = process.env.CC_SUITE_REVIEW_MODEL?.trim() || null;
+// The prompt is passed as a command-line argument, so its only unbounded input
+// — the previous assistant message — must stay far below ARG_MAX (256 KiB on
+// macOS): an E2BIG spawn failure would make this fail-closed gate unstoppable.
+const MAX_LAST_MESSAGE_CHARS = 8000;
+// Codex diagnostics are third-party text echoed into a hook decision the user
+// sees; cap them so one runaway stack trace cannot bloat the hook output.
+const MAX_DIAGNOSTIC_CHARS = 800;
+
+// Keep the tail: a failing `codex exec` puts its actual error at the end.
+function diagnosticTail(raw) {
+  const text = redactSecrets(String(raw ?? "").trim());
+  if (text.length <= MAX_DIAGNOSTIC_CHARS) return text;
+  return `…${text.slice(-MAX_DIAGNOSTIC_CHARS)}`;
+}
+
+// Keep the head: a review verdict leads with the reason that blocked.
+function reviewDetail(raw) {
+  const text = redactSecrets(String(raw ?? "").trim());
+  if (text.length <= MAX_DIAGNOSTIC_CHARS) return text;
+  return `${text.slice(0, MAX_DIAGNOSTIC_CHARS)}…`;
+}
 
 function emitDecision(payload) {
   process.stdout.write(`${JSON.stringify(payload)}\n`);
@@ -46,7 +68,13 @@ function buildReviewPrompt(input = {}) {
   ];
 
   if (lastMessage) {
-    parts.push("", "Previous Claude response:", lastMessage);
+    const clipped =
+      lastMessage.length > MAX_LAST_MESSAGE_CHARS
+        ? `${lastMessage.slice(0, MAX_LAST_MESSAGE_CHARS)}\n[… truncated ${
+            lastMessage.length - MAX_LAST_MESSAGE_CHARS
+          } characters — review the worktree diff, which is authoritative …]`
+        : lastMessage;
+    parts.push("", "Previous Claude response:", clipped);
   }
 
   return parts.join("\n");
@@ -89,7 +117,7 @@ function runStopReview(cwd, input = {}) {
   }
 
   if (result.status !== 0) {
-    const detail = String(result.stderr || result.stdout || "").trim();
+    const detail = diagnosticTail(result.stderr || result.stdout || "");
     return {
       ok: false,
       reason: detail
@@ -115,7 +143,7 @@ function parseStopReviewOutput(rawOutput) {
     return { ok: true, reason: null };
   }
   if (firstLine.startsWith("BLOCK:")) {
-    const reason = firstLine.slice("BLOCK:".length).trim() || text;
+    const reason = reviewDetail(firstLine.slice("BLOCK:".length).trim() || text);
     return {
       ok: false,
       reason: `Stop-time review found issues: ${reason}`,

@@ -93,8 +93,43 @@ assert_count() {
 
 # ── temp dir management ───────────────────────────────────────────────────────
 TMP=""
-make_tmp() { TMP="$(mktemp -d)"; cd "$TMP"; }
-cleanup()   { cd /; rm -rf "${TMP:-}"; TMP=""; }
+# Every test runs under an isolated HOME. Several scripts write machine-global
+# targets (~/.kimi/mcp.json, ~/.codex/…), and a bare `bridge_tools.py --unbridge`
+# iterates every registry profile — so without this a suite run could delete the
+# developer's real Kimi configuration. Tests that need a specific HOME still
+# override it per command.
+REAL_HOME="$HOME"
+make_tmp() {
+  TMP="$(mktemp -d)"
+  cd "$TMP"
+  mkdir -p "$TMP/home"
+  HOME="$TMP/home"
+  export HOME
+}
+cleanup() {
+  cd /
+  rm -rf "${TMP:-}"
+  TMP=""
+  HOME="$REAL_HOME"
+  export HOME
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T00  harness — every test runs under an isolated HOME
+# ═══════════════════════════════════════════════════════════════════════════════
+# The suite exercises scripts that write machine-global paths (~/.kimi/mcp.json,
+# ~/.codex/…) and a teardown that iterates every registry profile. If HOME ever
+# stops being redirected, a suite run silently destroys the developer's real
+# configuration — so assert the redirection itself rather than trusting it.
+section "T00: harness — HOME is isolated inside each test"
+make_tmp
+if [ "$HOME" != "$REAL_HOME" ]; then ok_msg "HOME redirected away from the real home"
+else fail_msg "HOME is the developer's real home — a global-config test would destroy it"; fi
+if [ "$HOME" = "$TMP/home" ] && [ -d "$HOME" ]; then ok_msg "HOME points at the per-test sandbox"
+else fail_msg "HOME is not the per-test sandbox ($HOME)"; fi
+cleanup
+if [ "$HOME" = "$REAL_HOME" ]; then ok_msg "cleanup restores the real HOME"
+else fail_msg "cleanup left HOME pointing at a deleted directory"; fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # T01  init.sh — fresh project (no CLAUDE.md, no AGENTS.md)
@@ -1599,8 +1634,268 @@ printf '%s' "$out" > preflight.json
 assert_contains "preflight.json" '"default_model":"gpt-5.6-sol"'
 assert_contains "preflight.json" '"models":["gpt-5.6-sol","gpt-5.5"]'
 assert_contains "preflight.json" '"reasoning_efforts":["low","medium","high","xhigh","max","ultra"]'
-assert_exit0 python3 -c "import json; d=json.load(open('preflight.json')); assert d['preflight_schema'] == 3"
+assert_exit0 python3 -c "import json; d=json.load(open('preflight.json')); assert d['preflight_schema'] == 4"
 
+cleanup
+
+# ══════════ T54b  codex-preflight.sh — missing cache populated via exec ══════
+# `codex login --refresh` was removed in codex-cli 0.147.0; the CLI only writes
+# models_cache.json at session start. The preflight must trigger a minimal
+# `codex exec` when the cache is absent, and surface the reason when it fails.
+section "T54b: codex-preflight.sh — populates missing cache via codex exec"
+make_tmp
+
+mkdir -p bin home/.codex cache
+cat > bin/codex <<'CODEX'
+#!/usr/bin/env bash
+case "$1" in
+  "--version") echo "codex-cli 0.147.0" ;;
+  "login") echo "Logged in with ChatGPT" ;;
+  "exec")
+    mkdir -p "$HOME/.codex"
+    printf '{"models":[{"slug":"gpt-5.6-sol","display_name":"GPT-5.6-Sol","description":"Latest frontier agentic coding model","priority":1,"supported_reasoning_levels":[{"effort":"medium"},{"effort":"high"}]}]}\n' \
+      > "$HOME/.codex/models_cache.json"
+    echo "ok" ;;
+  *) exit 1 ;;
+esac
+CODEX
+chmod +x bin/codex
+
+PYTHON_BIN_DIR="$(dirname "$(command -v python3)")"
+out="$(env HOME="$PWD/home" XDG_CACHE_HOME="$PWD/cache" CODEX_PREFLIGHT_NO_CACHE=1 \
+  PATH="$PWD/bin:$PYTHON_BIN_DIR:/usr/bin:/bin" bash "$SCRIPTS/codex-preflight.sh" 2>stderr.log)"
+printf '%s' "$out" > preflight.json
+
+assert_contains "preflight.json" '"status":"ok"'
+assert_contains "preflight.json" '"default_model":"gpt-5.6-sol"'
+assert_file "home/.codex/models_cache.json"
+assert_contains "stderr.log" "Models cache populated successfully"
+
+# Failure path: exec cannot create the cache — the reason must reach stderr
+# and the error JSON must carry accurate guidance (login no longer helps).
+rm -f home/.codex/models_cache.json
+cat > bin/codex <<'CODEX'
+#!/usr/bin/env bash
+case "$1" in
+  "--version") echo "codex-cli 0.147.0" ;;
+  "login") echo "Logged in with ChatGPT" ;;
+  "exec") echo "stream error: quota exceeded" >&2; exit 1 ;;
+  *) exit 1 ;;
+esac
+CODEX
+chmod +x bin/codex
+
+out="$(env HOME="$PWD/home" XDG_CACHE_HOME="$PWD/cache" CODEX_PREFLIGHT_NO_CACHE=1 \
+  PATH="$PWD/bin:$PYTHON_BIN_DIR:/usr/bin:/bin" bash "$SCRIPTS/codex-preflight.sh" 2>stderr.log || true)"
+printf '%s' "$out" > preflight.json
+
+assert_contains "preflight.json" '"status":"error"'
+assert_contains "preflight.json" "No usable models cache"
+assert_contains "preflight.json" "codex exec"
+assert_contains "stderr.log" "stream error: quota exceeded"
+
+cleanup
+
+# ══════════ T53a  fence-aware config parsing and convergent repair ══════════
+# Four defects that shared one shape: a check or parser that reads a proxy for
+# the truth instead of the truth, so the tool reports a problem its own repair
+# cannot clear.
+section "T53a: config parsing and repair converge"
+
+# (a) `## Enabled Tools` inside a fenced block is documentation, not the section.
+make_tmp
+cat > .cc-suite.md <<'MD'
+# Config
+
+Document the section like this:
+
+```markdown
+## Enabled Tools
+
+- [x] claude
+```
+
+## Enabled Tools
+
+- [x] claude
+- [x] grok
+- [x] opencode
+MD
+enabled="$(python3 "$SCRIPTS/bridge_tools.py" --enabled 2>/dev/null | tr '\n' ' ')"
+if [ "$enabled" = "claude grok opencode " ]; then ok_msg "fenced example ignored; real selection parsed"
+else fail_msg "tool selection read from the fenced example: '$enabled'"; fi
+cleanup
+
+# (b) A hand-deleted entry is restored, and the run stays idempotent.
+make_tmp
+git init -q .
+bash "$SCRIPTS/ensure_gitignore.sh" >/dev/null 2>&1
+grep -v '^\.claude/settings\.local\.json$' .gitignore > .g && mv .g .gitignore
+bash "$SCRIPTS/ensure_gitignore.sh" >/dev/null 2>&1
+assert_contains ".gitignore" ".claude/settings.local.json"
+out="$(bash "$SCRIPTS/ensure_gitignore.sh" 2>&1)"
+case "$out" in
+  *"already has current cc-suite block"*) ok_msg "gitignore refresh is idempotent" ;;
+  *) fail_msg "gitignore rewritten on an unchanged tree: $out" ;;
+esac
+cleanup
+
+# (c) Becoming a plugin repo after the block was written must converge.
+make_tmp
+git init -q .
+printf '{"mcpServers":{"myserver":{"type":"stdio","command":"foo"}}}\n' > .mcp.json
+bash "$SCRIPTS/ensure_gitignore.sh" >/dev/null 2>&1
+mkdir -p .claude-plugin && printf '{"name":"p"}\n' > .claude-plugin/plugin.json
+bash "$SCRIPTS/ensure_gitignore.sh" >/dev/null 2>&1
+assert_contains ".gitignore" ".codex/prompts/"
+assert_contains ".gitignore" "GEMINI.md"
+cleanup
+
+# (d) A legacy codex-cli registration is cc-suite's, not a stranger's: treating
+# it as foreign left a plugin's .mcp.json tracked and shipping.
+make_tmp
+git init -q .
+mkdir -p .claude-plugin && printf '{"name":"p"}\n' > .claude-plugin/plugin.json
+printf '{"mcpServers":{"codex-cli":{"type":"stdio","command":"npx","args":["-y","@openai/codex-mcp"]}}}\n' > .mcp.json
+git add -A >/dev/null 2>&1
+git -c user.email=t@t -c user.name=t commit -qm init >/dev/null 2>&1
+bash "$SCRIPTS/ensure_gitignore.sh" >/dev/null 2>&1
+assert_contains ".gitignore" ".mcp.json"
+if git ls-files --error-unmatch .mcp.json >/dev/null 2>&1; then
+  fail_msg "legacy codex-cli .mcp.json left tracked — it ships to every installer"
+else ok_msg "legacy codex-cli .mcp.json untracked and ignored"; fi
+cleanup
+
+# (e) A control character in a mirrored server must not make diagnose disagree
+# with the file bridge_mcp.sh just wrote.
+make_tmp
+mkdir -p "$TMP/fakehome"
+python3 -c "
+import json
+json.dump({'mcpServers':{'tabby':{'type':'stdio','command':'node','args':['--eval','a\tb']}}}, open('.mcp.json','w'))
+"
+assert_exit0 bash "$SCRIPTS/bridge_mcp.sh"
+HOME="$TMP/fakehome" python3 "$SCRIPTS/diagnose.py" --json --no-preflight > diag.json 2>/dev/null || true
+python3 - <<'PY' && ok_msg "mcp parity converges with control characters" || fail_msg "mcp parity never converges on a control character"
+import json
+checks = {c["id"]: c for c in json.load(open("diag.json"))["checks"]}
+assert checks["mcp_parity"]["status"] == "healthy", checks["mcp_parity"]
+PY
+cleanup
+
+# ══════════ T54d  codex-preflight.sh — a failed refresh is not retried per call
+# The refresh is a real, billable model roundtrip, and the preflight runs from
+# hooks and from every model-selecting command. Without a cooldown a machine
+# with a broken cache spends one call per invocation to fail identically.
+section "T54d: codex-preflight.sh — failed cache refresh is rate limited"
+make_tmp
+
+mkdir -p bin home/.codex cache
+CALLLOG="$PWD/codex-exec-calls.txt"; : > "$CALLLOG"
+cat > bin/codex <<'CODEX'
+#!/usr/bin/env bash
+case "$1" in
+  "--version") echo "codex-cli 0.147.0" ;;
+  "login") echo "Logged in with ChatGPT" ;;
+  "exec") echo "CALLED" >> "$CALLLOG"; echo "stream error: quota exceeded" >&2; exit 1 ;;
+  *) exit 1 ;;
+esac
+CODEX
+chmod +x bin/codex
+
+PYTHON_BIN_DIR="$(dirname "$(command -v python3)")"
+for _ in 1 2 3; do
+  env HOME="$PWD/home" XDG_CACHE_HOME="$PWD/cache" CODEX_PREFLIGHT_NO_CACHE=1 CALLLOG="$CALLLOG" \
+    PATH="$PWD/bin:$PYTHON_BIN_DIR:/usr/bin:/bin" \
+    bash "$SCRIPTS/codex-preflight.sh" >/dev/null 2>&1 || true
+done
+calls="$(wc -l < "$CALLLOG" | tr -d ' ')"
+if [ "$calls" = "1" ]; then ok_msg "three preflight runs made exactly one billable codex exec call"
+else fail_msg "expected 1 billable codex exec call across three runs, got $calls"; fi
+
+cleanup
+
+# ══════════ T54c  unbridge.sh — sentinel stripping never corrupts config.toml ═
+# Marker spans are resolved against the original text and removed right to left.
+# Computing them per iteration against already-mutated text let one block's
+# removal swallow an interleaved block's opening marker, after which the slice
+# silently duplicated the file's tail and the script still exited 0.
+section "T54c: unbridge.sh — interleaved/nested sentinels fail closed, separate ones strip cleanly"
+
+toml_is_valid() {
+  python3 -c "import tomllib,sys; tomllib.load(open(sys.argv[1],'rb'))" "$1" 2>/dev/null
+}
+
+# (a) interleaved markers — must refuse and leave the file valid and intact
+make_tmp
+mkdir -p .codex
+cat > .codex/config.toml <<'TOML'
+[settings]
+a = 1
+# >>> cc-suite-mcp >>>
+x = 1
+# >>> cc-suite-claude-mcp >>>
+y = 2
+# <<< cc-suite-mcp <<<
+[other]
+b = 2
+# <<< cc-suite-claude-mcp <<<
+[tail]
+z = 1
+TOML
+cp .codex/config.toml expected.toml
+assert_exit_nonzero bash "$SCRIPTS/unbridge.sh"
+if toml_is_valid .codex/config.toml; then ok_msg "interleaved: config.toml still parses as TOML"
+else fail_msg "interleaved: config.toml was corrupted"; fi
+if cmp -s .codex/config.toml expected.toml; then ok_msg "interleaved: config.toml left byte-identical"
+else fail_msg "interleaved: config.toml was rewritten"; fi
+cleanup
+
+# (b) nested markers — same refusal, and the final byte is not dropped
+make_tmp
+mkdir -p .codex
+printf '[settings]
+a = 1
+# >>> cc-suite-mcp >>>
+x = 1
+# >>> cc-suite-claude-mcp >>>
+y = 2
+# <<< cc-suite-claude-mcp <<<
+# <<< cc-suite-mcp <<<
+[tail]
+zzz = "LASTCHAR"' > .codex/config.toml
+cp .codex/config.toml expected.toml
+assert_exit_nonzero bash "$SCRIPTS/unbridge.sh"
+if toml_is_valid .codex/config.toml; then ok_msg "nested: config.toml still parses as TOML"
+else fail_msg "nested: config.toml was corrupted"; fi
+if cmp -s .codex/config.toml expected.toml; then ok_msg "nested: config.toml left byte-identical"
+else fail_msg "nested: final byte dropped or file rewritten"; fi
+cleanup
+
+# (c) two separate blocks — the supported shape still strips cleanly
+make_tmp
+mkdir -p .codex
+cat > .codex/config.toml <<'TOML'
+[settings]
+a = 1
+# >>> cc-suite-mcp >>>
+x = 1
+# <<< cc-suite-mcp <<<
+[middle]
+m = 1
+# >>> cc-suite-claude-mcp >>>
+y = 2
+# <<< cc-suite-claude-mcp <<<
+[tail]
+z = 1
+TOML
+assert_exit0 bash "$SCRIPTS/unbridge.sh"
+if toml_is_valid .codex/config.toml; then ok_msg "separate: config.toml still parses as TOML"
+else fail_msg "separate: config.toml was corrupted"; fi
+assert_not_contains ".codex/config.toml" "cc-suite-mcp"
+assert_not_contains ".codex/config.toml" "cc-suite-claude-mcp"
+assert_contains ".codex/config.toml" "[middle]"
+assert_contains ".codex/config.toml" "[tail]"
 cleanup
 
 # ══════════ T55  bridge_mcp.sh — Codex + Antigravity projections ═════════════
@@ -1861,7 +2156,7 @@ echo '{ "mcpServers": {} }' > .mcp.json
 printf '## Enabled Tools\n- [x] grok\n- [x] opencode\n' > .cc-suite.md
 assert_exit0 python3 "$SCRIPTS/bridge_tools.py"
 printf '\nmodel = "grok-build"\n' >> .grok/config.toml               # user setting outside the block
-assert_exit0 python3 "$SCRIPTS/bridge_tools.py" --unbridge
+assert_exit0 python3 "$SCRIPTS/bridge_tools.py" --unbridge grok,opencode
 assert_contains     ".grok/config.toml" "grok-build"                # user line kept
 assert_not_contains ".grok/config.toml" "cc-suite-mcp"              # cc-suite block removed
 assert_no_file      "opencode.json"                                 # was cc-suite-only → removed

@@ -42,17 +42,29 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
 import {
+  claimJob,
   generateJobId,
   upsertJob,
   writeJobFile,
-  resolveJobLogFile,
+  createJobLogFile,
 } from "./lib/state.mjs";
 import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
+import {
+  installChildSignalForwarding,
+  readProcessStartTime,
+  terminateProcessTree,
+  waitForExit,
+} from "./lib/process.mjs";
 import { withDelegationBoundary } from "./lib/delegation-boundary.mjs";
 
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes — matches codex-runner
 const HEARTBEAT_MS = 30 * 1000;
 const SIGKILL_GRACE_MS = 5 * 1000;
+
+// Job id this process has registered but not yet finalized (or handed off to a
+// detached worker). main()'s rejection handler marks it failed so a crash can
+// never leave a foreground job recorded as running forever.
+let activeJobId = null;
 
 // Where agy persists conversations. Overridable for tests.
 const CONVERSATIONS_DIR =
@@ -138,8 +150,10 @@ function parseArgs(argv) {
       case "--summary": args.summary = value; break;
       case "--timeout-ms": {
         const n = Number(value);
-        if (!Number.isFinite(n) || n <= 0) {
-          process.stderr.write(`Error: --timeout-ms requires a positive number of milliseconds, got '${value}'\n`);
+        // Node timers cap at 2^31-1 ms; larger values wrap to ~1ms and fire
+        // an immediate false timeout.
+        if (!Number.isInteger(n) || n <= 0 || n > 2147483647) {
+          process.stderr.write(`Error: --timeout-ms requires a positive integer of milliseconds (max 2147483647), got '${value}'\n`);
           process.exit(1);
         }
         args.timeoutMs = n;
@@ -266,58 +280,113 @@ function executeAgy(cwd, args, logFile) {
     // (bubbletea) opens /dev/tty and dies without one; `-p` avoids the TUI, but
     // an inherited stdin can still stall the child in hook/background contexts.
     // Do not change to "pipe" or "inherit" without preserving /dev/null on stdin.
+    // detached:true makes the child a process-group leader (POSIX), so the
+    // deadline can terminate the whole group — helpers agy spawns included —
+    // instead of only the direct child.
     const child = spawn("agy", agyArgs, {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env },
+      detached: true,
     });
+    const releaseSignals = installChildSignalForwarding(child);
 
-    const heartbeat = setInterval(() => {
-      const elapsed = Math.round((Date.now() - startedAt) / 1000);
-      appendLog(logFile, `…still running (${elapsed}s elapsed)`);
-    }, HEARTBEAT_MS);
-
-    const deadline = setTimeout(() => {
-      timedOut = true;
-      appendLog(logFile, `Deadline exceeded (${Math.round(args.timeoutMs / 1000)}s) — terminating`);
-      child.kill("SIGTERM");
-      setTimeout(() => {
-        if (!settled) child.kill("SIGKILL");
-      }, SIGKILL_GRACE_MS);
-    }, args.timeoutMs);
+    let killTimer = null;
 
     function finish(result) {
       if (settled) return;
       settled = true;
       clearInterval(heartbeat);
       clearTimeout(deadline);
+      if (killTimer) clearTimeout(killTimer);
+      releaseSignals();
       resolve(result);
     }
 
+
+    // Terminate the child before settling on a failure path. Synchronous and
+    // bounded on purpose: arming an escalation timer here would be cancelled by
+    // finish(), which clears every timer, leaving a SIGTERM-resistant child
+    // alive as a detached orphan.
+    function killChildNow() {
+      try { terminateProcessTree(child.pid, { signal: "SIGTERM" }); } catch {}
+      if (waitForExit([child.pid], 1000).size > 0) {
+        try { terminateProcessTree(child.pid, { signal: "SIGKILL" }); } catch {}
+      }
+    }
+
+    // Timer and stream callbacks run outside the Promise chain: a synchronous
+    // write failure (full disk, deleted log dir) would otherwise become an
+    // uncaught exception that kills the runner and strands the job as running.
+    function guarded(fn) {
+      return (...callbackArgs) => {
+        try {
+          fn(...callbackArgs);
+        } catch (error) {
+          killChildNow();
+          finish({
+            status: "failed",
+            errorMessage: `Runner callback failed: ${error?.message || error}`,
+            conversationId: null,
+            rawOutput: stdoutBuf.trim(),
+          });
+        }
+      };
+    }
+
+    const heartbeat = setInterval(
+      guarded(() => {
+        const elapsed = Math.round((Date.now() - startedAt) / 1000);
+        appendLog(logFile, `…still running (${elapsed}s elapsed)`);
+      }),
+      HEARTBEAT_MS
+    );
+
+    const deadline = setTimeout(
+      guarded(() => {
+        timedOut = true;
+        appendLog(logFile, `Deadline exceeded (${Math.round(args.timeoutMs / 1000)}s) — terminating`);
+        terminateProcessTree(child.pid, { signal: "SIGTERM" });
+        killTimer = setTimeout(() => {
+          if (!settled) terminateProcessTree(child.pid, { signal: "SIGKILL" });
+        }, SIGKILL_GRACE_MS);
+        killTimer.unref?.();
+      }),
+      args.timeoutMs
+    );
+
     // Unlike codex, stdout is not an event stream — it is the answer. Buffer it
     // whole and mirror it into the job log for observability.
-    child.stdout.on("data", (chunk) => {
-      const text = chunk.toString();
-      stdoutBuf += text;
-      fs.appendFileSync(logFile, text, "utf8");
-    });
+    child.stdout.on(
+      "data",
+      guarded((chunk) => {
+        const text = chunk.toString();
+        stdoutBuf += text;
+        fs.appendFileSync(logFile, text, "utf8");
+      })
+    );
 
-    child.stderr.on("data", (chunk) => {
-      const text = chunk.toString();
-      stderrTail = (stderrTail + text).slice(-2000);
-      fs.appendFileSync(logFile, text, "utf8");
-    });
+    child.stderr.on(
+      "data",
+      guarded((chunk) => {
+        const text = chunk.toString();
+        stderrTail = (stderrTail + text).slice(-2000);
+        fs.appendFileSync(logFile, text, "utf8");
+      })
+    );
 
     child.on("error", (err) => {
       const hint =
         err.code === "ENOENT"
           ? "agy not found on PATH — install Antigravity CLI: curl -fsSL https://antigravity.google/cli/install.sh | bash"
           : err.message;
-      appendLog(logFile, `Spawn error: ${hint}`);
+      try {
+        appendLog(logFile, `Spawn error: ${hint}`);
+      } catch {}
       finish({ status: "failed", errorMessage: hint, conversationId: null, rawOutput: "" });
     });
 
-    child.on("close", (code, signal) => {
+    child.on("close", guarded((code, signal) => {
       const rawOutput = stdoutBuf.trim();
       const conversationId = args.resume
         ? args.resume
@@ -359,13 +428,14 @@ function executeAgy(cwd, args, logFile) {
       if (conversationId) appendLog(logFile, `Conversation: ${conversationId}`);
       appendLog(logFile, "Completed successfully");
       finish({ status: "completed", conversationId, rawOutput });
-    });
+    }));
   });
 }
 
 async function runForeground(cwd, args) {
   const jobId = generateJobId(args.kind);
-  const logFile = resolveJobLogFile(cwd, jobId);
+  activeJobId = jobId;
+  const logFile = createJobLogFile(cwd, jobId);
   const sessionId = args.sessionId || process.env.CODEX_TOOLKIT_SESSION_ID || null;
   const deadlineAt = new Date(Date.now() + args.timeoutMs).toISOString();
 
@@ -376,6 +446,7 @@ async function runForeground(cwd, args) {
     summary: args.summary || `${args.kind} task`,
     sessionId,
     pid: process.pid,
+    pidStartedAt: readProcessStartTime(process.pid),
     startedAt: new Date().toISOString(),
     deadlineAt,
     logFile,
@@ -399,6 +470,7 @@ async function runForeground(cwd, args) {
     threadId: result.conversationId || null,
     ...(result.errorMessage ? { error: result.errorMessage } : {}),
   });
+  activeJobId = null; // job state and result are fully persisted
 
   const output = {
     jobId,
@@ -413,7 +485,8 @@ async function runForeground(cwd, args) {
 
 function runBackground(cwd, args) {
   const jobId = generateJobId(args.kind);
-  const logFile = resolveJobLogFile(cwd, jobId);
+  activeJobId = jobId;
+  const logFile = createJobLogFile(cwd, jobId);
   const sessionId = args.sessionId || process.env.CODEX_TOOLKIT_SESSION_ID || null;
 
   upsertJob(cwd, {
@@ -451,15 +524,9 @@ function runBackground(cwd, args) {
     },
   });
 
-  upsertJob(cwd, {
-    id: jobId,
-    status: "running",
-    pid: child.pid,
-    startedAt: new Date().toISOString(),
-    deadlineAt: new Date(Date.now() + args.timeoutMs).toISOString(),
-  });
-
-  // A failed spawn must not leave the job recorded as running forever.
+  // The worker records the running transition itself (with its own pid), like
+  // the other runners: writing `running` here would race a fast worker and
+  // could overwrite its terminal state.
   child.on("error", (err) => {
     appendLog(logFile, `Background spawn error: ${err.message}`);
     upsertJob(cwd, {
@@ -471,13 +538,26 @@ function runBackground(cwd, args) {
   });
 
   child.unref();
+  activeJobId = null; // the job now belongs to the detached worker
 
   const output = { jobId, status: "queued", message: `Job ${jobId} started in background.` };
   process.stdout.write(JSON.stringify(output) + "\n");
 }
 
 async function runBackgroundWorker(cwd, args, jobId) {
-  const logFile = resolveJobLogFile(cwd, jobId);
+  const logFile = createJobLogFile(cwd, jobId);
+  // Claim the queued job atomically — see codex-runner for the rationale.
+  const claimed = claimJob(cwd, jobId, {
+    status: "running",
+    pid: process.pid,
+    pidStartedAt: readProcessStartTime(process.pid),
+    startedAt: new Date().toISOString(),
+    deadlineAt: new Date(Date.now() + args.timeoutMs).toISOString(),
+  });
+  if (!claimed) {
+    appendLog(logFile, "Background worker exiting — job was cancelled before startup");
+    return;
+  }
   appendLog(logFile, "Background worker started (backend=agy)");
 
   const result = await executeAgy(cwd, args, logFile);
@@ -532,11 +612,14 @@ async function main() {
 
 main().catch((error) => {
   const message = error?.message || String(error);
-  const backgroundJobId = process.env.CODEX_TOOLKIT_BACKGROUND_JOB_ID;
-  if (backgroundJobId) {
+  // A worker crash finalizes the job named by its environment; a foreground or
+  // spawn-parent crash finalizes whatever job this process registered but had
+  // not yet brought to a terminal state.
+  const jobId = process.env.CODEX_TOOLKIT_BACKGROUND_JOB_ID || activeJobId || null;
+  if (jobId) {
     try {
       upsertJob(resolveWorkspaceRoot(process.cwd()), {
-        id: backgroundJobId,
+        id: jobId,
         status: "failed",
         errorMessage: message,
         completedAt: new Date().toISOString(),
@@ -546,7 +629,7 @@ main().catch((error) => {
     }
   }
   process.stdout.write(JSON.stringify({
-    jobId: backgroundJobId || null,
+    jobId,
     status: "failed",
     error: message,
   }) + "\n");

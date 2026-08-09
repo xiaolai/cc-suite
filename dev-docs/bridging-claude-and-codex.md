@@ -271,9 +271,13 @@ Summarize the current git diff vs. main. If the user passes --short, limit to 5 
 
 With `allow_implicit_invocation: false` in `agents/openai.yaml`, the skill only activates when the user types `$cmd-summarize-pr`. This replicates the explicit-invocation behavior of Claude slash commands.
 
-`bridge_commands.sh` performs this conversion. It skips an existing generated
-`SKILL.md` so a hand-edited Skill is not overwritten; remove the generated Skill
-before rerunning if the source command changed.
+`bridge_commands.sh` performs this conversion. It records what it generated in
+`.claude/skills/.cc-suite-commands.json` and, on a rerun, refreshes any
+`SKILL.md` that still matches that record — so editing the source command is
+enough to update the Skill. A `SKILL.md` whose content matches neither the
+record nor what generation would produce is treated as hand-edited and left
+alone (`· cmd-<name>: SKILL.md edited by hand or predates provenance`); delete
+`.claude/skills/cmd-<name>/` to hand it back to the bridge.
 
 ---
 

@@ -40,7 +40,18 @@ function readPin() {
   return readFileSync(PIN_FILE, "utf8").trim();
 }
 
+// The exact-semver grammar from semver.org. An empty or loose pin would make
+// npx resolve an unintended release instead of the pinned one.
+const EXACT_SEMVER =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
+
 const version = process.argv[2] || readPin();
+if (!EXACT_SEMVER.test(version)) {
+  console.error(
+    `✗ invalid claude-octopus pin ${JSON.stringify(version)}: expected an exact semver version`
+  );
+  process.exit(1);
+}
 const target = `claude-octopus@${version}`;
 
 const INIT_REQUEST = JSON.stringify({
@@ -125,11 +136,34 @@ child.stdout.on("data", (chunk) => {
     } catch {
       continue; // non-JSON lines (status messages) are fine to skip
     }
-    if (msg.jsonrpc === "2.0" && msg.id === 1 && msg.result?.serverInfo?.name) {
+    if (msg.jsonrpc === "2.0" && msg.id === 1 && msg.result) {
       if (settled) return;
       settled = true;
-      const { name, version: serverVersion } = msg.result.serverInfo;
-      finish(0, `${target} booted; server reports ${name}@${serverVersion}`);
+      // Validate the full InitializeResult shape, not just a truthy name — a
+      // server that omits its version or protocol version did not complete a
+      // well-formed handshake.
+      const result = msg.result;
+      const serverInfo = result.serverInfo ?? {};
+      const wellFormed =
+        typeof result.protocolVersion === "string" &&
+        result.protocolVersion.length > 0 &&
+        typeof result.capabilities === "object" &&
+        result.capabilities !== null &&
+        typeof serverInfo.name === "string" &&
+        serverInfo.name.length > 0 &&
+        typeof serverInfo.version === "string" &&
+        serverInfo.version.length > 0;
+      if (!wellFormed) {
+        finish(
+          1,
+          `${target} returned a malformed initialize result: ${line.slice(0, 200)}`
+        );
+        return;
+      }
+      finish(
+        0,
+        `${target} booted; server reports ${serverInfo.name}@${serverInfo.version} (protocol ${result.protocolVersion})`
+      );
       return;
     }
     if (msg.jsonrpc === "2.0" && msg.id === 1 && msg.error) {

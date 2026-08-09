@@ -8,6 +8,7 @@ PREFLIGHT_SCHEMA=1
 MIN_VERSION="0.21.0"
 SANDBOX_LEVELS='["read-only"]'
 REASONING_EFFORTS='[]'
+PROBE_TIMEOUT_SECONDS=5   # every local probe is bounded — this preflight is the "fast" one
 
 json_escape() {
   local s="$1"
@@ -19,6 +20,46 @@ json_escape() {
   # JSON forbids raw bytes below 0x20 — drop any remaining control characters
   # (\n, \t, \r are already handled above).
   printf '%s' "$s" | tr -d '\000-\010\013\014\016-\037'
+}
+
+run_with_timeout() {
+  local seconds="$1"
+  shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "${seconds}s" "$@"
+    return $?
+  fi
+  if command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "${seconds}s" "$@"
+    return $?
+  fi
+
+  # Stock macOS ships neither. Supervise the child here so no probe can hang
+  # this preflight. `set -m` makes it a process-group leader, so the deadline
+  # signals its descendants too; only stdout is captured, as with `timeout`.
+  local output pid waited=0 rc
+  output="$(mktemp "${TMPDIR:-/tmp}/cc-suite-qwen-preflight.XXXXXX")"
+  set -m
+  "$@" >"$output" &
+  pid=$!
+  set +m
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$waited" -ge "$seconds" ]; then
+      kill -TERM -"$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+      sleep 1
+      kill -KILL -"$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      cat "$output"
+      rm -f "$output"
+      return 124
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  wait "$pid"; rc=$?
+  cat "$output"
+  rm -f "$output"
+  return "$rc"
 }
 
 emit_error() {
@@ -57,14 +98,7 @@ fi
 # For daemon-backed providers, an installed binary is not readiness: a stopped
 # daemon would pass preflight and fail at review time. Probe locally, bounded.
 provider_ready() {
-  local provider="$1"
-  if command -v timeout >/dev/null 2>&1; then
-    timeout 5s "$provider" info >/dev/null 2>&1
-  elif command -v gtimeout >/dev/null 2>&1; then
-    gtimeout 5s "$provider" info >/dev/null 2>&1
-  else
-    "$provider" info >/dev/null 2>&1
-  fi
+  run_with_timeout "$PROBE_TIMEOUT_SECONDS" "$1" info >/dev/null 2>&1
 }
 
 case "$SANDBOX_PROVIDER" in
@@ -76,7 +110,12 @@ case "$SANDBOX_PROVIDER" in
     ;;
 esac
 
-QWEN_VERSION_RAW="$(qwen --version 2>/dev/null | head -1 | tr -d '\r')"
+QWEN_VERSION_RAW="$(run_with_timeout "$PROBE_TIMEOUT_SECONDS" qwen --version 2>/dev/null | head -1 | tr -d '\r')"
+QWEN_VERSION_RC=$?
+if [[ "$QWEN_VERSION_RC" -eq 124 ]]; then
+  emit_error "qwen_probe_timeout" "qwen --version did not respond within ${PROBE_TIMEOUT_SECONDS}s — the Qwen Code CLI or its wrapper is hung."
+  exit 0
+fi
 QWEN_VERSION_JSON="\"$(json_escape "${QWEN_VERSION_RAW:-unknown}")\""
 QWEN_SEMVER="$(printf '%s' "$QWEN_VERSION_RAW" | sed -nE 's/.*([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -1)"
 

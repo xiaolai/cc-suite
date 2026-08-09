@@ -29,7 +29,8 @@ GROK_DIR="${GROK_HOME:-$HOME/.grok}"
 MODELS_CACHE="$GROK_DIR/models_cache.json"
 AUTH_FILE="$GROK_DIR/auth.json"
 
-json_str() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+# JSON forbids raw bytes below 0x20, and `grok --version` can emit ANSI escapes.
+json_str() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\000-\037'; }
 
 emit_error() { # error_code, message, [version-or-null]
   printf '{"backend":"grok","preflight_schema":%s,"status":"error","error_code":"%s","error":"%s","grok_version":%s,"auth_mode":"none","default_model":null,"models":[],"models_detail":[],"reasoning_efforts":%s,"sandbox_levels":%s}\n' \
@@ -54,7 +55,7 @@ elif [ -s "$AUTH_FILE" ]; then
   # a per-issuer key). Malformed JSON, an empty object, or unrelated content
   # must not pass as an authenticated session. Still a local check, no network.
   if python3 - "$AUTH_FILE" <<'PY' 2>/dev/null; then
-import json, re, sys
+import json, sys
 
 try:
     with open(sys.argv[1]) as fh:
@@ -62,15 +63,34 @@ try:
 except Exception:
     sys.exit(1)
 
-CRED_KEY = re.compile(r"key|token|session|credential", re.I)
+# Exact field names only. A substring match on key/token/session also accepts
+# `monkey`, `keynote`, and `session_name`, so unrelated JSON would pass as an
+# authenticated session.
+CRED_FIELDS = {
+    "key", "api_key", "apikey",
+    "token", "access_token", "accesstoken",
+    "refresh_token", "refreshtoken",
+    "id_token", "idtoken",
+    "session_token", "sessiontoken",
+    "auth_token", "authtoken",
+}
+MIN_CREDENTIAL_LENGTH = 8
+
+
+def is_credential(value):
+    """Credentials are opaque single-token strings — never prose, never a flag."""
+    if not isinstance(value, str):
+        return False
+    value = value.strip()
+    return len(value) >= MIN_CREDENTIAL_LENGTH and not any(c.isspace() for c in value)
 
 
 def has_credential(obj, depth=0):
-    """A non-empty string under a credential-named key, up to two levels deep."""
+    """A credential-shaped string under an exact credential field name."""
     if not isinstance(obj, dict) or depth > 2:
         return False
     for k, v in obj.items():
-        if isinstance(k, str) and CRED_KEY.search(k) and isinstance(v, str) and v.strip():
+        if isinstance(k, str) and k.lower() in CRED_FIELDS and is_credential(v):
             return True
         if has_credential(v, depth + 1):
             return True

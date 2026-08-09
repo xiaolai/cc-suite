@@ -34,6 +34,8 @@ real contract; the exit code is a convenience for shell callers).
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import re
@@ -44,16 +46,22 @@ import sys
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR / "lib"))
+from toml_escape import quote_string  # noqa: E402
 PLUGIN_ROOT = SCRIPT_DIR.parent
 ROOT = Path.cwd()
 SCHEMA = 1
 
 sys.path.insert(0, str(SCRIPT_DIR))
 import bridge_agents  # noqa: E402  (canonical advisor frontmatter parser)
+import bridge_agy_mcp  # noqa: E402  (canonical Antigravity server translation)
+import bridge_hooks  # noqa: E402  (canonical hook-mirror events + marker)
 import bridge_tools  # noqa: E402  (registry + enabled-tools parsing)
 
 CLAUDE_SENTINEL_OPEN = ">>> cc-suite-claude-mcp >>>"
 CLAUDE_SENTINEL_CLOSE = "<<< cc-suite-claude-mcp <<<"
+MCP_SENTINEL_OPEN = "# >>> cc-suite-mcp >>>"
+MCP_SENTINEL_CLOSE = "# <<< cc-suite-mcp <<<"
 CODEX_CANONICAL = {"type": "stdio", "command": "codex", "args": ["mcp-server"]}
 
 
@@ -90,6 +98,24 @@ def _load_json(path: Path):
         return json.loads(path.read_text(encoding="utf-8", errors="replace"))
     except (OSError, json.JSONDecodeError):
         return None
+
+
+def _source_servers() -> tuple[dict[str, object], bool]:
+    """(.mcp.json's mcpServers, source usable). A missing file is usable-and-empty
+    — that is exactly how the bridges treat it — while a broken shape is not
+    usable: comparing a projection against it would invent findings."""
+    path = ROOT / ".mcp.json"
+    if not path.exists():
+        return {}, True
+    doc = _load_json(path)
+    if not isinstance(doc, dict):
+        return {}, False
+    servers = doc.get("mcpServers")
+    if servers is None:
+        return {}, True
+    if not isinstance(servers, dict):
+        return {}, False
+    return servers, True
 
 
 # ── individual checks ────────────────────────────────────────────────────────
@@ -155,10 +181,16 @@ def check_skills_links(enabled: list[str]) -> list[dict]:
                          "missing — plugin skills not exposed", auto=[f"bash {script('bridge_skills.sh')}"]))
 
     agents_link = ROOT / ".agents/skills"
-    needed = "codex" in enabled or "antigravity" in enabled
+    # Every bridged tool except Claude itself reads `.agents/skills` — Codex,
+    # agy, Grok Build, opencode and Kimi CLI (README, "What each tool picks up
+    # on its own"). Naming only Codex and Antigravity made diagnose call a
+    # broken symlink "expected absent" on a claude+opencode project, where
+    # status.sh correctly flags it. Claude alone reads .claude/skills directly,
+    # so the link really is unnecessary there.
+    needed = any(tool != "claude" for tool in enabled)
     if not needed:
         out.append(check("agents_skills_link", ".agents/skills", "expected_absent",
-                         "neither Codex nor Antigravity is enabled"))
+                         "no tool that reads .agents/skills is enabled"))
     elif agents_link.is_symlink():
         target = os.readlink(agents_link)
         if target != "../.claude/skills":
@@ -176,7 +208,7 @@ def check_skills_links(enabled: list[str]) -> list[dict]:
                          manual="merge its content into .claude/skills, remove it, run bridge_skills.sh"))
     else:
         out.append(check("agents_skills_link", ".agents/skills", "issue",
-                         "missing — Codex/agy cannot see the shared skills",
+                         "missing — Codex, agy, Grok, opencode and Kimi cannot see the shared skills",
                          auto=[f"bash {script('bridge_skills.sh')}"]))
     return out
 
@@ -271,25 +303,62 @@ def check_codex_artifacts(enabled: list[str]) -> list[dict]:
                          ".claude/settings.json is unreadable — cannot judge whether hooks need bridging",
                          manual="fix .claude/settings.json, then re-run diagnose"))
         return out
-    has_hooks = isinstance(settings, dict) and bool(settings.get("hooks"))
+    src_hooks = settings.get("hooks") if isinstance(settings, dict) else None
+    has_hooks = bool(src_hooks)
+    # What bridge_hooks.py would mirror right now — the parity target. Comparing
+    # against it is what turns "the file parses" into "the file is current".
+    expected = sorted(e for e in src_hooks if e in bridge_hooks.SHARED_EVENTS) \
+        if isinstance(src_hooks, dict) else []
     hooks = ROOT / ".codex/hooks.json"
     side = ROOT / ".codex/hooks.cc-suite.json"
-    if hooks.is_file():
-        if _load_json(hooks) is None:
-            out.append(check("codex_hooks", ".codex hooks", "issue",
-                             ".codex/hooks.json is invalid JSON — Codex hooks will not fire",
-                             auto=[f"python3 {script('bridge_hooks.py')}"]))
-        else:
-            out.append(check("codex_hooks", ".codex hooks", "healthy", "bridged"))
-    elif side.is_file():
+    primary = _load_json(hooks) if hooks.is_file() else None
+    bridge_owned = (isinstance(primary, dict)
+                    and primary.get(bridge_hooks.MARKER_KEY) == bridge_hooks.MARKER_VALUE)
+    if side.is_file() and not bridge_owned:
         out.append(check("codex_hooks", ".codex hooks", "manual",
                          ".codex/hooks.cc-suite.json is a pending merge (the active hooks file is "
                          "user-owned) — the bridged hooks are NOT live yet",
                          manual="review and merge .codex/hooks.cc-suite.json into .codex/hooks.json"))
-    elif has_hooks:
+        return out
+    residue = " (leftover .codex/hooks.cc-suite.json — safe to delete)" if side.is_file() else ""
+    if hooks.is_file():
+        if primary is None or not isinstance(primary, dict):
+            out.append(check("codex_hooks", ".codex hooks", "issue",
+                             ".codex/hooks.json is invalid JSON — Codex hooks will not fire",
+                             auto=[f"python3 {script('bridge_hooks.py')}"]))
+        elif not bridge_owned:
+            if expected:
+                out.append(check("codex_hooks", ".codex hooks", "issue",
+                                 ".codex/hooks.json is user-owned (no cc-suite marker) and the "
+                                 f"Claude hooks {expected} are not bridged",
+                                 auto=[f"python3 {script('bridge_hooks.py')}"]))
+            else:
+                out.append(check("codex_hooks", ".codex hooks", "info",
+                                 "user-owned .codex/hooks.json — cc-suite has nothing to bridge "
+                                 "into it and will not overwrite it"))
+        else:
+            mirrored_obj = primary.get("hooks")
+            mirrored = sorted(mirrored_obj) if isinstance(mirrored_obj, dict) else None
+            if mirrored is None:
+                out.append(check("codex_hooks", ".codex hooks", "issue",
+                                 ".codex/hooks.json carries the cc-suite marker but has no hooks object",
+                                 auto=[f"python3 {script('bridge_hooks.py')}"]))
+            elif mirrored != expected:
+                out.append(check("codex_hooks", ".codex hooks", "issue",
+                                 f"bridged hooks are stale: Codex has {mirrored}, "
+                                 f".claude/settings.json now mirrors {expected}",
+                                 auto=[f"python3 {script('bridge_hooks.py')}"]))
+            else:
+                out.append(check("codex_hooks", ".codex hooks",
+                                 "info" if residue else "healthy",
+                                 f"bridged {mirrored}{residue}"))
+    elif expected:
         out.append(check("codex_hooks", ".codex hooks", "issue",
                          ".claude/settings.json has hooks but they are not bridged to Codex",
                          auto=[f"python3 {script('bridge_hooks.py')}"]))
+    elif has_hooks:
+        out.append(check("codex_hooks", ".codex hooks", "expected_absent",
+                         "no Codex-compatible hook events to bridge"))
     else:
         out.append(check("codex_hooks", ".codex hooks", "expected_absent", "no hooks to bridge"))
     return out
@@ -390,51 +459,155 @@ def _codex_name(name: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_-]+", "-", name).strip("-_") or "mcp-server"
 
 
-def _parse_codex_tables(config: str) -> dict[str, str | None]:
-    """Real [mcp_servers.*] table names → their recorded Claude MCP owner name
-    (from bridge_mcp.sh's `# Claude MCP name:` comment), or None. Mirrors the
-    parser in status.sh — a substring match would accept commented-out tables
-    and let normalized-name collisions mask a missing mirror."""
-    tables: dict[str, str | None] = {}
-    current = None
+def _parse_codex_tables(config: str) -> dict[str, dict]:
+    """Real `[mcp_servers.<name>]` tables → their parsed state:
+
+        owner   — the Claude MCP name recorded by bridge_mcp.sh's
+                  `# Claude MCP name:` comment, or None when absent.
+        managed — the table sits inside the cc-suite MCP sentinel block, so
+                  bridge_mcp.sh owns it and rewrites it on every run.
+        keys    — raw `key = value` text of the table's own keys. Sub-tables
+                  (`[mcp_servers.x.env]`) are separate tables and excluded.
+
+    Every table header resets the current table: without that, a later
+    `# Claude MCP name:` comment in an unrelated table would rewrite the
+    recorded owner of the preceding one. A substring match would additionally
+    accept commented-out tables and let normalized-name collisions mask a
+    missing mirror.
+    """
+    tables: dict[str, dict] = {}
+    current: dict | None = None
+    managed = False
     for line in config.splitlines():
-        m = re.match(r"^\[mcp_servers\.([a-zA-Z0-9_-]+)\]$", line.strip())
-        if m:
-            current = m.group(1)
-            tables.setdefault(current, None)
+        s = line.strip()
+        if s == MCP_SENTINEL_OPEN:
+            managed = True
             continue
-        if current is not None:
-            c = re.match(r"^# Claude MCP name: (.*)$", line)
-            if c:
-                tables[current] = c.group(1)
+        if s == MCP_SENTINEL_CLOSE:
+            managed = False
+            continue
+        if s.startswith("[") and s.endswith("]"):
+            m = re.match(r"^\[mcp_servers\.([a-zA-Z0-9_-]+)\]$", s)
+            current = (tables.setdefault(m.group(1),
+                                         {"owner": None, "managed": managed, "keys": {}})
+                       if m else None)
+            continue
+        if current is None:
+            continue
+        c = re.match(r"^# Claude MCP name: (.*)$", line)
+        if c:
+            current["owner"] = c.group(1)
+            continue
+        kv = re.match(r"^([A-Za-z0-9_-]+)[ \t]*=[ \t]*(.*)$", s)
+        if kv:
+            current["keys"].setdefault(kv.group(1), kv.group(2).strip())
     return tables
+
+
+# The same escaper bridge_mcp.sh writes with. A second implementation here
+# escaped only backslash and quote, so any control character in a command, arg
+# or url made this prediction differ from the file that was actually written —
+# and MCP parity reported a permanent problem that re-running never fixed.
+_qs = quote_string
+
+
+def _desired_codex_keys(cfg: object) -> dict[str, str] | None:
+    """The `key = value` lines bridge_mcp.sh emits for one .mcp.json server, or
+    None when it refuses to mirror the entry (unsupported transport, missing or
+    invalid field). Must stay in step with bridge_mcp.sh's `_toml_block` — env
+    values are deliberately not mirrored, so they are not compared either."""
+    if not isinstance(cfg, dict):
+        return None
+    transport = cfg.get("type", "stdio")
+    if transport == "stdio":
+        cmd = cfg.get("command")
+        if not cmd or not isinstance(cmd, str):
+            return None
+        args = cfg.get("args")
+        if args is not None and (
+            not isinstance(args, list) or not all(isinstance(a, str) for a in args)
+        ):
+            return None
+        env = cfg.get("env")
+        if env is None:
+            env = {}
+        if not isinstance(env, dict) or not all(isinstance(k, str) for k in env):
+            return None
+        keys = {"command": _qs(cmd)}
+        if args:
+            keys["args"] = "[" + ", ".join(_qs(a) for a in args) + "]"
+        return keys
+    if transport in ("sse", "http", "streamable_http"):
+        url = cfg.get("url")
+        if not url or not isinstance(url, str):
+            return None
+        token = cfg.get("bearer_token_env_var")
+        if token is not None and not isinstance(token, str):
+            return None
+        keys = {"url": _qs(url)}
+        if token:
+            keys["bearer_token_env_var"] = _qs(token)
+        return keys
+    return None
 
 
 def check_mcp_parity(enabled: list[str]) -> dict:
     if "codex" not in enabled:
         return check("mcp_parity", "MCP parity → Codex", "expected_absent", "Codex is not enabled")
-    doc = _load_json(ROOT / ".mcp.json")
-    raw = doc.get("mcpServers") if isinstance(doc, dict) else None
-    servers = [s for s in raw if s != "codex-cli"] if isinstance(raw, dict) else []
+    source, source_ok = _source_servers()
+    if not source_ok:
+        return check("mcp_parity", "MCP parity → Codex", "skipped",
+                     ".mcp.json is unreadable — the desired projection cannot be derived")
+    servers = {name: cfg for name, cfg in source.items() if name != "codex-cli"}
     if not servers:
         return check("mcp_parity", "MCP parity → Codex", "expected_absent",
                      "no additional project MCP servers to mirror")
     tables = _parse_codex_tables(_read(ROOT / ".codex/config.toml") or "")
 
-    def mirrored(name: str) -> bool:
-        codex_name = _codex_name(name)
-        if codex_name not in tables:
-            return False
-        owner = tables[codex_name]
+    def table_for(name: str) -> dict | None:
+        table = tables.get(_codex_name(name))
+        if table is None:
+            return None
+        owner = table["owner"]
         if owner is None:
-            return codex_name == name
-        return owner == name.replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n")
+            return table if _codex_name(name) == name else None
+        expected = name.replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n")
+        return table if owner == expected else None
 
-    missing = [s for s in servers if not mirrored(s)]
+    missing: list[str] = []
+    stale: list[str] = []
+    unmanaged: list[str] = []
+    for name, cfg in servers.items():
+        table = table_for(name)
+        if table is None:
+            missing.append(name)
+            continue
+        desired = _desired_codex_keys(cfg)
+        if desired is None:
+            # bridge_mcp.sh cannot mirror this entry at all, so whatever is in
+            # the config came from somewhere else — never call it fresh.
+            unmanaged.append(f"{name} (not mirrorable by cc-suite)")
+            continue
+        drift = sorted(k for k, v in desired.items() if table["keys"].get(k) != v)
+        if not drift:
+            continue
+        if table["managed"]:
+            stale.append(f"{name} ({', '.join(drift)})")
+        else:
+            unmanaged.append(f"{name} ({', '.join(drift)})")
+
+    problems = []
     if missing:
-        return check("mcp_parity", "MCP parity → Codex", "issue",
-                     f"not mirrored to .codex/config.toml: {', '.join(missing)}",
+        problems.append(f"not mirrored to .codex/config.toml: {', '.join(missing)}")
+    if stale:
+        problems.append(f"mirrored with stale values: {', '.join(stale)}")
+    if problems:
+        return check("mcp_parity", "MCP parity → Codex", "issue", "; ".join(problems),
                      auto=[f"bash {script('bridge_mcp.sh')}"])
+    if unmanaged:
+        return check("mcp_parity", "MCP parity → Codex", "info",
+                     f"{len(servers)} server(s) mirrored; user-declared table(s) differ from "
+                     f".mcp.json and are not cc-suite-managed: {', '.join(unmanaged)}")
     return check("mcp_parity", "MCP parity → Codex", "healthy", f"{len(servers)} server(s) mirrored")
 
 
@@ -448,37 +621,161 @@ def check_agy_cli(enabled: list[str]) -> dict:
                  manual="install Antigravity CLI: curl -fsSL https://antigravity.google/cli/install.sh | bash")
 
 
+def _desired_agy_servers(source: dict[str, object]) -> tuple[dict[str, dict], str | None]:
+    """The exact server map bridge_agy_mcp.py would write, plus a note when part
+    of it could not be derived. Built with that module's own translation and its
+    own delegation reservation so the comparison cannot drift from what the
+    bridge actually emits; its progress reporting is suppressed because this is a
+    read-only probe.
+
+    ReservedNameConflict propagates: in that state the bridge writes nothing at
+    all, so the caller has to report the conflict rather than per-server
+    differences against a projection that will never be made."""
+    desired: dict[str, dict] = {}
+    sink = io.StringIO()
+    # The bridge rejects bad input by exiting, so a read-only probe has to catch
+    # SystemExit as well as ordinary errors: a source it refuses is a note here,
+    # never a crash of the whole engine.
+    with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+        for name, cfg in source.items():
+            try:
+                translated = bridge_agy_mcp.translate_server(name, cfg)
+            except (Exception, SystemExit):  # noqa: BLE001
+                return desired, f"{name} could not be translated — projection not fully verified"
+            if translated is not None:
+                desired[name] = translated
+        try:
+            bridge_agy_mcp.apply_delegation_reservation(desired)
+        except bridge_agy_mcp.ReservedNameConflict:
+            raise
+        except (Exception, SystemExit):  # noqa: BLE001
+            return desired, "claude-octopus pin unreadable — claude-code delegation not verified"
+    return desired, None
+
+
 def check_agy_mcp(enabled: list[str]) -> dict:
     if "antigravity" not in enabled:
         return check("agy_mcp", ".agents/mcp_config.json", "expected_absent", "Antigravity is not enabled")
     target = ROOT / ".agents/mcp_config.json"
+    source, source_ok = _source_servers()
+    desired: dict[str, dict] = {}
+    note: str | None = None
+    if not source_ok:
+        note = ".mcp.json is unreadable — only provenance was verified"
+    else:
+        try:
+            desired, note = _desired_agy_servers(source)
+        except bridge_agy_mcp.ReservedNameConflict as exc:
+            # Judged before any target-state branch, and with no auto fix: while
+            # that name is taken the bridge refuses to write anything, so every
+            # `bash bridge_mcp.sh` offered below would loop on exit 2 while
+            # naming a symptom instead of the cause.
+            return check("agy_mcp", ".agents/mcp_config.json", "issue", str(exc),
+                         manual="rename the 'claude-code' server in .mcp.json — cc-suite "
+                                "reserves that name for agy → Claude delegation — then run "
+                                f"bash {script('bridge_mcp.sh')}")
     if not target.is_file():
+        if not source_ok:
+            # The bridge exits 2 on an unreadable .mcp.json, so it can never
+            # create this target. Naming the missing file and offering to run
+            # the bridge points at the symptom and hands over a button that
+            # loops — the cause was already computed one branch above.
+            return check("agy_mcp", ".agents/mcp_config.json", "issue",
+                         "missing, and .mcp.json is unreadable so the bridge cannot create it",
+                         manual="repair .mcp.json (it is not valid JSON), then run "
+                                f"bash {script('bridge_mcp.sh')}")
         return check("agy_mcp", ".agents/mcp_config.json", "issue",
                      "missing — agy cannot see the workspace MCP surface",
                      auto=[f"bash {script('bridge_mcp.sh')}"])
     prov_path = ROOT / ".agents/.cc-suite-mcp.provenance.json"
-    if prov_path.is_file():
-        doc = _load_json(target)
-        servers = doc.get("mcpServers") if isinstance(doc, dict) else None
-        if not isinstance(servers, dict):
-            return check("agy_mcp", ".agents/mcp_config.json", "issue",
-                         "target exists but is invalid (no mcpServers object)",
-                         auto=[f"bash {script('bridge_mcp.sh')}"])
-        prov = _load_json(prov_path)
-        managed = prov.get("managed_servers") if isinstance(prov, dict) else None
-        if not isinstance(managed, list) or not all(isinstance(n, str) for n in managed):
-            return check("agy_mcp", ".agents/mcp_config.json", "issue",
-                         "cc-suite provenance file is invalid",
-                         auto=[f"bash {script('bridge_mcp.sh')}"])
-        lost = sorted(set(managed) - set(servers))
-        if lost:
-            return check("agy_mcp", ".agents/mcp_config.json", "issue",
-                         f"managed server(s) missing from the config: {', '.join(lost)}",
-                         auto=[f"bash {script('bridge_mcp.sh')}"])
-        return check("agy_mcp", ".agents/mcp_config.json", "healthy",
-                     f"{len(servers)} server(s), cc-suite-managed")
-    return check("agy_mcp", ".agents/mcp_config.json", "info",
-                 "user-managed config — cc-suite will not overwrite it")
+    if not prov_path.is_file():
+        return check("agy_mcp", ".agents/mcp_config.json", "info",
+                     "user-managed config — cc-suite will not overwrite it")
+    doc = _load_json(target)
+    servers = doc.get("mcpServers") if isinstance(doc, dict) else None
+    if not isinstance(servers, dict):
+        return check("agy_mcp", ".agents/mcp_config.json", "issue",
+                     "target exists but is invalid (no mcpServers object)",
+                     auto=[f"bash {script('bridge_mcp.sh')}"])
+    prov = _load_json(prov_path)
+    managed = prov.get("managed_servers") if isinstance(prov, dict) else None
+    if not isinstance(managed, list) or not all(isinstance(n, str) for n in managed):
+        return check("agy_mcp", ".agents/mcp_config.json", "issue",
+                     "cc-suite provenance file is invalid",
+                     auto=[f"bash {script('bridge_mcp.sh')}"])
+    problems: list[str] = []
+    conflicting: list[str] = []
+    lost = sorted(set(managed) - set(servers))
+    if lost:
+        problems.append(f"managed server(s) missing from the config: {', '.join(lost)}")
+    if source_ok:
+        absent = sorted(n for n in desired if n not in servers)
+        stale = sorted(n for n in desired
+                       if n in servers and n in set(managed) and servers[n] != desired[n])
+        conflicting[:] = sorted(n for n in desired
+                                if n in servers and n not in set(managed) and servers[n] != desired[n])
+        if absent:
+            problems.append(f"not projected from .mcp.json: {', '.join(absent)}")
+        if stale:
+            problems.append(f"projected with stale values: {', '.join(stale)}")
+        if conflicting:
+            problems.append(
+                "user-owned entr(y/ies) shadow the desired projection "
+                f"(the bridge refuses to overwrite them): {', '.join(conflicting)}")
+    if problems:
+        if conflicting:
+            # bridge_agy_mcp.py refuses to write at all while a user-owned entry
+            # shadows the projection, so nothing here is auto-fixable — not even
+            # the absent/stale entries reported alongside it. Emitting an auto
+            # would also suppress this manual hint, which is the only actionable
+            # instruction (see commands/diagnose.md).
+            return check("agy_mcp", ".agents/mcp_config.json", "issue", "; ".join(problems),
+                         manual="remove or rename the user-owned entries first — the bridge "
+                                "refuses to overwrite them — then run "
+                                f"bash {script('bridge_mcp.sh')}")
+        return check("agy_mcp", ".agents/mcp_config.json", "issue", "; ".join(problems),
+                     auto=[f"bash {script('bridge_mcp.sh')}"])
+    detail = f"{len(servers)} server(s), cc-suite-managed"
+    if note:
+        return check("agy_mcp", ".agents/mcp_config.json", "info", f"{detail} — {note}")
+    return check("agy_mcp", ".agents/mcp_config.json", "healthy", detail)
+
+
+def _advisor_block_complete(name: str, body: str, pin: str | None) -> bool:
+    """A cc-suite advisor block is only real when it carries the registration
+    bridge_agents.py writes: the server's own table, the npx launcher, and the
+    pinned claude-octopus package."""
+    quoted = re.escape(name)
+    pkg = re.escape(f"claude-octopus@{pin}") if pin else "claude-octopus@"
+    return bool(
+        re.search(rf'(?m)^\[mcp_servers\.(?:{quoted}|"{quoted}")\]$', body)
+        and re.search(r'(?m)^command[ \t]*=[ \t]*"npx"[ \t]*$', body)
+        and re.search(rf"(?m)^args[ \t]*=.*{pkg}", body)
+    )
+
+
+def _codex_advisor_blocks(config: str, pin: str | None) -> dict[str, bool]:
+    """Advisor name → its managed Codex block is complete. Parsing the sentinel
+    pair (rather than testing for the opening marker as a substring) is what
+    makes a commented-out, truncated, or unclosed block fail instead of pass."""
+    blocks: dict[str, bool] = {}
+    name: str | None = None
+    body: list[str] = []
+    for line in config.splitlines():
+        s = line.rstrip()
+        if s.startswith(bridge_agents.SENTINEL_OPEN) and s.endswith(">>>"):
+            name = s[len(bridge_agents.SENTINEL_OPEN):-len(">>>")].strip()
+            body = []
+            continue
+        if name is not None and s.startswith(bridge_agents.SENTINEL_CLOSE) and s.endswith("<<<"):
+            if s[len(bridge_agents.SENTINEL_CLOSE):-len("<<<")].strip() == name:
+                blocks[name] = _advisor_block_complete(name, "\n".join(body), pin)
+            name = None
+            body = []
+            continue
+        if name is not None:
+            body.append(s)
+    return blocks
 
 
 def check_advisors(enabled: list[str]) -> dict:
@@ -495,7 +792,7 @@ def check_advisors(enabled: list[str]) -> dict:
     for f in declared_files:
         try:
             declared.add(str(bridge_agents.parse_agent_file(f)["name"]))
-        except Exception:  # noqa: BLE001 — a broken advisor file is a finding, not a crash
+        except BaseException:  # noqa: BLE001 — a broken advisor file is a finding, not a crash
             unparseable.append(f.name)
     doc = _load_json(ROOT / ".mcp.json")
     registered = set()
@@ -511,10 +808,15 @@ def check_advisors(enabled: list[str]) -> dict:
         problems.append(f"registered but no longer declared: {', '.join(sorted(registered - declared))}")
     if "codex" in enabled:
         config = _read(ROOT / ".codex/config.toml") or ""
-        missing_codex = sorted(n for n in declared
-                               if f"# >>> cc-suite-agent: {n} >>>" not in config)
+        pin = expected_pin()
+        projected = _codex_advisor_blocks(config, pin)
+        missing_codex = sorted(n for n in declared if n not in projected)
+        incomplete = sorted(n for n in declared if projected.get(n) is False)
         if missing_codex:
             problems.append(f"not projected to Codex: {', '.join(missing_codex)}")
+        if incomplete:
+            problems.append("Codex projection is incomplete or stale (table, npx command, or "
+                            f"claude-octopus@{pin or '?'} args missing): {', '.join(incomplete)}")
     if not problems:
         return check("advisors", ".cc-suite/agents", "healthy",
                      f"{len(declared)} advisor(s) declared and registered")
@@ -529,16 +831,47 @@ def _gitignore_schema_marker() -> str | None:
     return m.group(1) if m else None
 
 
-def _gitignore_required_lines() -> list[str]:
-    """Entries every cc-suite block must carry, single-sourced from the first
-    (unconditional) heredoc in ensure_gitignore.sh — the mode-specific extras
-    written later are optional and not required here."""
+PRIVATE_MODE_MARKER = "cc-suite: PRIVATE mode"
+PLUGIN_SCAFFOLD_MARKER = "cc-suite: plugin repo — these are consumer-workspace scaffolds"
+
+
+def _gitignore_sections() -> tuple[list[str], list[dict]] | None:
+    """(entries every block must carry, optional sections), single-sourced from
+    ensure_gitignore.sh's heredocs.
+
+    The unconditional block is the heredoc emitted right after the schema
+    marker; every later heredoc is conditional. Sections are identified by
+    their own marker comments rather than by ordinal position, so adding or
+    reordering a conditional block cannot silently remap the requirements.
+
+    Returns None when the base block cannot be located — an unreadable schema
+    must fail loudly, not come back empty and let any .gitignore pass.
+    """
     text = _read(PLUGIN_ROOT / "scripts/ensure_gitignore.sh") or ""
-    m = re.search(r"(?ms)^\s*cat <<'GI'\n(.*?)^GI$", text)
-    if not m:
-        return []
-    return [ln.strip() for ln in m.group(1).splitlines()
-            if ln.strip() and not ln.strip().startswith("#")]
+    anchor = text.find('echo "$SCHEMA_MARKER"')
+    if anchor == -1:
+        return None
+    bodies = [m for m in re.finditer(r"(?ms)^[ \t]*cat <<'GI'\n(.*?)^GI$", text)
+              if m.start() > anchor]
+    if not bodies:
+        return None
+
+    def entries(body: str) -> list[str]:
+        return [ln.strip() for ln in body.splitlines()
+                if ln.strip() and not ln.strip().startswith("#")]
+
+    base = entries(bodies[0].group(1))
+    optional = []
+    for m in bodies[1:]:
+        body = m.group(1)
+        first = next((ln.strip() for ln in body.splitlines() if ln.strip()), "")
+        optional.append({
+            "anchor": first,
+            "entries": entries(body),
+            "private": PRIVATE_MODE_MARKER in body,
+            "plugin_repo": PLUGIN_SCAFFOLD_MARKER in body,
+        })
+    return base, optional
 
 
 def check_gitignore() -> dict:
@@ -560,23 +893,65 @@ def check_gitignore() -> dict:
         return check("gitignore", ".gitignore", "issue",
                      "cc-suite block is at an old schema",
                      auto=[f"bash {script('init.sh')}"])
-    missing = [ln for ln in _gitignore_required_lines() if ln not in block]
+    schema = _gitignore_sections()
+    if schema is None:
+        return check("gitignore", ".gitignore", "issue",
+                     "cannot read the required entries out of the plugin's ensure_gitignore.sh — "
+                     "the block's contents were NOT validated",
+                     manual="reinstall or update the cc-suite plugin, then re-run diagnose")
+    base, optional = schema
+    private = PRIVATE_MODE_MARKER in block
+    plugin_repo = ((ROOT / ".claude-plugin/plugin.json").is_file()
+                   or (ROOT / ".codex-plugin/plugin.json").is_file())
+    required = list(base)
+    for section in optional:
+        # Mirror ensure_gitignore.sh's mode guards for the sections it labels,
+        # and require any other conditional section to be complete once its
+        # marker shows the script did emit it here.
+        applies = (section["private"] and private) \
+            or (section["plugin_repo"] and plugin_repo and not private) \
+            or (section["anchor"] and section["anchor"] in block)
+        if applies:
+            required += section["entries"]
+    # Compare whole lines: `.agents/` is a substring of `.agents/skills`, so a
+    # substring test would report a missing private-mode entry as present.
+    have = {ln.strip() for ln in block.splitlines()}
+    missing = list(dict.fromkeys(ln for ln in required if ln not in have))
     if missing:
         return check("gitignore", ".gitignore", "issue",
                      f"cc-suite block is missing required entries: {', '.join(missing)}",
-                     auto=[f"bash {script('init.sh')}"])
-    return check("gitignore", ".gitignore", "healthy", "has current cc-suite block")
+                     auto=[f"bash {script('init.sh')}"],
+                     manual="if the entries are still missing afterwards, delete the whole "
+                            "`# >>> cc-suite >>>` … `# <<< cc-suite <<<` block and re-run init "
+                            "(a block already at the current schema is not rewritten)")
+    mode = "private" if private else "public"
+    return check("gitignore", ".gitignore", "healthy", f"has current cc-suite block ({mode} mode)")
 
 
-def check_registry_tools() -> list[dict]:
+def check_registry_tools(enabled: list[str]) -> list[dict]:
+    registry_tools = [t for t in enabled
+                      if bridge_tools.PROFILES.get(t, {}).get("bridged_by") == "registry"]
     try:
         proc = subprocess.run(
             [sys.executable, str(SCRIPT_DIR / "bridge_tools.py"), "--health"],
             capture_output=True, text=True, timeout=30, cwd=ROOT,
         )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"exit {proc.returncode}: {(proc.stderr or proc.stdout).strip()[:200]}")
         report = json.loads(proc.stdout)
+        if not isinstance(report, dict) or not isinstance(report.get("tools"), list):
+            raise ValueError("health probe produced no tool report")
     except Exception as exc:  # noqa: BLE001
-        return [check("registry_tools", "extra tools", "skipped", f"health probe failed: {exc}")]
+        # A probe that did not run has verified nothing: with registry-backed
+        # tools enabled that is an unchecked surface, not a skippable one.
+        if not registry_tools:
+            return [check("registry_tools", "extra tools", "skipped", f"health probe failed: {exc}")]
+        return [check("registry_tools", "extra tools", "issue",
+                      f"health probe failed ({exc}) — enabled tool(s) "
+                      f"{', '.join(registry_tools)} were NOT checked",
+                      manual=f"run `{sys.executable} {script('bridge_tools.py')} --health` in this "
+                             "project and fix what it reports")]
     out = []
     for tool in report.get("tools", []):
         cid = f"tool_{tool['id']}"
@@ -586,6 +961,34 @@ def check_registry_tools() -> list[dict]:
             out.append(check(cid, tool["display_name"], "issue", "; ".join(tool["problems"]),
                              auto=[f"python3 {script('bridge_tools.py')}"]))
     return out
+
+
+def plugin_hooks_enabled(config_text: str) -> bool:
+    """True when `[features] plugin_hooks = true` is in effect in a Codex config.
+
+    Parsed with tomllib so valid spellings the fixer accepts (leading whitespace,
+    trailing comments, key order) are not misdiagnosed; the line scan is only the
+    pre-3.11 fallback. Shared with status.sh so the two readouts cannot disagree.
+    """
+    try:
+        import tomllib
+        parsed = tomllib.loads(config_text)
+    except ModuleNotFoundError:
+        # No tomllib (pre-3.11): tolerate the header/assignment spellings TOML
+        # allows — internal whitespace and trailing comments — instead of the
+        # exact-match scan that misdiagnosed valid configs the fixer accepts.
+        in_features = False
+        for line in config_text.splitlines():
+            s = line.strip()
+            if s.startswith("["):
+                in_features = bool(re.match(r"^\[\s*features\s*\]\s*(?:#.*)?$", s))
+            elif in_features and re.match(r"^plugin_hooks\s*=\s*true\s*(?:#.*)?$", s):
+                return True
+        return False
+    except Exception:  # noqa: BLE001 — invalid TOML means the flag is not in effect
+        return False
+    features = parsed.get("features")
+    return isinstance(features, dict) and features.get("plugin_hooks") is True
 
 
 def check_codex_runtime(enabled: list[str]) -> list[dict]:
@@ -624,29 +1027,7 @@ def check_codex_runtime(enabled: list[str]) -> list[dict]:
                          "not trusted — hooks, rules, and .codex/config.toml are inert",
                          manual="run `codex` once in this directory and accept the trust prompt"))
 
-    # Parse with tomllib so valid headers the fixer accepts (leading whitespace,
-    # trailing comments) are not misdiagnosed. Line scan only as pre-3.11 fallback.
-    hooks_on = False
-    try:
-        import tomllib
-        parsed = tomllib.loads(text)
-        features = parsed.get("features")
-        hooks_on = isinstance(features, dict) and features.get("plugin_hooks") is True
-    except ModuleNotFoundError:
-        # No tomllib (pre-3.11): tolerate the header/assignment spellings TOML
-        # allows — internal whitespace and trailing comments — instead of the
-        # exact-match scan that misdiagnosed valid configs the fixer accepts.
-        in_features = False
-        for line in text.splitlines():
-            s = line.strip()
-            if s.startswith("["):
-                in_features = bool(re.match(r"^\[\s*features\s*\]\s*(?:#.*)?$", s))
-            elif in_features and re.match(r"^plugin_hooks\s*=\s*true\s*(?:#.*)?$", s):
-                hooks_on = True
-                break
-    except Exception:  # noqa: BLE001 — invalid TOML means the flag is not in effect
-        hooks_on = False
-    if hooks_on:
+    if plugin_hooks_enabled(text):
         out.append(check("plugin_hooks", "plugin_hooks", "healthy", "enabled in ~/.codex/config.toml"))
     else:
         out.append(check("plugin_hooks", "plugin_hooks", "issue",
@@ -763,7 +1144,7 @@ def run(run_preflight: bool = True, boot_test: bool = False) -> dict:
     checks.append(check_agy_mcp(enabled))
     checks.append(check_advisors(enabled))
     checks.append(check_gitignore())
-    checks.extend(check_registry_tools())
+    checks.extend(check_registry_tools(enabled))
     checks.extend(check_codex_runtime(enabled))
     checks.append(check_model_pin(run_preflight))
     if boot_test:
