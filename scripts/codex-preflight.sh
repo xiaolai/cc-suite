@@ -418,10 +418,17 @@ done
 
 # ── Step 5: Check Codex Cloud availability ───────────────────────────────────
 
+# `codex cloud` writes an `error.log` into its working directory on every run,
+# success included, and that file carries the ChatGPT account id. `-C` does not
+# relocate it (verified on codex-cli 0.152.0) — only the real cwd does — so the
+# probe runs from a private temp dir that is removed right after. Without this
+# the preflight leaves the account id behind in every project it checks.
 CODEX_CLOUD="false"
-if run_with_timeout "$CLOUD_TIMEOUT" codex cloud list </dev/null &>/dev/null; then
+CLOUD_PROBE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cc-suite-codex-cloud-probe.XXXXXX")"
+if (cd "$CLOUD_PROBE_DIR" && run_with_timeout "$CLOUD_TIMEOUT" codex cloud list </dev/null &>/dev/null); then
   CODEX_CLOUD="true"
 fi
+rm -rf "$CLOUD_PROBE_DIR"
 
 # ── Step 6: Output JSON ─────────────────────────────────────────────────────
 

@@ -1815,6 +1815,42 @@ else fail_msg "expected 1 billable codex exec call across three runs, got $calls
 
 cleanup
 
+# ══════════ T54e  codex-preflight.sh — cloud probe never litters the project ═
+# `codex cloud list` writes an error.log carrying the ChatGPT account id into
+# its working directory on every run, and `-C` does not relocate it. The probe
+# must run from a private temp dir that is gone by the time the script exits;
+# otherwise the preflight leaves the account id in every project it checks.
+section "T54e: codex-preflight.sh — cloud probe runs from a temp dir and cleans up"
+make_tmp
+
+mkdir -p bin home/.codex cache tmp
+cat > bin/codex <<'CODEX'
+#!/usr/bin/env bash
+case "$*" in
+  "--version") echo "codex-cli 0.152.0" ;;
+  "login status") echo "Logged in with ChatGPT" ;;
+  "cloud list") printf 'auth: mode=ChatGPT account_id=acct-secret\n' > "$PWD/error.log"; exit 0 ;;
+  *) exit 1 ;;
+esac
+CODEX
+chmod +x bin/codex
+printf '{"models":[{"slug":"gpt-5.6-sol","display_name":"GPT-5.6-Sol","description":"Latest frontier agentic coding model","priority":1,"supported_reasoning_levels":[{"effort":"medium"}]}]}\n' \
+  > home/.codex/models_cache.json
+
+PYTHON_BIN_DIR="$(dirname "$(command -v python3)")"
+out="$(env HOME="$PWD/home" XDG_CACHE_HOME="$PWD/cache" CODEX_PREFLIGHT_NO_CACHE=1 TMPDIR="$PWD/tmp" \
+  PATH="$PWD/bin:$PYTHON_BIN_DIR:/usr/bin:/bin" bash "$SCRIPTS/codex-preflight.sh" 2>/dev/null)"
+printf '%s' "$out" > preflight.json
+
+assert_contains "preflight.json" '"codex_cloud":true'
+assert_no_file "error.log"
+# The probe dir — and the error.log inside it — must not outlive the script.
+leftover="$(find tmp -mindepth 1 | wc -l | tr -d ' ')"
+if [ "$leftover" = "0" ]; then ok_msg "cloud probe left nothing under TMPDIR"
+else fail_msg "cloud probe left $leftover entries under TMPDIR: $(find tmp -mindepth 1 | tr '\n' ' ')"; fi
+
+cleanup
+
 # ══════════ T54c  unbridge.sh — sentinel stripping never corrupts config.toml ═
 # Marker spans are resolved against the original text and removed right to left.
 # Computing them per iteration against already-mutated text let one block's
