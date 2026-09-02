@@ -1,6 +1,6 @@
 {
   "name": "cc-suite",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "One plugin to bridge and delegate across Claude Code, Codex CLI, and Antigravity CLI (agy) \u2014 single-source AGENTS.md, shared skills, mirrored hooks and MCP servers, and bidirectional delegation \u2014 plus Grok delegation and bounded Qwen review.",
   "author": {
     "name": "xiaolai"
