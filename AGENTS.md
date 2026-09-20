@@ -18,7 +18,7 @@ description: "Project instructions for cc-suite — the Claude Code plugin that 
 ## Prerequisites
 
 - **Claude Code** (≥ 2.0) — primary host for all commands and skills
-- **Codex CLI** (optional) — required for the `codex-cli` MCP delegation lane and `bridge_hooks.py`
+- **Codex CLI** (optional) — required for the Claude→Codex delegation lane (`codex exec`) and `bridge_hooks.py`
 - **Python 3** — required by `scripts/bridge_hooks.py`, MCP projections, and migration helpers
 - **Antigravity CLI (`agy`)** (optional) — required for the Google backend, `/cc-suite:agy-preflight`, and headless agy delegation
 - **Grok Build (`grok`, xAI)** (optional) — required for the Claude→Grok ACP delegation lane (`/cc-suite:grok`) and `/cc-suite:grok-preflight`
@@ -97,7 +97,7 @@ Delegation lanes:
 
 | Lane | Mechanism | Preflight |
 |------|-----------|-----------|
-| Claude → Codex | `codex-runner.mjs` (`codex exec`) + `codex-cli` MCP server | `/cc-suite:codex-preflight` (`codex-preflight.sh`) |
+| Claude → Codex | `codex-runner.mjs` (`codex exec`) | `/cc-suite:codex-preflight` (`codex-preflight.sh`) |
 | Codex / agy → Claude | pinned `claude-octopus` MCP server (also exposes `claude_code_sessions` / `_transcript`) | — |
 | Claude → agy | `agy-runner.mjs` (`agy -p`, conversation recovered by dir-diff) | `/cc-suite:agy-preflight` (`agy-preflight.sh`) |
 | Claude → Grok | `grok-runner.mjs` — ACP client driving `grok agent stdio` (`initialize` → `session/new`/`load` → `session/prompt`); `threadId` is the ACP session id | `/cc-suite:grok-preflight` (`grok-preflight.sh`, fast/local) |

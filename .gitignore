@@ -4,7 +4,7 @@
 *.pyc
 
 # >>> cc-suite >>>
-# cc-suite-schema: 7
+# cc-suite-schema: 8
 # AI assistant local state
 .claude/settings.local.json
 .claude/CLAUDE.local.md
@@ -41,10 +41,10 @@ CLAUDE.local.md
 # per-run working state (findings + fix statuses), not authored content.
 .cc-suite/audits/
 
-# cc-suite: plugin repo — keep the dev-only Codex MCP registration out of the
-# published plugin. Claude Code auto-registers a plugin-root .mcp.json, which
-# would start `codex mcp-server` for every installer. Local dev use is fine;
-# the file just stays untracked.
+# cc-suite: plugin repo — keep dev-only MCP registrations out of the
+# published plugin. Claude Code auto-registers a plugin-root .mcp.json, so its
+# dev-only servers would load for every installer. Local dev use is fine; the
+# file just stays untracked.
 .mcp.json
 
 # cc-suite: plugin repo — these are consumer-workspace scaffolds created when

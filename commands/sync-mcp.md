@@ -21,8 +21,9 @@ historical command name.
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_mcp.sh"
 ```
 
-The script skips `codex-cli` only in Codex's own config; agy may use it to call
-Codex. It also adds the pinned `claude-code` server to agy's projection so agy
+The script never projects a `codex-cli` entry into Codex's own config — that
+would point Codex at itself. cc-suite no longer writes one (see
+`prune_codex_mcp.sh`); a hand-written entry is still mirrored to agy. It also adds the pinned `claude-code` server to agy's projection so agy
 can call Claude. It normalizes Claude server names only in the Codex projection to
 Codex's `^[a-zA-Z0-9_-]+$` grammar and
 converts remote `url`/`httpUrl` fields to agy's `serverUrl`. Secret values are

@@ -74,7 +74,7 @@ Run the idempotent bridge sequence:
 ```bash
 bash    "${CLAUDE_PLUGIN_ROOT}/scripts/init.sh"
 bash    "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_skills.sh"
-bash    "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_codex.sh"
+bash    "${CLAUDE_PLUGIN_ROOT}/scripts/prune_codex_mcp.sh"
 bash    "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_claude.sh"
 bash    "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_mcp.sh"
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_hooks.py"

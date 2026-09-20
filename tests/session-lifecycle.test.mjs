@@ -195,3 +195,99 @@ test("SessionEnd does not signal a live PID recorded without process identity", 
     cleanupDir(workspace);
   }
 });
+
+// ─── SessionStart: prune the dead codex-cli MCP registration ─────────────────
+// cc-suite ≤2.0.1 registered `codex mcp-server` as `codex-cli` in .mcp.json.
+// That subcommand no longer exists in Codex CLI, so Claude Code reports a failed
+// MCP connection every session until the entry is gone. The SessionStart hook is
+// what heals projects that were bridged by an older version, so it is tested
+// here rather than left to the plugin's own upgrade path.
+const PLUGIN_ROOT = fileURLToPath(new URL("..", import.meta.url));
+
+function runSessionStart(workspace) {
+  return spawnSync(process.execPath, [HOOK, "SessionStart"], {
+    cwd: workspace,
+    input: JSON.stringify({
+      hook_event_name: "SessionStart",
+      cwd: workspace,
+      session_id: "sess-start",
+    }),
+    encoding: "utf8",
+    env: { ...process.env, CLAUDE_PLUGIN_ROOT: PLUGIN_ROOT },
+  });
+}
+
+const DEAD_ENTRY = { type: "stdio", command: "codex", args: ["mcp-server"] };
+
+function writeMcpJson(workspace, servers) {
+  fs.writeFileSync(
+    path.join(workspace, ".mcp.json"),
+    JSON.stringify({ mcpServers: servers }, null, 2) + "\n"
+  );
+}
+
+function readMcpJson(workspace) {
+  return JSON.parse(fs.readFileSync(path.join(workspace, ".mcp.json"), "utf8"));
+}
+
+test("SessionStart removes the dead codex-cli entry and keeps other servers", () => {
+  const workspace = makeTempDir();
+  try {
+    writeMcpJson(workspace, {
+      "codex-cli": DEAD_ENTRY,
+      keep: { type: "stdio", command: "cmd" },
+    });
+    const result = runSessionStart(workspace);
+    assert.equal(result.status, 0, result.stderr);
+    const doc = readMcpJson(workspace);
+    assert.deepEqual(Object.keys(doc.mcpServers), ["keep"]);
+    // The removal only reaches Claude Code next session, so it must say so.
+    assert.match(JSON.parse(result.stdout).systemMessage, /Restart Claude Code/);
+  } finally {
+    cleanupDir(workspace);
+  }
+});
+
+test("SessionStart deletes a .mcp.json that held only the dead entry", () => {
+  const workspace = makeTempDir();
+  try {
+    writeMcpJson(workspace, { "codex-cli": DEAD_ENTRY });
+    assert.equal(runSessionStart(workspace).status, 0);
+    assert.equal(fs.existsSync(path.join(workspace, ".mcp.json")), false);
+    // Nothing left to do, and nothing to announce.
+    const again = runSessionStart(workspace);
+    assert.equal(again.status, 0);
+    assert.equal(again.stdout, "");
+  } finally {
+    cleanupDir(workspace);
+  }
+});
+
+test("SessionStart leaves a codex-cli entry cc-suite did not write alone", () => {
+  const workspace = makeTempDir();
+  try {
+    const mine = { type: "stdio", command: "my-codex-wrapper", args: ["serve"] };
+    writeMcpJson(workspace, { "codex-cli": mine });
+    const result = runSessionStart(workspace);
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(readMcpJson(workspace).mcpServers["codex-cli"], mine);
+    // No removal happened, so claiming one would be a lie.
+    assert.equal(result.stdout, "");
+  } finally {
+    cleanupDir(workspace);
+  }
+});
+
+test("SessionStart leaves an unparseable .mcp.json untouched", () => {
+  const workspace = makeTempDir();
+  try {
+    const mcpPath = path.join(workspace, ".mcp.json");
+    fs.writeFileSync(mcpPath, "{not json");
+    const result = runSessionStart(workspace);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(fs.readFileSync(mcpPath, "utf8"), "{not json");
+    assert.equal(result.stdout, "");
+  } finally {
+    cleanupDir(workspace);
+  }
+});

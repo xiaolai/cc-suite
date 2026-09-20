@@ -42,7 +42,7 @@ Use this template:
 |--------|--------|
 | {server-name} | mirrored |
 | {server-name} | already present (skipped) |
-| codex-cli | available to agy; skipped in Codex's own config |
+| codex-cli | skipped in Codex's own config (cc-suite writes no such entry; a hand-written one still reaches agy) |
 ```
 
 Success criterion: script exits 0 and the source servers appear in both target

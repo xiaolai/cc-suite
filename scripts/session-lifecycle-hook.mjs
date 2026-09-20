@@ -160,57 +160,57 @@ function cleanupSessionJobs(cwd, sessionId) {
   });
 }
 
-function isLegacyNpmCodexRegistration(entry) {
-  return (
-    entry &&
-    typeof entry === "object" &&
-    entry.command === "npx" &&
-    Array.isArray(entry.args) &&
-    entry.args.some(
-      (arg) => typeof arg === "string" && arg.includes("codex-mcp-server")
-    )
-  );
+// Does .mcp.json carry a `codex-cli` key at all? Deliberately shallow: which
+// shapes are cc-suite's own dead registration is decided in ONE place,
+// scripts/lib/codex_mcp_entry.py, which prune_codex_mcp.sh consults. A second
+// copy of that predicate here is how the two drift apart.
+function hasCodexCliEntry(mcpPath) {
+  try {
+    const data = JSON.parse(fs.readFileSync(mcpPath, "utf8"));
+    return Boolean(data?.mcpServers && typeof data.mcpServers === "object"
+      && "codex-cli" in data.mcpServers);
+  } catch {
+    return false; // missing or invalid JSON — prune_codex_mcp.sh leaves it alone too
+  }
 }
 
-// Detect a stale codex-cli registration written by an older cc-suite (≤0.2.12)
-// and migrate it via mcp_codex.sh. The migration takes effect on the next
-// session — surface a one-line systemMessage via JSON stdout (the documented
-// SessionStart channel) so the user knows to restart.
-function migrateStaleCodexCliRegistration(cwd) {
+// Remove the dead `codex-cli` registration an older cc-suite (≤2.0.1) wrote
+// into .mcp.json. `codex mcp-server` no longer exists, so Claude Code reports a
+// failed MCP connection every session until it is gone. Self-heal on
+// SessionStart, then surface a one-line systemMessage via JSON stdout (the
+// documented SessionStart channel) because the removal only reaches Claude Code
+// on its next session.
+function pruneDeadCodexCliRegistration(cwd) {
   if (!cwd) return;
   // Registration lives at the workspace root; a SessionStart from a repository
   // subdirectory would otherwise silently miss it (job cleanup already
   // resolves the root, so this kept the two paths inconsistent).
   const workspaceRoot = resolveWorkspaceRoot(cwd);
   const mcpPath = path.join(workspaceRoot, ".mcp.json");
-  if (!fs.existsSync(mcpPath)) return;
-
-  let data;
-  try {
-    data = JSON.parse(fs.readFileSync(mcpPath, "utf8"));
-  } catch {
-    return; // invalid JSON — leave it alone
-  }
-  const entry = data?.mcpServers?.["codex-cli"];
-  if (!isLegacyNpmCodexRegistration(entry)) return;
+  if (!fs.existsSync(mcpPath) || !hasCodexCliEntry(mcpPath)) return;
 
   const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
   if (!pluginRoot) return;
-  const scriptPath = path.join(pluginRoot, "scripts", "mcp_codex.sh");
+  const scriptPath = path.join(pluginRoot, "scripts", "prune_codex_mcp.sh");
   if (!fs.existsSync(scriptPath)) return;
 
-  const result = spawnSync("bash", [scriptPath], {
+  spawnSync("bash", [scriptPath], {
     cwd: workspaceRoot,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
-  if (result.status === 0) {
+
+  // Announce only what actually happened: the script preserves a `codex-cli`
+  // entry cc-suite did not write, and an exit status alone cannot tell that
+  // apart from a removal. Re-read instead of trusting it.
+  const removed = !fs.existsSync(mcpPath) || !hasCodexCliEntry(mcpPath);
+  if (removed) {
     // SessionStart JSON output schema: `systemMessage` surfaces in the
     // Claude Code transcript. See https://code.claude.com/docs/en/hooks.md
     process.stdout.write(
       JSON.stringify({
         systemMessage:
-          "cc-suite: migrated stale Codex MCP registration in .mcp.json — restart Claude Code to load the new server.",
+          "cc-suite: removed the dead codex-cli MCP registration from .mcp.json (`codex mcp-server` no longer exists in Codex CLI). Restart Claude Code to clear the failed MCP connection.",
       }) + "\n"
     );
   }
@@ -219,7 +219,7 @@ function migrateStaleCodexCliRegistration(cwd) {
 function handleSessionStart(input) {
   appendEnvVar(SESSION_ID_ENV, input.session_id);
   appendEnvVar(PLUGIN_DATA_ENV, process.env[PLUGIN_DATA_ENV]);
-  migrateStaleCodexCliRegistration(input.cwd || process.cwd());
+  pruneDeadCodexCliRegistration(input.cwd || process.cwd());
 }
 
 function handleSessionEnd(input) {

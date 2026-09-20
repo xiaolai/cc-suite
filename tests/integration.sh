@@ -572,63 +572,87 @@ else                              fail_msg "SKILL.md changed on re-run"; fi
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# T21  mcp_codex.sh — adds codex-cli to .mcp.json
+# T21  prune_codex_mcp.sh — removes the dead codex-cli entry, keeps the rest
 # ═══════════════════════════════════════════════════════════════════════════════
-section "T21: mcp_codex.sh — adds codex-cli server"
+# `codex mcp-server` no longer exists in Codex CLI, so the entry cc-suite ≤2.0.1
+# wrote is a server Claude Code fails to start every session. It is removed, not
+# migrated: delegation runs `codex exec` through codex-runner.mjs.
+section "T21: prune_codex_mcp.sh — removes the dead codex-cli server"
 make_tmp
 
 cat > .mcp.json <<'JSON'
-{"mcpServers": {"other": {"type": "stdio", "command": "cmd"}}}
+{"mcpServers": {"codex-cli": {"type": "stdio", "command": "codex", "args": ["mcp-server"]}, "other": {"type": "stdio", "command": "cmd"}}}
 JSON
 
-assert_exit0 bash "$SCRIPTS/mcp_codex.sh"
+assert_exit0 bash "$SCRIPTS/prune_codex_mcp.sh"
 
-assert_contains ".mcp.json" '"codex-cli"'
-assert_contains ".mcp.json" '"other"'    # original preserved
+assert_not_contains ".mcp.json" '"codex-cli"'
+assert_not_contains ".mcp.json" 'mcp-server'
+assert_contains     ".mcp.json" '"other"'    # unrelated servers preserved
 
-cleanup
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# T22  mcp_codex.sh — idempotent when codex-cli already registered
-# ═══════════════════════════════════════════════════════════════════════════════
-section "T22: mcp_codex.sh — idempotent"
-make_tmp
-
-cat > .mcp.json <<'JSON'
-{"mcpServers": {"codex-cli": {"type": "stdio", "command": "codex", "args": ["mcp-server"]}}}
-JSON
+# Second run has nothing to do and must not touch the file.
 hash1="$(md5 -q .mcp.json 2>/dev/null || md5sum .mcp.json | awk '{print $1}')"
-
-assert_exit0 bash "$SCRIPTS/mcp_codex.sh"
+assert_exit0 bash "$SCRIPTS/prune_codex_mcp.sh"
 hash2="$(md5 -q .mcp.json 2>/dev/null || md5sum .mcp.json | awk '{print $1}')"
-
 if [ "$hash1" = "$hash2" ]; then ok_msg ".mcp.json unchanged on re-run"
 else                              fail_msg ".mcp.json changed on re-run"; fi
 
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# T22b mcp_codex.sh — migrates a stale codex-cli entry to the canonical definition
+# T22  prune_codex_mcp.sh — a file holding only the dead entry is removed
 # ═══════════════════════════════════════════════════════════════════════════════
-section "T22b: mcp_codex.sh — migrates stale codex-cli entry"
+section "T22: prune_codex_mcp.sh — drops a .mcp.json that held only codex-cli"
 make_tmp
 
 cat > .mcp.json <<'JSON'
-{"mcpServers": {"codex-cli": {"type": "stdio", "command": "npx", "args": ["-y", "codex-mcp-server@1.4.10"]}, "keep": {"type": "stdio", "command": "cmd"}}}
+{"mcpServers": {"codex-cli": {"type": "stdio", "command": "codex", "args": ["mcp-server"]}}}
 JSON
 
-assert_exit0 bash "$SCRIPTS/mcp_codex.sh"
+assert_exit0 bash "$SCRIPTS/prune_codex_mcp.sh"
+assert_no_file ".mcp.json"
 
-assert_contains     ".mcp.json" '"mcp-server"'      # migrated to the built-in server
-assert_not_contains ".mcp.json" 'codex-mcp-server'  # stale npm reference removed
-assert_contains     ".mcp.json" '"keep"'            # other servers preserved
+# No .mcp.json at all is the normal post-2.1.0 state, not an error.
+assert_exit0 bash "$SCRIPTS/prune_codex_mcp.sh"
 
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# T22c status.sh — flags a stale codex-cli entry with !
+# T22b prune_codex_mcp.sh — legacy npm shape, foreign entry, unparseable file
 # ═══════════════════════════════════════════════════════════════════════════════
-section "T22c: status.sh — flags stale codex-cli entry"
+section "T22b: prune_codex_mcp.sh — legacy npm removed, foreign entry kept"
+make_tmp
+
+# The npm-based registration written by cc-suite ≤0.2.12 is equally dead.
+cat > .mcp.json <<'JSON'
+{"mcpServers": {"codex-cli": {"type": "stdio", "command": "npx", "args": ["-y", "codex-mcp-server@1.4.10"]}, "keep": {"type": "stdio", "command": "cmd"}}}
+JSON
+assert_exit0 bash "$SCRIPTS/prune_codex_mcp.sh"
+assert_not_contains ".mcp.json" 'codex-mcp-server'
+assert_not_contains ".mcp.json" '"codex-cli"'
+assert_contains     ".mcp.json" '"keep"'
+
+# A codex-cli entry cc-suite did not write is the user's own server: keep it.
+cat > .mcp.json <<'JSON'
+{"mcpServers": {"codex-cli": {"type": "stdio", "command": "my-codex-wrapper", "args": ["serve"]}}}
+JSON
+assert_exit0 bash "$SCRIPTS/prune_codex_mcp.sh"
+assert_contains ".mcp.json" 'my-codex-wrapper'
+
+# Unparseable or unexpected shapes are refused loudly and left byte-identical.
+printf '{not json' > .mcp.json
+assert_exit_nonzero bash "$SCRIPTS/prune_codex_mcp.sh"
+assert_file_content ".mcp.json" '{not json'
+printf '{"mcpServers": []}' > .mcp.json
+assert_exit_nonzero bash "$SCRIPTS/prune_codex_mcp.sh"
+assert_file_content ".mcp.json" '{"mcpServers": []}'
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T22c status.sh — flags a dead codex-cli entry with !
+# ═══════════════════════════════════════════════════════════════════════════════
+section "T22c: status.sh — flags dead codex-cli entry"
 make_tmp
 
 cat > .mcp.json <<'JSON'
@@ -637,9 +661,9 @@ JSON
 
 _stale_out="$(bash "$SCRIPTS/status.sh" 2>&1)"
 if printf '%s' "$_stale_out" | grep -q '! \.mcp\.json → Claude'; then
-  ok_msg "status.sh: stale codex-cli flagged with !"
+  ok_msg "status.sh: dead codex-cli flagged with !"
 else
-  fail_msg "status.sh: stale codex-cli not flagged with !"
+  fail_msg "status.sh: dead codex-cli not flagged with !"
 fi
 if printf '%s' "$_stale_out" | grep -q '/cc-suite:repair'; then
   ok_msg "status.sh: directs user to /cc-suite:repair"
@@ -667,6 +691,26 @@ assert_exit0 bash "$SCRIPTS/unbridge.sh"
 
 assert_no_file "AGENTS.md"
 assert_no_file "CLAUDE.md"    # cc-suite created it — remove on unbridge
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T23a2 unbridge.sh — takes the dead codex-cli entry, leaves the user's servers
+# ═══════════════════════════════════════════════════════════════════════════════
+# Once cc-suite is uninstalled nothing is left to remove the entry, so teardown
+# has to. Everything else in .mcp.json is the user's and must survive.
+section "T23a2: unbridge.sh — prunes the dead codex-cli entry only"
+make_tmp
+
+printf '# Project Instructions\n' > AGENTS.md
+printf '@AGENTS.md\n' > CLAUDE.md
+cat > .mcp.json <<'JSON'
+{"mcpServers": {"codex-cli": {"type": "stdio", "command": "codex", "args": ["mcp-server"]}, "mine": {"type": "stdio", "command": "cmd"}}}
+JSON
+
+assert_exit0 bash "$SCRIPTS/unbridge.sh"
+assert_not_contains ".mcp.json" '"codex-cli"'
+assert_contains     ".mcp.json" '"mine"'
 
 cleanup
 
@@ -1479,7 +1523,7 @@ git add -A; git commit -qm init >/dev/null 2>&1
 
 assert_exit0 git ls-files --error-unmatch .mcp.json      # tracked before fix
 bash "$SCRIPTS/ensure_gitignore.sh" >/dev/null 2>&1
-assert_contains ".gitignore" "cc-suite-schema: 7"
+assert_contains ".gitignore" "cc-suite-schema: 8"
 assert_exit_nonzero git ls-files --error-unmatch .mcp.json   # now untracked
 assert_exit0 git check-ignore .mcp.json                      # now ignored
 assert_file ".mcp.json"                                      # working file kept
@@ -1526,7 +1570,7 @@ printf '# >>> cc-suite >>>\n# cc-suite-schema: 2\n.claude/settings.local.json\n#
 git add -A; git commit -qm init >/dev/null 2>&1
 
 bash "$SCRIPTS/ensure_gitignore.sh" >/dev/null 2>&1
-assert_contains ".gitignore" "cc-suite-schema: 7"
+assert_contains ".gitignore" "cc-suite-schema: 8"
 assert_count "# >>> cc-suite >>>" ".gitignore" 1   # single block, no duplication
 assert_exit_nonzero git ls-files --error-unmatch .mcp.json   # migrated + untracked
 assert_exit0 git check-ignore .mcp.json
@@ -2465,8 +2509,35 @@ python3 - <<'PY' && ok_msg "codex/agy checks are expected_absent when disabled" 
 import json
 d = json.load(open("diag.json"))
 checks = {c["id"]: c for c in d["checks"]}
-for cid in ("codex_artifacts", "mcp_codex_cli", "claude_code_reg", "mcp_parity", "agy_mcp", "codex_runtime", "agents_skills_link"):
+for cid in ("codex_artifacts", "claude_code_reg", "mcp_parity", "agy_mcp", "codex_runtime", "agents_skills_link"):
     assert checks[cid]["status"] == "expected_absent", f"{cid}: {checks[cid]['status']}"
+# The dead codex-cli entry breaks Claude's own session, so its check is not
+# gated on the tool selection: no entry is healthy even with Codex deselected.
+assert checks["mcp_codex_cli"]["status"] == "healthy", checks["mcp_codex_cli"]
+PY
+cleanup
+
+section "T76b2: diagnose.py — a dead codex-cli entry is an issue with a prune fix"
+make_tmp
+printf '{"mcpServers":{"codex-cli":{"type":"stdio","command":"codex","args":["mcp-server"]}}}\n' > .mcp.json
+mkdir -p "$TMP/fakehome"; HOME="$TMP/fakehome" python3 "$SCRIPTS/diagnose.py" --json --no-preflight > diag.json 2>/dev/null || true
+python3 - <<'PY' && ok_msg "dead codex-cli → issue, auto fix runs prune_codex_mcp.sh" || fail_msg "T76b2 assertions failed"
+import json
+d = json.load(open("diag.json"))
+c = {x["id"]: x for x in d["checks"]}["mcp_codex_cli"]
+assert c["status"] == "issue", c
+assert any("prune_codex_mcp.sh" in cmd for cmd in c["fix"]["auto"]), c["fix"]
+assert c["fix"]["restart_required"] is True, c["fix"]
+PY
+# A codex-cli entry cc-suite did not write is informational, never an issue.
+printf '{"mcpServers":{"codex-cli":{"type":"stdio","command":"my-wrapper","args":["serve"]}}}\n' > .mcp.json
+mkdir -p "$TMP/fakehome"; HOME="$TMP/fakehome" python3 "$SCRIPTS/diagnose.py" --json --no-preflight > diag.json 2>/dev/null || true
+python3 - <<'PY' && ok_msg "foreign codex-cli → info, no fix" || fail_msg "T76b2 foreign-entry assertion failed"
+import json
+d = json.load(open("diag.json"))
+c = {x["id"]: x for x in d["checks"]}["mcp_codex_cli"]
+assert c["status"] == "info", c
+assert c["fix"] is None, c
 PY
 cleanup
 
@@ -2475,7 +2546,7 @@ make_tmp
 printf '# X\n' > AGENTS.md
 bash "$SCRIPTS/init.sh"          >/dev/null 2>&1
 bash "$SCRIPTS/bridge_skills.sh" >/dev/null 2>&1
-bash "$SCRIPTS/mcp_codex.sh"     >/dev/null 2>&1
+bash "$SCRIPTS/prune_codex_mcp.sh" >/dev/null 2>&1
 bash "$SCRIPTS/mcp_claude.sh"    >/dev/null 2>&1
 bash "$SCRIPTS/bridge_mcp.sh"    >/dev/null 2>&1
 printf '## Enabled Tools\n- [x] claude\n- [x] codex\n- [x] antigravity\n\n## Defaults\n\n- **Default model**: latest\n' > .cc-suite.md

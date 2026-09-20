@@ -486,6 +486,18 @@ PY
   fi
 fi
 
+# .mcp.json — cc-suite ≤2.0.1 registered `codex mcp-server` here as `codex-cli`.
+# Teardown has to take that with it: the entry is cc-suite's, it no longer starts
+# (the subcommand is gone from Codex CLI), and once the plugin is uninstalled
+# nothing is left to heal it. Only that entry, and only when it is one cc-suite
+# wrote — every other server in the file is the user's and stays.
+if [ -f .mcp.json ]; then
+  if ! bash "${SCRIPT_DIR}/prune_codex_mcp.sh"; then
+    warn ".mcp.json: the dead codex-cli entry could not be removed — left in place"
+    UNBRIDGE_FAILED=1
+  fi
+fi
+
 # .gemini empties
 for d in .gemini/skills .gemini/commands; do
   if [ -d "$d" ] && [ -z "$(ls -A "$d" 2>/dev/null | grep -v '^\.gitkeep$')" ]; then
@@ -529,4 +541,4 @@ if [ "$UNBRIDGE_FAILED" = "1" ]; then
   warn "cc-suite unbridge finished with errors — see messages above."
   exit 1
 fi
-ok "cc-suite unbridge complete. .mcp.json and .claude/ are left alone."
+ok "cc-suite unbridge complete. .claude/ and your own .mcp.json servers are left alone."

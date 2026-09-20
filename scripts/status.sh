@@ -148,55 +148,42 @@ else
   mark "agy CLI" warn "not found — install: curl -fsSL https://antigravity.google/cli/install.sh | bash"
 fi
 
-# .mcp.json — distinguish canonical, stale (legacy npm), missing, or invalid.
-# Only the codex-cli *entry* is Codex-specific; the file itself is Claude's own
-# MCP config and the source bridge_agy_mcp.py projects to Antigravity, so an
-# unreadable one is reported whatever the tool selection says.
+# .mcp.json — cc-suite ≤2.0.1 registered `codex mcp-server` here as `codex-cli`.
+# That subcommand no longer exists in Codex CLI, so a leftover entry is a Claude
+# MCP server that fails to start every session. Absence is the healthy state:
+# Claude→Codex delegation runs `codex exec` through codex-runner.mjs, never MCP.
+# Reported whatever the tool selection says — the file is Claude's own MCP config
+# and the source bridge_agy_mcp.py projects to Antigravity, so the breakage is
+# Claude-side even when Codex is deselected.
 if [ -f .mcp.json ]; then
+  # Classification codes start at 10 so they cannot collide with a failure of
+  # the interpreter itself: an ImportError or a syntax error exits 1, which under
+  # the old 0/1/2/4 mapping was indistinguishable from "a dead entry is present"
+  # and reported a confident answer about a script that never ran.
   _codex_cli_rc=0
-  python3 - <<'PY' 2>/dev/null || _codex_cli_rc=$?
-import json, sys
+  CC_SUITE_SCRIPT_DIR="$SCRIPT_DIR" python3 - <<'PY' 2>/dev/null || _codex_cli_rc=$?
+import json, os, sys
 from pathlib import Path
 
-CANONICAL = {"type": "stdio", "command": "codex", "args": ["mcp-server"]}
+sys.path.insert(0, str(Path(os.environ["CC_SUITE_SCRIPT_DIR"]) / "lib"))
+from codex_mcp_entry import ABSENT, DEAD_BUILTIN, DEAD_LEGACY_NPM, FOREIGN, classify_document
+
 try:
-    d = json.loads(Path(".mcp.json").read_text())
+    doc = json.loads(Path(".mcp.json").read_text())
 except Exception:
-    sys.exit(3)
-s = d.get("mcpServers") if isinstance(d, dict) else None
-if not isinstance(s, dict) or "codex-cli" not in s:
-    sys.exit(2)
-entry = s["codex-cli"]
-if entry == CANONICAL:
-    sys.exit(0)
-# Distinguish the known npm legacy shape — an npx/npm launcher whose args
-# reference the old codex MCP package — from an unknown user-customized
-# registration. A substring test on the command alone would mislabel every
-# command merely containing "npx"/"npm" (wrappers, unrelated launchers).
-cmd = entry.get("command") if isinstance(entry, dict) else None
-raw_args = entry.get("args") if isinstance(entry, dict) else None
-args = raw_args if isinstance(raw_args, list) else []
-launcher = isinstance(cmd, str) and cmd.rsplit("/", 1)[-1] in ("npx", "npm")
-legacy_pkg = any(isinstance(a, str)
-                 and ("codex-mcp-server" in a or a.startswith("@openai/codex"))
-                 for a in args)
-sys.exit(1 if (launcher and legacy_pkg) else 4)
+    sys.exit(13)
+sys.exit({None: 13, ABSENT: 10, DEAD_BUILTIN: 11, DEAD_LEGACY_NPM: 12, FOREIGN: 14}[classify_document(doc)])
 PY
-  if [ "$_codex_cli_rc" -ne 0 ] && [ "$_codex_cli_rc" -ne 1 ] \
-     && [ "$_codex_cli_rc" -ne 2 ] && [ "$_codex_cli_rc" -ne 4 ]; then
-    mark ".mcp.json → Claude" warn ".mcp.json unreadable"
-  elif ! tool_enabled codex; then
-    mark ".mcp.json → Claude" miss "(Codex is not enabled — no codex-cli registration expected)"
-  else
-    case "$_codex_cli_rc" in
-      0) mark ".mcp.json → Claude" ok   "codex-cli registered (codex mcp-server)" ;;
-      1) mark ".mcp.json → Claude" warn "codex-cli stale (legacy npm registration) — run /cc-suite:repair" ;;
-      4) mark ".mcp.json → Claude" warn "codex-cli noncanonical (custom registration) — review, or run /cc-suite:repair to restore the canonical form" ;;
-      2) mark ".mcp.json → Claude" miss "codex-cli not registered (run /cc-suite:init step 8)" ;;
-    esac
-  fi
+  case "$_codex_cli_rc" in
+    10) mark ".mcp.json → Claude" ok   "no dead codex-cli registration" ;;
+    11) mark ".mcp.json → Claude" warn "dead codex-cli entry (codex mcp-server was removed from Codex CLI) — run /cc-suite:repair" ;;
+    12) mark ".mcp.json → Claude" warn "dead codex-cli entry (legacy npm registration) — run /cc-suite:repair" ;;
+    14) mark ".mcp.json → Claude" ok   "codex-cli entry is not cc-suite's — left untouched" ;;
+    13) mark ".mcp.json → Claude" warn ".mcp.json unreadable, or top level / mcpServers is not an object" ;;
+    *)  mark ".mcp.json → Claude" warn "could not classify the codex-cli entry — inspect with: python3 -c 'import sys; sys.path.insert(0, \"${SCRIPT_DIR}/lib\"); import codex_mcp_entry'" ;;
+  esac
 else
-  mark ".mcp.json" miss
+  mark ".mcp.json" miss "(none — cc-suite does not create one)"
 fi
 
 # .codex/config.toml — claude-code (claude-octopus) registration

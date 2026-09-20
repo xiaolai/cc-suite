@@ -9,7 +9,7 @@ Set up cc-suite for the current project. This command leaves the project with **
 1. **Project config** — generates `.cc-suite.md` with your preferred audit settings
 2. **Bridge init** — creates `AGENTS.md`, `CLAUDE.md` (`@AGENTS.md`), `.codex/config.toml`, and the `.gitignore` block
 3. **Skills bridge** — exposes cc-suite's plugin skills via `.claude/skills/cc-suite` and `.agents/skills`
-4. **MCP registration** — adds the `codex-cli` MCP server to `.mcp.json` and mirrors project MCP servers into `.codex/config.toml` and `.agents/mcp_config.json`
+4. **MCP registration** — mirrors project MCP servers into `.codex/config.toml` and `.agents/mcp_config.json`, and removes the dead `codex-cli` entry an older cc-suite left in `.mcp.json`
 5. **Claude MCP registration** — adds the `claude-code` MCP server (claude-octopus) to `.codex/config.toml`
 6. **Hooks bridge** — mirrors `.claude/settings.json` hooks into `.codex/hooks.json` (no-op if there are no hooks)
 7. **Advisor agents bridge** — registers any declared `.cc-suite/agents/*.md` in Claude's `.mcp.json` and Codex's `.codex/config.toml`; the agy projection is refreshed by the MCP bridge (no-op if there are no agents)
@@ -301,22 +301,17 @@ If the script exits non-zero, report the error and stop.
 
 ---
 
-### Step 8: Register Codex MCP server
+### Step 8: Mirror the project MCP surface
 
-**Skip the `mcp_codex.sh` registration below if the user did not select Codex in
-Step 5b.** Say so in the summary rather than silently omitting it. `bridge_mcp.sh`
-below also writes the Antigravity projection — run it if *either* Codex or
-Antigravity was selected, and skip it only when neither was.
-
-Add the `codex-cli` MCP server to `.mcp.json` so Claude can invoke Codex as an MCP tool:
+First remove the dead `codex-cli` entry if an older cc-suite (≤2.0.1) registered one. It pointed at `codex mcp-server`, a subcommand Codex CLI no longer has, so Claude Code fails to connect to it on every session. **Run this regardless of the Step 5b selection** — the broken server is Claude's, not Codex's — and it is a no-op in a project that never had one:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_codex.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/prune_codex_mcp.sh"
 ```
 
-If the script exits non-zero, report the error and stop.
+If the script exits non-zero, report the error and stop. cc-suite does not replace the entry: Claude→Codex delegation runs `codex exec` through the CLI runner, not MCP.
 
-Then mirror the project MCP surface into `.codex/config.toml` and `.agents/mcp_config.json` so Codex and Antigravity can see it (`bridge_mcp.sh` intentionally excludes the `codex-cli` entry itself — Codex must not register itself as its own MCP server):
+Then mirror the project MCP surface into `.codex/config.toml` and `.agents/mcp_config.json` so Codex and Antigravity can see it. **Skip this if the user selected neither Codex nor Antigravity in Step 5b** — say so in the summary rather than silently omitting it. (`bridge_mcp.sh` never projects a `codex-cli` entry into Codex's own config — Codex must not register itself as its own MCP server.)
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_mcp.sh"
@@ -400,7 +395,7 @@ Display a combined status report:
 
 {include only the lines for tools that were actually bridged}
 
-- **Claude → Codex**: `.mcp.json` has `codex-cli` registered ✓
+- **Claude → Codex**: `codex exec` via the CLI runner — no MCP registration needed ✓
 - **Codex → Claude**: `.codex/config.toml` has `claude-code` registered ✓
 - **agy → Claude**: `.agents/mcp_config.json` has the generated `claude-code` entry when the agy projection is available ✓
 

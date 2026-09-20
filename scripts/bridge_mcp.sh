@@ -39,8 +39,9 @@ from toml_escape import escape_ctrl, quote_string  # noqa: E402
 
 SENTINEL_START = "# >>> cc-suite-mcp >>>"
 SENTINEL_END   = "# <<< cc-suite-mcp <<<"
-# codex-cli is registered in .mcp.json so Claude can invoke Codex as a tool.
-# It must not be mirrored back into Codex's own config.
+# cc-suite no longer registers codex-cli (see scripts/prune_codex_mcp.sh), but a
+# leftover or hand-written entry must still never be mirrored into Codex's own
+# config: that would point Codex at itself.
 SKIP_SERVERS = {"codex-cli"}
 
 

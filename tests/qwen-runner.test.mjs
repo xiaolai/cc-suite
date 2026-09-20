@@ -500,14 +500,26 @@ test("a fast background review reaches terminal state without being clobbered", 
     const queued = JSON.parse(parent.stdout.trim());
     assert.equal(queued.status, "queued");
 
+    // Wait out the runner's own deadline, not an arbitrary poll count. The
+    // detached worker has --timeout-ms 10000 to reach a terminal state, so a
+    // budget below that asserted machine speed rather than the behaviour under
+    // test: a 2.5s budget (100 × 25ms) failed on a loaded machine while the job
+    // was still legitimately `running`. The 25ms interval keeps the fast path fast.
+    const budgetMs = 20000;
+    const deadline = Date.now() + budgetMs;
+    const started = Date.now();
     let job = null;
-    for (let attempt = 0; attempt < 100; attempt += 1) {
+    while (Date.now() < deadline) {
       const state = readBackgroundState(pluginData);
       job = state?.jobs?.find((candidate) => candidate.id === queued.jobId) ?? null;
       if (job && !["queued", "running"].includes(job.status)) break;
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
-    assert.equal(job?.status, "completed");
+    assert.equal(
+      job?.status,
+      "completed",
+      `background job ${queued.jobId} was "${job?.status ?? "absent"}" after ${Date.now() - started}ms (budget ${budgetMs}ms)`
+    );
     assert.ok(job.completedAt);
   } finally {
     cleanupDir(fixture.dir);

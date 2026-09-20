@@ -18,6 +18,7 @@ Ask the user via AskUserQuestion before doing anything. List exactly what will b
 - `.agents/skills` symlink (not the `.claude/skills/` target it points to)
 - `.agents/mcp_config.json` only if it carries cc-suite provenance; user-managed entries are preserved
 - `.codex/prompts/` (if empty), `.codex/hooks.json` and `.codex/hooks.cc-suite.json` (each only if cc-suite generated it), `.codex/config.toml` (sentinel block only)
+- the dead `codex-cli` entry in `.mcp.json`, if an older cc-suite wrote one — nothing else in that file is touched
 - Empty legacy `.gemini/skills/` and `.gemini/commands/` directories
 - the cc-suite sentinel block in `.gitignore`
 
@@ -35,12 +36,13 @@ Backups the script may leave behind — report every one it prints, they are fil
 - If either name is taken, a numbered suffix is added (`.1`, `.2`, …). An existing backup is never overwritten.
 
 What is **never** touched:
-- `.claude/`, `.mcp.json`, custom `GEMINI.md`, and non-empty legacy `.gemini/` content
+- `.claude/`, custom `GEMINI.md`, non-empty legacy `.gemini/` content, and every `.mcp.json` server except the dead `codex-cli` entry below
 
 What is removed **only if cc-suite generated it**:
 - `.codex/hooks.json` — only if it was written by `bridge_hooks.py`: `_cc_bridge_version` must be exactly the string `"1"`, the only top-level keys may be `_cc_bridge_version` and `hooks`, and every event in it must be one of the five shared events. Anything else is left alone.
 - `.codex/hooks.cc-suite.json` — the pending-merge side file, held to the same test. A hand-written or hand-edited file at that path is left alone.
 - `.codex/config.toml` — only the cc-suite-mcp sentinel block is removed; other config is preserved. If the managed blocks are nested or interleaved, the file is left untouched and the script exits non-zero rather than risk splicing it.
+- `.mcp.json` — only the dead `codex-cli` entry cc-suite ≤2.0.1 wrote (it launched `codex mcp-server`, which Codex CLI no longer has). Teardown takes it because once cc-suite is gone nothing is left to remove it, and Claude Code keeps failing to start it every session. A `codex-cli` entry cc-suite did not write is left alone, and the file itself is deleted only when that entry was all it held.
 
 If the user does not confirm, stop.
 

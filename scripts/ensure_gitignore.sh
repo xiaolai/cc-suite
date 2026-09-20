@@ -21,21 +21,27 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The embedded Python block below is a quoted heredoc, so it reads the script
+# location from the environment to import scripts/lib modules.
+export CC_SUITE_SCRIPT_DIR="$SCRIPT_DIR"
+
 SENTINEL_START="# >>> cc-suite >>>"
 SENTINEL_END="# <<< cc-suite <<<"
-SCHEMA_MARKER="# cc-suite-schema: 7"
+SCHEMA_MARKER="# cc-suite-schema: 8"
 # First line of the conditional plugin-repo .mcp.json stanza, emitted from this
 # variable so detecting the stanza and writing it cannot drift apart.
-MCP_IGNORE_MARKER="# cc-suite: plugin repo — keep the dev-only Codex MCP registration out of the"
+MCP_IGNORE_MARKER="# cc-suite: plugin repo — keep dev-only MCP registrations out of the"
 
 GITIGNORE_FILE=".gitignore"
 PRIVATE="${PRIVATE:-0}"
 
 # A publishable plugin repo ships its root files to every installer, and Claude
-# Code auto-registers a plugin-root .mcp.json — starting `codex mcp-server` for
-# everyone who installs the plugin. The codex-cli registration is a dev-only
-# delegation aid, so in a plugin repo it must stay out of the published tree
-# even in public mode (in private mode the whole bridge is already ignored).
+# Code auto-registers a plugin-root .mcp.json — so every installer would load
+# whatever servers cc-suite wrote there for local development (advisor servers,
+# and the dead codex-cli entry older versions left behind). Those are dev-only,
+# so in a plugin repo the file must stay out of the published tree even in
+# public mode (in private mode the whole bridge is already ignored).
 IS_PLUGIN_REPO=0
 if [ -f ".claude-plugin/plugin.json" ] || [ -f ".codex-plugin/plugin.json" ]; then
   IS_PLUGIN_REPO=1
@@ -46,11 +52,12 @@ skip() { printf '· %s\n' "$*"; }
 warn() { printf '! %s\n' "$*" >&2; }
 
 # cc-suite owns .mcp.json only while every entry in it is one cc-suite wrote:
-# the dev-only codex-cli registration and advisor servers carrying the
-# `_cc_suite_agent` marker. A plugin that publishes MCP servers of its own owns
-# that file, and ignoring or untracking it would silently drop working
-# functionality from the release. An absent file counts as owned — cc-suite is
-# the one about to create it. Unreadable or unparseable counts as not owned.
+# advisor servers carrying the `_cc_suite_agent` marker, and the dead codex-cli
+# registration an older cc-suite left behind. A plugin that publishes MCP
+# servers of its own owns that file, and ignoring or untracking it would
+# silently drop working functionality from the release. An absent file counts as
+# owned — the advisor bridge is the only thing that would create one.
+# Unreadable or unparseable counts as not owned.
 #
 # Exit status answers ownership; stdout lists the cc-suite-written entries
 # found, which is what still ships when ownership says the file must not be
@@ -66,16 +73,18 @@ warn() { printf '! %s\n' "$*" >&2; }
 mcp_json_is_cc_suite_owned() {
   [ -e ".mcp.json" ] || return 0
   python3 - <<'PY'
-import json, sys
+import json, os, sys
 from pathlib import Path
 
-# `codex-cli` is a reserved name, not a shape to match: scripts/mcp_codex.sh
-# rewrites whatever is under that key to the canonical server on every run, so
-# cc-suite already owns it however it currently looks. Requiring exact equality
-# classified a legacy registration — the precise state mcp_codex.sh exists to
-# migrate — as someone else's, which withheld the ignore stanza and left the
-# plugin's .mcp.json tracked until the migration happened to run first.
-CC_SUITE_RESERVED = {"codex-cli"}
+# A `codex-cli` entry counts as cc-suite's when it is one of the dead shapes
+# cc-suite itself wrote — classified by scripts/lib/codex_mcp_entry.py, the same
+# module prune_codex_mcp.sh consults, so ownership here and removal there cannot
+# disagree. Both dead shapes qualify: requiring exact equality with one of them
+# classified the other as someone else's, which withheld the ignore stanza and
+# left the plugin's .mcp.json tracked. A `codex-cli` entry cc-suite did not
+# write is foreign — it is the author's own server and it must keep shipping.
+sys.path.insert(0, str(Path(os.environ["CC_SUITE_SCRIPT_DIR"]) / "lib"))
+from codex_mcp_entry import DEAD, SERVER_NAME, classify  # noqa: E402
 
 
 def finish(entries, code):
@@ -95,7 +104,7 @@ if not isinstance(servers, dict):
 cc_suite_written = []
 foreign = False
 for name, entry in servers.items():
-    if name in CC_SUITE_RESERVED:
+    if name == SERVER_NAME and classify(entry) in DEAD:
         cc_suite_written.append(name)
     elif isinstance(entry, dict) and entry.get("_cc_suite_agent"):
         cc_suite_written.append(name)
@@ -234,9 +243,9 @@ GI
     echo
     echo "$MCP_IGNORE_MARKER"
     cat <<'GI'
-# published plugin. Claude Code auto-registers a plugin-root .mcp.json, which
-# would start `codex mcp-server` for every installer. Local dev use is fine;
-# the file just stays untracked.
+# published plugin. Claude Code auto-registers a plugin-root .mcp.json, so its
+# dev-only servers would load for every installer. Local dev use is fine; the
+# file just stays untracked.
 .mcp.json
 GI
   fi

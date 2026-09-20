@@ -421,8 +421,10 @@ projections:
 5. A provenance file lets cc-suite refresh only its agy-owned entries. A
    user-managed `.agents/mcp_config.json` without provenance is left untouched
    and reported as a conflict.
-6. `codex-cli` is skipped in Codex's projection because it is the server Codex
-   itself runs, but it remains available to agy for agy → Codex delegation.
+6. `codex-cli` is skipped in Codex's projection because it would point Codex at
+   itself. cc-suite writes no such entry any more (`prune_codex_mcp.sh` removes
+   the dead one older versions wrote); a hand-written entry still reaches agy
+   for agy → Codex delegation.
 7. `claude-code` is added to the agy projection so agy can delegate back to
    Claude through the pinned `claude-octopus` server.
 

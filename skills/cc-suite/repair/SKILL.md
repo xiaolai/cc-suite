@@ -48,13 +48,16 @@ bash "${PLUGIN_ROOT}/scripts/bridge_skills.sh"
 
 Links plugin skills into `.claude/skills/cc-suite/` and ensures `.agents/skills → ../.claude/skills`.
 
-### Step 3: Register codex-cli MCP server
+### Step 3: Remove the dead codex-cli MCP registration
 
 ```bash
-bash "${PLUGIN_ROOT}/scripts/mcp_codex.sh"
+bash "${PLUGIN_ROOT}/scripts/prune_codex_mcp.sh"
 ```
 
-Adds `codex-cli` to `.mcp.json` so Claude can invoke Codex as a tool.
+Deletes the `codex-cli` entry an older cc-suite (≤2.0.1) wrote into `.mcp.json`:
+it pointed at `codex mcp-server`, which Codex CLI no longer has, so Claude Code
+fails to connect to it every session. A `codex-cli` entry cc-suite did not write
+is left alone.
 
 ### Step 4: Register claude-code MCP server
 
@@ -114,5 +117,5 @@ assistant: "I'll run the repair skill, which re-runs every bridge and registrati
 <example>
 Context: cc-suite was reinstalled and every artifact needs restoring without redoing setup.
 user: "I reinstalled cc-suite — put everything back without making me answer the setup questions again."
-assistant: "I'll invoke repair — it idempotently re-runs init.sh, bridge_skills.sh, mcp_codex.sh, mcp_claude.sh, and bridge_mcp.sh, so existing choices are preserved."
+assistant: "I'll invoke repair — it idempotently re-runs init.sh, bridge_skills.sh, prune_codex_mcp.sh, mcp_claude.sh, and bridge_mcp.sh, so existing choices are preserved."
 </example>

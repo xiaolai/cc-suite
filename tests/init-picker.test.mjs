@@ -54,10 +54,12 @@ test("Claude cannot be unticked", () => {
 });
 
 test("every Codex-only step tells the agent to skip it when Codex is off", () => {
-  // Each of these scripts writes into .codex/ or registers a Codex MCP server.
-  // Running one in a project that did not select Codex is what the tool picker
-  // exists to prevent, so each must carry an explicit skip instruction.
-  const codexOnly = ["mcp_codex.sh", "mcp_claude.sh", "bridge_hooks.py"];
+  // Each of these scripts writes into .codex/ or the agy projection. Running one
+  // in a project that selected neither is what the tool picker exists to
+  // prevent, so each must carry an explicit skip instruction. prune_codex_mcp.sh
+  // is deliberately NOT here: it removes a broken *Claude-side* MCP server, so
+  // it runs whatever the selection says.
+  const codexOnly = ["bridge_mcp.sh", "mcp_claude.sh", "bridge_hooks.py"];
   const steps = INIT.split(/^### /m);
 
   for (const script of codexOnly) {

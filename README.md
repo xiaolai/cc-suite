@@ -17,7 +17,7 @@ Each tool reads from its own files. `CLAUDE.md` and `AGENTS.md` sit next to each
 | **No circular delegation** | Because the skills tree is shared, an agent Claude delegates to can see cc-suite's own Claude-facing skills and hand the task straight back. Every outbound lane blocks that: implicit-invocation guards on the Codex side, and a delegation boundary prepended to the prompt on all lanes. |
 | **Mirrored hooks** | Syncs the five shared hook events from `.claude/settings.json` into `.codex/hooks.json`. Same scripts, both tools. |
 | **MCP parity** | Mirrors `.mcp.json` project servers into `.codex/config.toml` and `.agents/mcp_config.json` so Codex and `agy` see the same servers. |
-| **Claude → Codex delegation** | `/cc-suite:audit`, `/cc-suite:implement`, `/cc-suite:bug-analyze`, and more delegate to Codex through the deadline-bounded CLI runner, with full job tracking, background mode, and the stop-time review gate. The `codex-cli` MCP server registered in `.mcp.json` is an additional direct tool surface. |
+| **Claude → Codex delegation** | `/cc-suite:audit`, `/cc-suite:implement`, `/cc-suite:bug-analyze`, and more delegate to Codex through the deadline-bounded CLI runner (`codex exec`), with full job tracking, background mode, and the stop-time review gate. No MCP registration is involved. |
 | **Codex → Claude delegation** | Registers the `claude-code` MCP server (claude-octopus) in `.codex/config.toml`. Codex skills `$claude-review`, `$claude-plan`, `$claude-implement`, `$claude-debug` delegate to Claude and return structured results. |
 | **Codex reads Claude session history** | The same `claude-code` MCP server exposes `claude_code_sessions` (list this repo's Claude Code sessions, or all projects with `all_projects: true`) and `claude_code_transcript` (read a session by id). Codex can enumerate and read past Claude conversations for the repo. |
 | **Claude → `agy` delegation** | `scripts/agy-runner.mjs` drives Antigravity CLI headlessly, with the same job tracking, background mode, deadline enforcement, and conversation resume as the Codex runner. |
@@ -229,7 +229,7 @@ After init, edit `AGENTS.md` — all three tools pick up changes automatically.
 
 ### Claude → Codex (audit and implementation)
 
-Codex-backed commands delegate through the CLI runner (`scripts/codex-runner.mjs`, which shells out to `codex exec` — deadline-bounded, killable, with a streamed heartbeat); the `codex-cli` MCP server registered in `.mcp.json` is a separate, direct tool surface, not the delegation path. Codex runs in a sandboxed subprocess; Claude tracks jobs, handles background mode, and can continue threads. `/cc-suite:audit-plugin` is the local exception — it analyzes plugin artifacts without an external model call.
+Codex-backed commands delegate through the CLI runner (`scripts/codex-runner.mjs`, which shells out to `codex exec` — deadline-bounded, killable, with a streamed heartbeat). Codex runs in a sandboxed subprocess; Claude tracks jobs, handles background mode, and can continue threads. `/cc-suite:audit-plugin` is the local exception — it analyzes plugin artifacts without an external model call.
 
 | Command | What it does |
 |---------|--------------|
@@ -296,7 +296,7 @@ Beyond delegation, the `claude-code` MCP server also lets Codex **read Claude's 
 ## Bidirectional delegation
 
 ```
-Claude Code ──── codex-cli MCP ────►  Codex CLI
+Claude Code ──── codex exec ───────►  Codex CLI
               (audit, implement,         │
                review-plan, etc.)        │ claude-code MCP (claude-octopus)
                                          ▼
@@ -305,7 +305,9 @@ Claude Code ──── codex-cli MCP ────►  Codex CLI
                                    implement, debug)
 ```
 
-The Codex→Claude path delivers `claude-octopus` via `npx -y` at runtime — no pre-install. The Claude→Codex path uses the Codex CLI's own built-in MCP server (`codex mcp-server`), so it needs the `codex` binary on PATH. Each side reuses its host CLI's existing login — no separate credentials.
+The Codex→Claude path delivers `claude-octopus` via `npx -y` at runtime — no pre-install. The Claude→Codex path shells out to `codex exec`, so it needs the `codex` binary on PATH. Each side reuses its host CLI's existing login — no separate credentials.
+
+> cc-suite ≤2.0.1 also registered Codex CLI's own built-in MCP server as `codex-cli` in `.mcp.json`. That subcommand (`codex mcp-server`) no longer exists in Codex CLI, so the entry only produced a failed MCP connection in every session. `/cc-suite:repair`, `/cc-suite:update`, and the SessionStart hook remove it; nothing replaces it, because delegation never used it.
 
 ## Bridge table
 
@@ -315,7 +317,7 @@ The Codex→Claude path delivers `claude-octopus` via `npx -y` at runtime — no
 | Skills | `.agents/skills/ → ../.claude/skills/` symlink (Codex + agy workspace skills) |
 | Hooks | `.claude/settings.json` (5 shared events) → `.codex/hooks.json` |
 | MCP parity | `.mcp.json` entries → `.codex/config.toml [mcp_servers.*]` + `.agents/mcp_config.json` |
-| Codex MCP | `codex-cli` entry in `.mcp.json` (via `mcp_codex.sh`) |
+| Dead Codex MCP entry | `codex-cli` in `.mcp.json` is removed by `prune_codex_mcp.sh` — cc-suite no longer registers one |
 | Claude MCP | `claude-code` entry in `.codex/config.toml` (via `mcp_claude.sh`) and `.agents/mcp_config.json` (via `bridge_mcp.sh`) |
 
 **Not bridged:**
@@ -350,7 +352,7 @@ your-repo/
 ├── AGENTS.md                         ← edit this; all tools pick it up
 ├── CLAUDE.md                         → @AGENTS.md
 ├── .cc-suite.md                 ← audit/implement settings
-├── .mcp.json                         ← codex-cli MCP server + project servers
+├── .mcp.json                         ← your project MCP servers (only if you have any)
 ├── .gitignore                        ← includes cc-suite sentinel block
 ├── .claude/
 │   └── skills/

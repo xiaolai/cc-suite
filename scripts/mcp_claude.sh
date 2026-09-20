@@ -39,7 +39,7 @@ if [[ ! $CC_SUITE_CLAUDE_MCP_VERSION =~ $EXACT_SEMVER_RE ]]; then
   die "invalid claude-octopus version pin: '${CC_SUITE_CLAUDE_MCP_VERSION}' (expected an exact semver, e.g. 1.2.3)"
 fi
 
-# Ensure .codex/ exists — mcp_codex.sh / init.sh should have run first, but
+# Ensure .codex/ exists — init.sh should have run first, but
 # guard defensively so this script can also be called standalone.
 if [ ! -d .codex ]; then
   mkdir -p .codex

@@ -73,8 +73,10 @@ KNOWN_KEYS = {
     "disallowed_tools", "permission_mode", "max_turns", "max_budget_usd",
     "effort", "cwd", "additional_dirs", "prompt_mode",
 }
-# Server names cc-suite registers itself. An advisor claiming one of these would
-# be projected over the reverse-delegation registration Codex and agy depend on.
+# Server names cc-suite manages itself. `claude-code` is the reverse-delegation
+# registration Codex and agy depend on, and an advisor claiming it would be
+# projected over it. `codex-cli` is no longer registered at all — it stays
+# reserved so an advisor cannot land under the name prune_codex_mcp.sh removes.
 RESERVED_NAMES = {"claude-code", "codex-cli"}
 
 

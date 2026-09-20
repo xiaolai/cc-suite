@@ -27,30 +27,23 @@ user-invocable: false
 
 When the fallback was triggered because Codex couldn't be reached (runner returned `failed`/`stalled`, `codex` binary missing, deadline exceeded) — as opposed to Codex responding with no findings — the user needs to know **why** so they can restore Codex mode. Before producing the fallback output, run two quick checks and put the diagnostic block at the top of the report.
 
-Checks:
+Checks — the two things the CLI runner actually needs, the binary and a live
+login. Do **not** inspect `.mcp.json`: delegation runs `codex exec`, so no MCP
+registration is involved, and reporting one as the cause sends the user to fix an
+unrelated file (cc-suite ≤2.0.1 did exactly that).
 
 ```bash
 which codex 2>/dev/null || true
-[ -f .mcp.json ] && python3 -c '
-import json
-try:
-    d=json.load(open(".mcp.json"))
-    e=d.get("mcpServers",{}).get("codex-cli")
-    if e is None: print("missing")
-    elif e=={"type":"stdio","command":"codex","args":["mcp-server"]}: print("canonical")
-    else: print("stale")
-except Exception:
-    print("invalid")
-'
+command -v codex >/dev/null 2>&1 && codex login status 2>&1 | head -3
 ```
 
 Required block at the top of the fallback report:
 
 ```
 **Codex unavailable — manual analysis.** To restore Codex mode:
-- codex-cli registration: {canonical / stale / missing / invalid}
 - codex binary on PATH: {yes — <path> / no}
-- Suggested fix: {/cc-suite:repair if stale, /cc-suite:init if missing, install codex from https://github.com/openai/codex if not found, or `codex login` if auth-expired}
+- codex login: {Logged in using … / not logged in / unknown}
+- Suggested fix: {install codex from https://github.com/openai/codex if not found, `codex login` if not logged in, or `/cc-suite:codex-preflight` for a live auth + model probe}
 - Full diagnostic: `/cc-suite:diagnose`
 ```
 

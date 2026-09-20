@@ -188,12 +188,17 @@ each artifact if already correct.
 bash "${PLUGIN_ROOT}/scripts/bridge_skills.sh"
 ```
 
-### Step 8: Register codex-cli MCP server
+### Step 8: Mirror the project MCP surface
 
 ```bash
-bash "${PLUGIN_ROOT}/scripts/mcp_codex.sh"
+bash "${PLUGIN_ROOT}/scripts/prune_codex_mcp.sh"
 bash "${PLUGIN_ROOT}/scripts/bridge_mcp.sh"
 ```
+
+`prune_codex_mcp.sh` removes the dead `codex-cli` entry an older cc-suite
+(≤2.0.1) wrote into `.mcp.json` — it pointed at `codex mcp-server`, which Codex
+CLI no longer has. No-op when there is nothing to remove. cc-suite registers no
+replacement: Claude→Codex delegation runs `codex exec` through the CLI runner.
 
 The bridge writes the Codex projection and the generated agy workspace MCP
 projection. It also registers the pinned `claude-code` server for agy → Claude.
@@ -216,7 +221,7 @@ Report:
 cc-suite initialized
 
 Bridge artifacts: {status summary}
-Claude → Codex:  .mcp.json has codex-cli registered ✓
+Claude → Codex:  codex exec via the CLI runner (no MCP registration) ✓
 Codex → Claude:  .codex/config.toml has claude-code registered ✓
 agy → Claude:    .agents/mcp_config.json has claude-code when the projection is available ✓
 Project config:  .cc-suite.md written ({focus}, {depth}, effort={effort})

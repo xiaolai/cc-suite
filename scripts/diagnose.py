@@ -48,6 +48,9 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR / "lib"))
 from toml_escape import quote_string  # noqa: E402
+from codex_mcp_entry import (  # noqa: E402  (canonical dead-codex-cli classifier)
+    ABSENT, DEAD, FOREIGN, REASONS, classify_document,
+)
 PLUGIN_ROOT = SCRIPT_DIR.parent
 ROOT = Path.cwd()
 SCHEMA = 1
@@ -62,7 +65,6 @@ CLAUDE_SENTINEL_OPEN = ">>> cc-suite-claude-mcp >>>"
 CLAUDE_SENTINEL_CLOSE = "<<< cc-suite-claude-mcp <<<"
 MCP_SENTINEL_OPEN = "# >>> cc-suite-mcp >>>"
 MCP_SENTINEL_CLOSE = "# <<< cc-suite-mcp <<<"
-CODEX_CANONICAL = {"type": "stdio", "command": "codex", "args": ["mcp-server"]}
 
 
 def check(cid: str, label: str, status: str, detail: str,
@@ -364,36 +366,37 @@ def check_codex_artifacts(enabled: list[str]) -> list[dict]:
     return out
 
 
-def check_mcp_codex_cli(enabled: list[str]) -> dict:
-    if "codex" not in enabled:
-        return check("mcp_codex_cli", ".mcp.json → codex-cli", "expected_absent", "Codex is not enabled")
-    doc = _load_json(ROOT / ".mcp.json")
-    if doc is None:
-        if (ROOT / ".mcp.json").exists():
-            return check("mcp_codex_cli", ".mcp.json → codex-cli", "issue", ".mcp.json unreadable",
-                         manual="fix the JSON by hand, then run mcp_codex.sh")
-        return check("mcp_codex_cli", ".mcp.json → codex-cli", "issue",
-                     "no .mcp.json — Claude cannot invoke Codex as an MCP tool",
-                     auto=[f"bash {script('mcp_codex.sh')}", f"bash {script('bridge_mcp.sh')}"],
-                     restart_required=True)
-    if not isinstance(doc, dict) or (
-        "mcpServers" in doc and not isinstance(doc["mcpServers"], dict)
-    ):
-        # mcp_codex.sh refuses these shapes, so an auto-fix would just fail.
-        return check("mcp_codex_cli", ".mcp.json → codex-cli", "issue",
-                     ".mcp.json has an invalid shape (top level or mcpServers is not an object)",
-                     manual="fix the JSON structure by hand, then run mcp_codex.sh")
-    servers = doc.get("mcpServers")
-    entry = servers.get("codex-cli") if isinstance(servers, dict) else None
-    if entry == CODEX_CANONICAL:
-        return check("mcp_codex_cli", ".mcp.json → codex-cli", "healthy", "codex mcp-server registered")
-    if entry is None:
-        return check("mcp_codex_cli", ".mcp.json → codex-cli", "issue", "codex-cli not registered",
-                     auto=[f"bash {script('mcp_codex.sh')}", f"bash {script('bridge_mcp.sh')}"],
-                     restart_required=True)
-    return check("mcp_codex_cli", ".mcp.json → codex-cli", "issue",
-                 "stale registration (legacy npm form) — the MCP server loads with the wrong API",
-                 auto=[f"bash {script('mcp_codex.sh')}", f"bash {script('bridge_mcp.sh')}"],
+def check_mcp_codex_cli() -> dict:
+    """A leftover `codex-cli` MCP registration from cc-suite <=2.0.1.
+
+    Absence is the healthy state: `codex mcp-server` no longer exists, and
+    Claude→Codex delegation runs `codex exec` through codex-runner.mjs. A
+    leftover entry makes Claude Code report a failed MCP connection every
+    session, so it is an issue regardless of the tool selection — the breakage
+    is Claude's, not Codex's.
+    """
+    label = ".mcp.json → codex-cli"
+    path = ROOT / ".mcp.json"
+    if not path.exists():
+        return check("mcp_codex_cli", label, "healthy", "no dead Codex MCP registration")
+    doc = _load_json(path)
+    state = classify_document(doc) if doc is not None else None
+    if state is None:
+        # prune_codex_mcp.sh refuses these shapes, so an auto-fix would just fail.
+        return check("mcp_codex_cli", label, "issue",
+                     ".mcp.json is unreadable or not an object (top level or mcpServers) — "
+                     "cc-suite cannot tell whether a dead codex-cli entry is present",
+                     manual="fix the JSON by hand, then run prune_codex_mcp.sh")
+    if state == ABSENT:
+        return check("mcp_codex_cli", label, "healthy", "no dead Codex MCP registration")
+    if state == FOREIGN:
+        return check("mcp_codex_cli", label, "info",
+                     f"codex-cli entry is {REASONS[FOREIGN]}")
+    assert state in DEAD
+    return check("mcp_codex_cli", label, "issue",
+                 f"dead codex-cli registration ({REASONS[state]}) — Claude Code fails to "
+                 "connect to it on every session",
+                 auto=[f"bash {script('prune_codex_mcp.sh')}", f"bash {script('bridge_mcp.sh')}"],
                  restart_required=True)
 
 
@@ -1137,7 +1140,7 @@ def run(run_preflight: bool = True, boot_test: bool = False) -> dict:
     checks.extend(check_stale_nested_symlinks())
     checks.append(check_cache_freshness())
     checks.extend(check_codex_artifacts(enabled))
-    checks.append(check_mcp_codex_cli(enabled))
+    checks.append(check_mcp_codex_cli())
     checks.append(check_claude_code_registration(enabled))
     checks.append(check_mcp_parity(enabled))
     checks.append(check_agy_cli(enabled))

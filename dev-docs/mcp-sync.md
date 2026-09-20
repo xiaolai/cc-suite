@@ -71,9 +71,12 @@ Name normalization replaces runs of characters outside the Codex grammar with
 name contains no usable characters. Collisions after normalization are
 reported as errors rather than silently merging two Claude servers.
 
-`codex-cli` is intentionally skipped: it is the Claude-side registration that
-lets Claude invoke Codex and must not be mirrored back into Codex. It remains in
-the agy projection because agy can use it for agy → Codex delegation. The
+`codex-cli` is intentionally skipped in Codex's own projection: mirroring it
+back would point Codex at itself. cc-suite no longer writes such an entry — the
+one it used to write launched `codex mcp-server`, a subcommand Codex CLI has
+since removed, and `prune_codex_mcp.sh` deletes it. A hand-written `codex-cli`
+entry is left in place and still reaches the agy projection, where agy can use
+it for agy → Codex delegation. The
 `claude-code` server is added to the agy projection so agy can delegate back to
 Claude. Remote Claude fields `url` and `httpUrl` are translated to agy's
 `serverUrl`. Environment variable names are documented as Codex comments, but

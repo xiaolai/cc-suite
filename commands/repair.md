@@ -29,12 +29,12 @@ Links plugin skills into `.claude/skills/cc-suite/` and creates `.agents/skills 
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_skills.sh"
 ```
 
-### Step 3: Register codex-cli MCP server
+### Step 3: Remove the dead codex-cli MCP registration
 
-Adds `codex-cli` to `.mcp.json` so Claude can invoke Codex as a tool.
+Deletes the `codex-cli` entry an older cc-suite (≤2.0.1) wrote into `.mcp.json`. It pointed at `codex mcp-server`, which Codex CLI no longer has, so Claude Code fails to connect to it every session. No-op when there is nothing to remove; a `codex-cli` entry cc-suite did not write is left alone.
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_codex.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/prune_codex_mcp.sh"
 ```
 
 ### Step 4: Register claude-code MCP server
