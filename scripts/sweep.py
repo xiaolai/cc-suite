@@ -8,11 +8,22 @@ only reaches a repo when a session actually opens there. This sweep closes that
 gap: it works from the install records, so one up-to-date plugin can inspect and
 repair every project without opening a session in each.
 
-Today it carries exactly one repair, the dead `codex-cli` MCP registration
-(scripts/prune_codex_mcp.sh — `codex mcp-server` no longer exists in Codex CLI,
-so Claude Code fails to connect to it every session). Version drift is reported
-but never "fixed": re-rendering a project's bridge is `/cc-suite:repair`'s job,
-in that project, where the user can see it.
+It carries the repairs that are provably cc-suite's own and safe without the
+project's context:
+
+  - the dead `codex-cli` MCP registration (scripts/prune_codex_mcp.sh — `codex
+    mcp-server` no longer exists in Codex CLI, so Claude Code fails to connect
+    to it every session), and the copy of it left in a cc-suite-owned agy
+    projection;
+  - a `.claude/skills/cc-suite` symlink still pointing at an older version's
+    cache path (scripts/bridge_skills.sh re-points it). These rot on every
+    plugin update: the link names the version-stamped cache directory, so once
+    that version is pruned from the cache the link dangles and cc-suite's skills
+    silently stop resolving — for Codex and agy too, which reach them through
+    .agents/skills.
+
+Version drift itself is reported but never "fixed": re-rendering a project's
+bridge is `/cc-suite:update`'s job, in that project, where the user can see it.
 
 Read-only by default. `--fix` applies repairs, then re-verifies each project.
 
@@ -45,6 +56,17 @@ SCHEMA = 1
 # Per-project mcp states, in report order.
 UNPARSEABLE = "unparseable"
 NO_FILE = "no_file"
+
+# .claude/skills/cc-suite states.
+LINK_CURRENT = "current"      # points at the skills tree of the running plugin
+LINK_STALE = "stale"          # points at another cc-suite version's skills tree
+LINK_DANGLING = "dangling"    # ... and that version is gone from the cache
+LINK_FOREIGN = "foreign"      # points somewhere that is not a cc-suite skills tree
+LINK_REAL_DIR = "real_dir"    # a real directory someone authored
+LINK_ABSENT = "absent"        # never bridged here; creating one is init's job
+
+LINK_BROKEN = (LINK_STALE, LINK_DANGLING)
+PLUGIN_SKILLS = PLUGIN_ROOT / "skills/cc-suite"
 
 
 def config_dir() -> Path:
@@ -133,6 +155,30 @@ def scan_for_projects(roots: list[Path], depth: int) -> list[Path]:
     return found
 
 
+def classify_skills_link(project: Path) -> str:
+    """State of this project's `.claude/skills/cc-suite`.
+
+    Only a symlink that names *a cc-suite skills tree* is cc-suite's to move. A
+    link pointing anywhere else, or a real directory, belongs to whoever put it
+    there and is reported rather than replaced.
+    """
+    link = project / ".claude/skills/cc-suite"
+    if not link.is_symlink():
+        return LINK_REAL_DIR if link.exists() else LINK_ABSENT
+    target = os.readlink(link)
+    if target == str(PLUGIN_SKILLS):
+        return LINK_CURRENT
+    # A cc-suite skills tree is `<...>/cc-suite/<version>/skills/cc-suite` in the
+    # plugin cache, or `<...>/cc-suite/skills/cc-suite` in a dev checkout.
+    parts = Path(target).parts
+    looks_like_cc_suite = (
+        parts[-2:] == ("skills", "cc-suite") and "cc-suite" in parts[:-2]
+    )
+    if not looks_like_cc_suite:
+        return LINK_FOREIGN
+    return LINK_STALE if link.resolve().exists() else LINK_DANGLING
+
+
 def classify_project(project: Path) -> dict:
     """The state of one project's .mcp.json plus its agy projection."""
     mcp = project / ".mcp.json"
@@ -168,12 +214,16 @@ def classify_project(project: Path) -> dict:
         "mcp_state": state,
         "agy_stale_mirror": agy_has_entry,
         "agy_managed": agy_managed,
+        "skills_link": classify_skills_link(project),
     }
 
 
 def needs_action(info: dict) -> bool:
-    return info["mcp_state"] in DEAD or info["mcp_state"] == UNPARSEABLE or (
-        info["agy_stale_mirror"]
+    return (
+        info["mcp_state"] in DEAD
+        or info["mcp_state"] == UNPARSEABLE
+        or info["agy_stale_mirror"]
+        or info.get("skills_link") in LINK_BROKEN
     )
 
 
@@ -214,6 +264,14 @@ def fix_project(project: Path, info: dict) -> dict:
                 ".agents/mcp_config.json has no cc-suite provenance — left alone; "
                 f"remove the {SERVER_NAME} entry by hand"
             )
+    if info.get("skills_link") in LINK_BROKEN:
+        # bridge_skills.sh owns the repoint (rename(2), so the bridge is never
+        # absent mid-swap) and then refreshes the .gitignore sentinel block —
+        # which means a tracked .gitignore can change too. Disclosed in
+        # commands/sweep.md; it exits non-zero rather than touching an
+        # .agents/skills that someone else put there.
+        ok, output = run("bridge_skills.sh", project)
+        actions.append(f"bridge_skills.sh: {'ok' if ok else 'FAILED'} — {output}")
     after = classify_project(project)
     return {"actions": actions, "fixed": not needs_action(after), "after": after}
 
@@ -231,11 +289,22 @@ def detail(info: dict) -> str:
         parts.append("no dead registration")
     else:
         parts.append("no .mcp.json")
+    if info.get("skills_link") == LINK_CURRENT:
+        parts.append("skills link current")
     if info["agy_stale_mirror"]:
         parts.append(
             "agy projection still lists it"
             + ("" if info["agy_managed"] else " (user-managed — hand edit)")
         )
+    link = info.get("skills_link")
+    if link == LINK_DANGLING:
+        parts.append("skills symlink dangles — cc-suite's skills do not resolve here")
+    elif link == LINK_STALE:
+        parts.append("skills symlink points at an older version's cache")
+    elif link == LINK_FOREIGN:
+        parts.append("skills symlink is not cc-suite's — left alone")
+    elif link == LINK_REAL_DIR:
+        parts.append(".claude/skills/cc-suite is a real directory — left alone")
     return "; ".join(parts)
 
 

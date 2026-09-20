@@ -2780,6 +2780,69 @@ assert_not_contains "dead/.mcp.json" '"codex-cli"'
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# T82  sweep.py — stale .claude/skills/cc-suite symlinks
+# ═══════════════════════════════════════════════════════════════════════════════
+# The link names the version-stamped cache directory, so it rots on every plugin
+# update and DANGLES once that version is pruned — at which point cc-suite's
+# skills silently stop resolving, for Codex and agy too (they reach them through
+# .agents/skills). Found on 32 of 38 real projects, 7 already dangling.
+section "T82: sweep.py — repoints stale skills symlinks, leaves foreign ones"
+make_tmp
+
+mkdir -p home/.claude/plugins stale/.claude/skills dangling/.claude/skills \
+         foreign/.claude/skills realdir/.claude/skills/cc-suite absent/.claude/skills
+# A resolvable older-version cache tree, and a pruned one that leaves a dangler.
+mkdir -p "$TMP/fakecache/xiaolai/cc-suite/0.9.9/skills/cc-suite"
+ln -s "$TMP/fakecache/xiaolai/cc-suite/0.9.9/skills/cc-suite" stale/.claude/skills/cc-suite
+ln -s "$TMP/fakecache/xiaolai/cc-suite/0.0.1/skills/cc-suite" dangling/.claude/skills/cc-suite
+mkdir -p "$TMP/somewhere-else"
+ln -s "$TMP/somewhere-else" foreign/.claude/skills/cc-suite
+
+python3 - "$TMP" <<'PY'
+import json, sys
+from pathlib import Path
+tmp = Path(sys.argv[1])
+records = [
+    {"scope": "project", "projectPath": str(tmp / name), "version": "2.0.1"}
+    for name in ("stale", "dangling", "foreign", "realdir", "absent")
+]
+out = tmp / "home/.claude/plugins/installed_plugins.json"
+out.write_text(json.dumps({"version": 1, "plugins": {"cc-suite@xiaolai": records}}))
+PY
+
+rc=0
+python3 "$SCRIPTS/sweep.py" > skills-report.txt 2>&1 || rc=$?
+if [ "$rc" -ne 0 ]; then ok_msg "sweep: non-zero while skills links are stale"
+else                     fail_msg "sweep: exited 0 with a dangling skills link"; fi
+assert_contains "skills-report.txt" "skills symlink dangles"
+assert_contains "skills-report.txt" "points at an older version's cache"
+assert_contains "skills-report.txt" "not cc-suite's — left alone"
+assert_contains "skills-report.txt" "is a real directory — left alone"
+# An absent link is init's business, not the sweep's: nothing is created.
+assert_no_symlink "absent/.claude/skills/cc-suite"
+
+python3 "$SCRIPTS/sweep.py" --fix > skills-fix.txt 2>&1 || true
+PLUGIN_SKILLS="$(cd "$SCRIPTS/.." && pwd)/skills/cc-suite"
+assert_symlink_target "stale/.claude/skills/cc-suite"    "$PLUGIN_SKILLS"
+assert_symlink_target "dangling/.claude/skills/cc-suite" "$PLUGIN_SKILLS"
+# Untouched: neither is cc-suite's to move.
+assert_symlink_target "foreign/.claude/skills/cc-suite"  "$TMP/somewhere-else"
+assert_dir            "realdir/.claude/skills/cc-suite"
+assert_no_symlink     "absent/.claude/skills/cc-suite"
+# bridge_skills.sh does the repoint, so its whole footprint lands: the agy link
+# and the .gitignore block. Asserted rather than left as a surprise diff.
+assert_symlink_target "stale/.agents/skills" "../.claude/skills"
+assert_contains       "stale/.gitignore" "cc-suite-schema: 8"
+
+# Re-running finds nothing: the two repaired projects are clean, and the three
+# left alone are not "action" at all.
+python3 "$SCRIPTS/sweep.py" > skills-after.txt 2>&1 || true
+assert_not_contains "skills-after.txt" "skills symlink dangles"
+assert_not_contains "skills-after.txt" "points at an older version's cache"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Summary
 # ═══════════════════════════════════════════════════════════════════════════════
 echo

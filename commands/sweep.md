@@ -33,7 +33,13 @@ Repairs, because they are provably cc-suite's own and safe without the project's
 - the dead `codex-cli` MCP registration in `.mcp.json` (`prune_codex_mcp.sh`)
 - the same server left behind in a cc-suite-owned `.agents/mcp_config.json` (`bridge_mcp.sh`, run only in projects that actually have that stale mirror)
 
+- a `.claude/skills/cc-suite` symlink still pointing at an older version's cache path (`bridge_skills.sh` re-points it). This one rots on **every** plugin update, because the link names the version-stamped cache directory — and once that version is pruned from the cache the link dangles and cc-suite's skills stop resolving entirely, for Codex and agy too, which reach them through `.agents/skills`. A symlink that does not name a cc-suite skills tree, and a real directory at that path, are someone else's and are left alone.
+
+Both repairs run scripts that own more than the one file:
+
 `bridge_mcp.sh` re-renders **both** projections it owns, so a project repaired that way also gets its `.codex/config.toml` sentinel block rewritten. The content is the project's existing MCP surface — but the block is re-emitted at the end of the file, so a tracked `config.toml` can show a one-time relocation diff. Say so when reporting, rather than letting the user find an unexplained diff in a repo they did not ask you to touch.
+
+`bridge_skills.sh` re-points the symlink and then refreshes that project's `.gitignore` cc-suite block, so a tracked `.gitignore` can change too. It also refuses — non-zero, nothing touched — when `.agents/skills` is a real path or points somewhere cc-suite did not put it; report that project instead of retrying.
 
 Refuses, and reports instead:
 

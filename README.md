@@ -225,7 +225,7 @@ After init, edit `AGENTS.md` — all three tools pick up changes automatically.
 | `/cc-suite:bridge-tools` | Mirror the project MCP surface into opt-in coding agents (Grok Build, opencode, Qwen Code, Kimi CLI) selected in `.cc-suite.md`'s `## Enabled Tools`. |
 | `/cc-suite:migrate-google` | Convert legacy Gemini CLI extensions/configuration and establish the agy workspace bridge. |
 | `/cc-suite:status` | Show active and recent delegation jobs (Codex, agy, Grok). Bridge health and MCP registration checks live in `/cc-suite:diagnose`. |
-| `/cc-suite:sweep` | Inspect **every** project on this machine that cc-suite has bridged, and repair cross-repo leftovers with `--fix`. One up-to-date plugin cleans every repo — no session needed in each. |
+| `/cc-suite:sweep` | Inspect **every** project on this machine that cc-suite has bridged, and repair cross-repo leftovers with `--fix` — dead MCP registrations, and `.claude/skills/cc-suite` symlinks left pointing at an older version's cache (they dangle once that version is pruned, and cc-suite's skills stop resolving). One up-to-date plugin cleans every repo — no session needed in each. |
 | `/cc-suite:unbridge` | Tear down bridge artifacts, restoring `CLAUDE.md` from `AGENTS.md`. |
 
 ### Claude → Codex (audit and implementation)
