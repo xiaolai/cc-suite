@@ -2852,6 +2852,59 @@ assert_not_contains "skills-after.txt" "points at an older version's cache"
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# T83  sweep.py — a repair step that exits non-zero is never reported as clean
+# ═══════════════════════════════════════════════════════════════════════════════
+# bridge_skills.sh repoints the symlink and THEN refuses to replace an
+# .agents/skills that someone authored, exiting 1. The classified state therefore
+# comes back clean while a real step failed — which printed "✓ clean now"
+# directly underneath the FAILED line on a real run.
+section "T83: sweep.py — a failed repair step blocks the clean verdict"
+make_tmp
+
+mkdir -p home/.claude/plugins halfway/.claude/skills
+CACHE="$TMP/home/.claude/plugins/cache/xiaolai/cc-suite"
+mkdir -p "$CACHE/0.9.9/skills/cc-suite"
+ln -s "$CACHE/0.9.9/skills/cc-suite" halfway/.claude/skills/cc-suite
+# A real, hand-authored .agents/skills — cc-suite must not replace it, and says so
+# by exiting non-zero AFTER the repoint has already succeeded.
+mkdir -p halfway/.agents/skills/my-own-skill
+printf '# mine\n' > halfway/.agents/skills/my-own-skill/SKILL.md
+
+python3 - "$TMP" <<'PY'
+import json, sys
+from pathlib import Path
+tmp = Path(sys.argv[1])
+out = tmp / "home/.claude/plugins/installed_plugins.json"
+out.write_text(json.dumps({"version": 1, "plugins": {"cc-suite@xiaolai": [
+    {"scope": "project", "projectPath": str(tmp / "halfway"), "version": "2.0.1"}]}}))
+PY
+
+rc=0
+python3 "$SCRIPTS/sweep.py" --fix > halfway.txt 2>&1 || rc=$?
+
+# The repoint really happened...
+PLUGIN_SKILLS="$(cd "$SCRIPTS/.." && pwd)/skills/cc-suite"
+assert_symlink_target "halfway/.claude/skills/cc-suite" "$PLUGIN_SKILLS"
+# ...the authored directory was left alone...
+assert_file "halfway/.agents/skills/my-own-skill/SKILL.md"
+# ...and the verdict says so instead of claiming success.
+assert_contains     "halfway.txt" "bridge_skills.sh: FAILED"
+assert_contains     "halfway.txt" "exited non-zero"
+assert_not_contains "halfway.txt" "clean now"
+assert_not_contains "halfway.txt" "every project is clean"
+if [ "$rc" -ne 0 ]; then ok_msg "sweep --fix: non-zero exit when a repair step failed"
+else                     fail_msg "sweep --fix: exited 0 despite a failed repair step"; fi
+
+# The gap outlives the run that found it: a later read-only sweep still says the
+# project's .agents/skills is authored content, so the finding is not buried in
+# one run's log.
+python3 "$SCRIPTS/sweep.py" > halfway-after.txt 2>&1 || true
+assert_contains "halfway-after.txt" "authored content"
+assert_contains "halfway-after.txt" "cannot see .claude/skills here"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Summary
 # ═══════════════════════════════════════════════════════════════════════════════
 echo

@@ -68,6 +68,12 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sweep.py" --fix
 
 Report the engine's own per-project output — what was run and what came out clean. Do not summarize it away: a bulk change the user cannot see is a bulk change they cannot check.
 
+### A repaired project is not automatically a clean one
+
+`bridge_skills.sh` repoints the symlink and *then* refuses to replace an `.agents/skills` that someone authored, exiting non-zero. The state this command classifies therefore comes back clean while a real step failed. The engine reports that as `repaired, but <script> exited non-zero` and keeps the exit code non-zero — never treat a printed `FAILED` line as cosmetic because the summary looks green.
+
+That project also gets a standing note on every later run: `.agents/skills is authored content` means Codex and agy cannot see `.claude/skills` there. cc-suite will not merge authored content, so it stays reported rather than repaired.
+
 ### Step 4: Close honestly
 
 - State how many projects were repaired and how many still need a human, with the reason for each.

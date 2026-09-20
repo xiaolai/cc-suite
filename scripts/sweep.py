@@ -216,11 +216,18 @@ def classify_project(project: Path) -> dict:
         prov = project / ".agents/.cc-suite-mcp.provenance.json"
         agy_managed = prov.is_file()
 
+    # A real .agents/skills means Codex and agy cannot see the .claude/skills tree
+    # in this project: the bridge is a symlink and cc-suite will not replace
+    # authored content. Never repaired — merging is the user's call — but reported
+    # on EVERY run, so the gap does not exist only in the log of the one run that
+    # happened to attempt a repair there.
+    agents_skills = project / ".agents/skills"
     return {
         "mcp_state": state,
         "agy_stale_mirror": agy_has_entry,
         "agy_managed": agy_managed,
         "skills_link": classify_skills_link(project),
+        "agents_skills_real": agents_skills.exists() and not agents_skills.is_symlink(),
     }
 
 
@@ -256,15 +263,27 @@ def fix_project(project: Path, info: dict) -> dict:
     discover. That is why it runs only for projects with the stale mirror, never
     as a blanket refresh."""
     actions: list[str] = []
+    # Every non-zero exit is recorded, not just the ones that leave a classified
+    # problem behind. bridge_skills.sh repoints the symlink and THEN refuses to
+    # replace an .agents/skills that someone authored — so the classified state
+    # comes back clean while a real step failed. Judging by the post-state alone
+    # printed "✓ clean now" directly under a FAILED line.
+    failures: list[str] = []
+
+    def record(script_name: str, ok: bool, output: str) -> None:
+        actions.append(f"{script_name}: {'ok' if ok else 'FAILED'} — {output}")
+        if not ok:
+            failures.append(script_name)
+
     if info["mcp_state"] in DEAD:
         ok, output = run("prune_codex_mcp.sh", project)
-        actions.append(f"prune_codex_mcp.sh: {'ok' if ok else 'FAILED'} — {output}")
+        record("prune_codex_mcp.sh", ok, output)
         if not ok:
-            return {"actions": actions, "fixed": False}
+            return {"actions": actions, "fixed": False, "failures": failures}
     if info["agy_stale_mirror"]:
         if info["agy_managed"]:
             ok, output = run("bridge_mcp.sh", project)
-            actions.append(f"bridge_mcp.sh: {'ok' if ok else 'FAILED'} — {output}")
+            record("bridge_mcp.sh", ok, output)
         else:
             actions.append(
                 ".agents/mcp_config.json has no cc-suite provenance — left alone; "
@@ -277,9 +296,14 @@ def fix_project(project: Path, info: dict) -> dict:
         # commands/sweep.md; it exits non-zero rather than touching an
         # .agents/skills that someone else put there.
         ok, output = run("bridge_skills.sh", project)
-        actions.append(f"bridge_skills.sh: {'ok' if ok else 'FAILED'} — {output}")
+        record("bridge_skills.sh", ok, output)
     after = classify_project(project)
-    return {"actions": actions, "fixed": not needs_action(after), "after": after}
+    return {
+        "actions": actions,
+        "fixed": not needs_action(after) and not failures,
+        "failures": failures,
+        "after": after,
+    }
 
 
 def detail(info: dict) -> str:
@@ -311,6 +335,11 @@ def detail(info: dict) -> str:
         parts.append("skills symlink is not cc-suite's — left alone")
     elif link == LINK_REAL_DIR:
         parts.append(".claude/skills/cc-suite is a real directory — left alone")
+    if info.get("agents_skills_real"):
+        parts.append(
+            ".agents/skills is authored content, not cc-suite's symlink — Codex "
+            "and agy cannot see .claude/skills here (merge by hand to bridge it)"
+        )
     return "; ".join(parts)
 
 
@@ -397,6 +426,12 @@ def report(result: dict, fixes: dict[str, dict] | None) -> None:
                 print(f"      → {line}")
             if outcome["fixed"]:
                 print("      ✓ clean now")
+            elif outcome.get("failures") and not needs_action(projects[path]):
+                # The thing this sweep classifies is fixed, but a script it ran
+                # refused part of its job. Reporting that as clean would hide the
+                # only line the user has to act on.
+                print(f"      ! repaired, but {', '.join(outcome['failures'])} "
+                      "exited non-zero — read its output above")
             else:
                 print(f"      ! still needs attention: {detail(projects[path])}")
 
@@ -464,6 +499,7 @@ def main() -> int:
         report(result, fixes if args.fix else None)
 
     remaining = [p for p, i in result["projects"].items() if needs_action(i)]
+    remaining += [p for p, o in fixes.items() if not o["fixed"] and p not in remaining]
     if not args.json:
         if remaining and not args.fix:
             print(f"\n  Run with --fix to repair {len(remaining)} project(s).")
