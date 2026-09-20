@@ -52,6 +52,7 @@ const COMMANDS = [
   "review-plan",
   "setup",
   "status",
+  "sweep",
   "sync-mcp",
   "verify",
 ];

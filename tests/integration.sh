@@ -2680,6 +2680,106 @@ assert_contains "pf.json" '"error_code":"qwen_not_found"'
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# T81  sweep.py — cross-repo cleanup driven by the install records
+# ═══════════════════════════════════════════════════════════════════════════════
+# A per-project command cannot reach the other 30 repos cc-suite was installed
+# into, and the SessionStart self-heal only fires where a session opens. The
+# sweep is what closes that gap, so its discovery, its refusals, and its exit
+# code are all load-bearing.
+section "T81: sweep.py — reports every recorded project, fixes only the safe ones"
+make_tmp
+
+mkdir -p home/.claude/plugins dead foreign broken tidy unrecorded/nested
+
+cat > dead/.mcp.json <<'JSON'
+{"mcpServers": {"codex-cli": {"type": "stdio", "command": "codex", "args": ["mcp-server"]}, "other": {"type": "stdio", "command": "cmd"}}}
+JSON
+cat > foreign/.mcp.json <<'JSON'
+{"mcpServers": {"codex-cli": {"type": "stdio", "command": "my-codex-wrapper", "args": ["serve"]}}}
+JSON
+printf '{not json' > broken/.mcp.json
+cat > tidy/.mcp.json <<'JSON'
+{"mcpServers": {"other": {"type": "stdio", "command": "cmd"}}}
+JSON
+# A project bridged under the user-scope install: no record points at it, so only
+# --scan can find it.
+printf '# X\n' > unrecorded/nested/AGENTS.md
+cat > unrecorded/nested/.mcp.json <<'JSON'
+{"mcpServers": {"codex-cli": {"type": "stdio", "command": "codex", "args": ["mcp-server"]}}}
+JSON
+
+python3 - "$TMP" <<'PY'
+import json, sys
+from pathlib import Path
+tmp = Path(sys.argv[1])
+records = [
+    {"scope": "project", "projectPath": str(tmp / name), "version": "2.0.1"}
+    for name in ("dead", "foreign", "broken", "tidy")
+]
+records.append({"scope": "project", "projectPath": str(tmp / "vanished"), "version": "2.0.0"})
+records.append({"scope": "user", "version": "2.0.1"})
+doc = {"version": 1, "plugins": {"cc-suite@xiaolai": records}}
+out = tmp / "home/.claude/plugins/installed_plugins.json"
+out.write_text(json.dumps(doc, indent=2))
+PY
+
+# ── report is read-only and exits non-zero while anything needs action ────────
+# The suite runs under `set -e` and sweep exits 1 by design while work remains,
+# so the status must be captured on the same line, never read from $? after it.
+report_rc=0
+report_out="$(python3 "$SCRIPTS/sweep.py" 2>&1)" || report_rc=$?
+printf '%s' "$report_out" > sweep-report.txt
+if [ "$report_rc" -ne 0 ]; then ok_msg "sweep: exit non-zero while a project needs action"
+else                            fail_msg "sweep: exited 0 with a dead entry present"; fi
+assert_contains "sweep-report.txt" "$TMP/dead"
+assert_contains "sweep-report.txt" "$TMP/broken"
+assert_contains "sweep-report.txt" "Stale install records"
+assert_contains "sweep-report.txt" "$TMP/vanished"
+assert_contains "sweep-report.txt" "user-scope install"
+# The report must not have touched anything.
+assert_contains "dead/.mcp.json" '"codex-cli"'
+
+# A foreign entry and a tidy project are not "action" — they belong to the user.
+if printf '%s' "$report_out" | grep -q "Clean (2)"; then
+  ok_msg "sweep: foreign + tidy projects classified clean, not fixable"
+else
+  fail_msg "sweep: foreign/tidy misclassified ($(printf '%s' "$report_out" | grep -o 'Clean ([0-9]*)'))"
+fi
+
+# ── --scan reaches a project no record points at ──────────────────────────────
+python3 "$SCRIPTS/sweep.py" --scan "$TMP/unrecorded" --depth 2 > sweep-scan.txt 2>&1 || true
+assert_contains "sweep-scan.txt" "$TMP/unrecorded/nested"
+
+# ── --json stays machine-readable ─────────────────────────────────────────────
+python3 "$SCRIPTS/sweep.py" --json > sweep.json 2>/dev/null || true
+assert_exit0 python3 -c "import json; d=json.load(open('sweep.json')); assert d['projects'], 'no projects'; assert 'fixes' in d"
+
+# ── --fix repairs the dead entry and refuses the rest ─────────────────────────
+broken_before="$(cat broken/.mcp.json)"
+python3 "$SCRIPTS/sweep.py" --fix > sweep-fix.txt 2>&1 || true
+assert_not_contains "dead/.mcp.json" '"codex-cli"'
+assert_contains     "dead/.mcp.json" '"other"'              # unrelated server survives
+assert_contains     "foreign/.mcp.json" 'my-codex-wrapper'  # not cc-suite's — untouched
+if [ "$(cat broken/.mcp.json)" = "$broken_before" ]; then
+  ok_msg "sweep --fix: unparseable .mcp.json left byte-identical"
+else
+  fail_msg "sweep --fix: rewrote an unparseable .mcp.json"
+fi
+assert_contains "sweep-fix.txt" "clean now"
+
+# Still non-zero: the unparseable project needs a human, and saying otherwise
+# would be the sweep reporting success over a file it could not read.
+python3 "$SCRIPTS/sweep.py" > /dev/null 2>&1 && \
+  fail_msg "sweep: exited 0 while an unparseable .mcp.json remains" || \
+  ok_msg "sweep: still non-zero while a project needs a human"
+
+# Fixing twice changes nothing.
+python3 "$SCRIPTS/sweep.py" --fix > sweep-fix2.txt 2>&1 || true
+assert_not_contains "dead/.mcp.json" '"codex-cli"'
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Summary
 # ═══════════════════════════════════════════════════════════════════════════════
 echo

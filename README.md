@@ -225,6 +225,7 @@ After init, edit `AGENTS.md` — all three tools pick up changes automatically.
 | `/cc-suite:bridge-tools` | Mirror the project MCP surface into opt-in coding agents (Grok Build, opencode, Qwen Code, Kimi CLI) selected in `.cc-suite.md`'s `## Enabled Tools`. |
 | `/cc-suite:migrate-google` | Convert legacy Gemini CLI extensions/configuration and establish the agy workspace bridge. |
 | `/cc-suite:status` | Show active and recent delegation jobs (Codex, agy, Grok). Bridge health and MCP registration checks live in `/cc-suite:diagnose`. |
+| `/cc-suite:sweep` | Inspect **every** project on this machine that cc-suite has bridged, and repair cross-repo leftovers with `--fix`. One up-to-date plugin cleans every repo — no session needed in each. |
 | `/cc-suite:unbridge` | Tear down bridge artifacts, restoring `CLAUDE.md` from `AGENTS.md`. |
 
 ### Claude → Codex (audit and implementation)
@@ -307,7 +308,7 @@ Claude Code ──── codex exec ───────►  Codex CLI
 
 The Codex→Claude path delivers `claude-octopus` via `npx -y` at runtime — no pre-install. The Claude→Codex path shells out to `codex exec`, so it needs the `codex` binary on PATH. Each side reuses its host CLI's existing login — no separate credentials.
 
-> cc-suite ≤2.0.1 also registered Codex CLI's own built-in MCP server as `codex-cli` in `.mcp.json`. That subcommand (`codex mcp-server`) no longer exists in Codex CLI, so the entry only produced a failed MCP connection in every session. `/cc-suite:repair`, `/cc-suite:update`, and the SessionStart hook remove it; nothing replaces it, because delegation never used it.
+> cc-suite ≤2.0.1 also registered Codex CLI's own built-in MCP server as `codex-cli` in `.mcp.json`. That subcommand (`codex mcp-server`) no longer exists in Codex CLI, so the entry only produced a failed MCP connection in every session. `/cc-suite:repair`, `/cc-suite:update`, and the SessionStart hook remove it per project; `/cc-suite:sweep` cleans every project on the machine at once. Nothing replaces it, because delegation never used it.
 
 ## Bridge table
 

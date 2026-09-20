@@ -109,6 +109,8 @@ Multi-tool config bridge (`scripts/bridge_tools.py`, `/cc-suite:bridge-tools`): 
 
 Diagnostics are single-sourced in `scripts/diagnose.py` — the structured engine behind `/cc-suite:diagnose` and the diagnose skill (both are thin wrappers: run engine → render → apply `fix.auto` → re-run engine to verify). Every check classifies with the Enabled Tools selection in view (`expected_absent` ≠ issue) and carries its own repair mapping; new health checks belong in the engine, not in command/skill prose. `scripts/fix_plugin_hooks.py` is the engine's section-scoped TOML fixer. `status.sh` remains the lightweight human readout used by init's summary; behavior changes to checks must land in the engine first.
 
+Cross-repo cleanup is single-sourced in `scripts/sweep.py` (`/cc-suite:sweep`): it discovers every bridged project from Claude Code's install records (plus `--scan`), reports read-only by default, and repairs with the **running** plugin's scripts rather than the version each project recorded. It carries only repairs that are provably cc-suite's own and safe without the project's context — anything needing the project's own judgment (a full re-bridge, an unparseable file, a user-owned server) is reported, never applied. A per-project fix that users cannot reasonably apply repo-by-repo belongs here; a new health check still belongs in `diagnose.py`.
+
 ## Advisor Agents (`.cc-suite/agents/`)
 
 Advisor agents are project-scoped value-over-rules personas, each backed by a separately-configured `claude-octopus` MCP server. Both Claude and Codex can consult any advisor via `mcp__<name>__<tool_name>`. Each agent has its own model, system prompt, tool restrictions, working directory, and persistent timeline.
