@@ -180,19 +180,22 @@ function hasCodexCliEntry(mcpPath) {
 // SessionStart, then surface a one-line systemMessage via JSON stdout (the
 // documented SessionStart channel) because the removal only reaches Claude Code
 // on its next session.
+// Returns a message for the caller to surface, or null. It does NOT write stdout:
+// SessionStart's JSON contract is ONE object, and two self-heals firing in the
+// same session would otherwise emit two.
 function pruneDeadCodexCliRegistration(cwd) {
-  if (!cwd) return;
+  if (!cwd) return null;
   // Registration lives at the workspace root; a SessionStart from a repository
   // subdirectory would otherwise silently miss it (job cleanup already
   // resolves the root, so this kept the two paths inconsistent).
   const workspaceRoot = resolveWorkspaceRoot(cwd);
   const mcpPath = path.join(workspaceRoot, ".mcp.json");
-  if (!fs.existsSync(mcpPath) || !hasCodexCliEntry(mcpPath)) return;
+  if (!fs.existsSync(mcpPath) || !hasCodexCliEntry(mcpPath)) return null;
 
   const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
-  if (!pluginRoot) return;
+  if (!pluginRoot) return null;
   const scriptPath = path.join(pluginRoot, "scripts", "prune_codex_mcp.sh");
-  if (!fs.existsSync(scriptPath)) return;
+  if (!fs.existsSync(scriptPath)) return null;
 
   spawnSync("bash", [scriptPath], {
     cwd: workspaceRoot,
@@ -204,22 +207,83 @@ function pruneDeadCodexCliRegistration(cwd) {
   // entry cc-suite did not write, and an exit status alone cannot tell that
   // apart from a removal. Re-read instead of trusting it.
   const removed = !fs.existsSync(mcpPath) || !hasCodexCliEntry(mcpPath);
-  if (removed) {
-    // SessionStart JSON output schema: `systemMessage` surfaces in the
-    // Claude Code transcript. See https://code.claude.com/docs/en/hooks.md
-    process.stdout.write(
-      JSON.stringify({
-        systemMessage:
-          "cc-suite: removed the dead codex-cli MCP registration from .mcp.json (`codex mcp-server` no longer exists in Codex CLI). Restart Claude Code to clear the failed MCP connection.",
-      }) + "\n"
-    );
+  return removed
+    ? "cc-suite: removed the dead codex-cli MCP registration from .mcp.json (`codex mcp-server` no longer exists in Codex CLI). Restart Claude Code to clear the failed MCP connection."
+    : null;
+}
+
+// Re-point `.claude/skills/cc-suite` when it names an older plugin version.
+//
+// The link carries the version-stamped cache path, so EVERY plugin update makes
+// it stale in every project, and once that version is pruned from the cache the
+// link dangles and cc-suite's skills stop resolving — silently, and for Codex and
+// agy too, which reach them through .agents/skills. /cc-suite:sweep can repair a
+// whole machine, but nothing re-points a project until someone runs a command
+// there, which is why one machine had 25 stale links and 7 dangling ones.
+//
+// Ownership is the same test the sweep applies: only a symlink that points into
+// the plugin cache at a cc-suite skills tree. A link at a development checkout is
+// deliberate and left alone; a real directory is someone's content.
+function repointStaleSkillsLink(cwd) {
+  if (!cwd) return null;
+  const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
+  if (!pluginRoot) return null;
+  const wanted = path.join(pluginRoot, "skills", "cc-suite");
+  if (!fs.existsSync(wanted)) return null;
+
+  const link = path.join(resolveWorkspaceRoot(cwd), ".claude/skills/cc-suite");
+  let current;
+  try {
+    if (!fs.lstatSync(link).isSymbolicLink()) return null; // authored directory
+    current = fs.readlinkSync(link);
+  } catch {
+    return null; // absent — creating one is /cc-suite:init's job
   }
+  if (current === wanted) return null;
+
+  const cacheMarker = `${path.sep}plugins${path.sep}cache${path.sep}`;
+  const looksLikeSkillsTree = current.endsWith(
+    `${path.sep}skills${path.sep}cc-suite`
+  );
+  if (!current.includes(cacheMarker) || !looksLikeSkillsTree) return null;
+
+  // rename(2) over the link itself: no window where the bridge is absent, and
+  // (unlike `ln -sf` on macOS) the new link can never be created INSIDE the
+  // directory the old one resolves to. Mirrors bridge_skills.sh.
+  const tmp = `${link}.cc-suite-repoint-${process.pid}`;
+  try {
+    fs.symlinkSync(wanted, tmp);
+    fs.renameSync(tmp, link);
+  } catch {
+    try {
+      fs.unlinkSync(tmp);
+    } catch {
+      /* nothing to clean up */
+    }
+    return null; // read-only checkout or a race — the sweep still reports it
+  }
+  return (
+    "cc-suite: re-pointed .claude/skills/cc-suite at this plugin version " +
+    "(it named an older one, which stops cc-suite's skills resolving once that " +
+    "version leaves the cache)."
+  );
 }
 
 function handleSessionStart(input) {
   appendEnvVar(SESSION_ID_ENV, input.session_id);
   appendEnvVar(PLUGIN_DATA_ENV, process.env[PLUGIN_DATA_ENV]);
-  pruneDeadCodexCliRegistration(input.cwd || process.cwd());
+  const cwd = input.cwd || process.cwd();
+  // SessionStart JSON output schema: ONE object, whose `systemMessage` surfaces
+  // in the Claude Code transcript. See https://code.claude.com/docs/en/hooks.md
+  const messages = [
+    pruneDeadCodexCliRegistration(cwd),
+    repointStaleSkillsLink(cwd),
+  ].filter(Boolean);
+  if (messages.length > 0) {
+    process.stdout.write(
+      JSON.stringify({ systemMessage: messages.join(" ") }) + "\n"
+    );
+  }
 }
 
 function handleSessionEnd(input) {

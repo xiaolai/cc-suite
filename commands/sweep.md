@@ -4,7 +4,7 @@ description: Sweep every project on this machine that cc-suite has bridged — r
 
 # CC-Suite Sweep
 
-`/cc-suite:diagnose` and `/cc-suite:repair` fix the project they run in. This command works across every project on the machine, because cc-suite is commonly installed into dozens of repos at project scope, and a defect in what the bridge *wrote* leaves a copy in every one of them. The SessionStart self-heal only reaches a repo when a session actually opens there; this is how the rest get cleaned.
+`/cc-suite:diagnose` and `/cc-suite:repair` fix the project they run in. This command works across every project on the machine, because cc-suite is commonly installed into dozens of repos at project scope, and a defect in what the bridge *wrote* leaves a copy in every one of them. The SessionStart hook self-heals a project as soon as a session opens in it, which covers the repos you actually work in; this command is how the rest get cleaned, on demand and without visiting each one.
 
 All discovery, classification, and repair live in `scripts/sweep.py`. This command is a thin wrapper — do not re-implement the checks in prose.
 

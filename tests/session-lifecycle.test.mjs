@@ -291,3 +291,103 @@ test("SessionStart leaves an unparseable .mcp.json untouched", () => {
     cleanupDir(workspace);
   }
 });
+
+// ─── SessionStart: re-point a stale skills symlink ───────────────────────────
+// The link carries the version-stamped cache path, so every plugin update makes
+// it stale in every project, and it dangles once that version leaves the cache —
+// silently removing cc-suite's skills. The sweep repairs a machine on demand;
+// this is what keeps a single project from rotting in between.
+function makeCacheLink(workspace, version, { create = true } = {}) {
+  const cache = path.join(
+    workspace, "home/.claude/plugins/cache/xiaolai/cc-suite", version,
+    "skills/cc-suite"
+  );
+  if (create) fs.mkdirSync(cache, { recursive: true });
+  const linkDir = path.join(workspace, ".claude/skills");
+  fs.mkdirSync(linkDir, { recursive: true });
+  const link = path.join(linkDir, "cc-suite");
+  fs.symlinkSync(cache, link);
+  return { cache, link };
+}
+
+const WANTED_SKILLS = path.join(PLUGIN_ROOT, "skills", "cc-suite");
+
+test("SessionStart re-points a skills link that names an older cache version", () => {
+  const workspace = makeTempDir();
+  try {
+    const { link } = makeCacheLink(workspace, "0.9.9");
+    const result = runSessionStart(workspace);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(fs.readlinkSync(link), WANTED_SKILLS);
+    assert.match(JSON.parse(result.stdout).systemMessage, /re-pointed/);
+  } finally {
+    cleanupDir(workspace);
+  }
+});
+
+test("SessionStart re-points a dangling skills link", () => {
+  const workspace = makeTempDir();
+  try {
+    const { link } = makeCacheLink(workspace, "0.0.1", { create: false });
+    assert.equal(fs.existsSync(link), false, "fixture should dangle");
+    assert.equal(runSessionStart(workspace).status, 0);
+    assert.equal(fs.readlinkSync(link), WANTED_SKILLS);
+  } finally {
+    cleanupDir(workspace);
+  }
+});
+
+test("SessionStart leaves a skills link outside the plugin cache alone", () => {
+  const workspace = makeTempDir();
+  try {
+    // /cc-suite:init from a local-scope install writes exactly this on purpose.
+    const dev = path.join(workspace, "devcheckout/cc-suite/skills/cc-suite");
+    fs.mkdirSync(dev, { recursive: true });
+    const linkDir = path.join(workspace, ".claude/skills");
+    fs.mkdirSync(linkDir, { recursive: true });
+    const link = path.join(linkDir, "cc-suite");
+    fs.symlinkSync(dev, link);
+    const result = runSessionStart(workspace);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(fs.readlinkSync(link), dev);
+    assert.equal(result.stdout, "");
+  } finally {
+    cleanupDir(workspace);
+  }
+});
+
+test("SessionStart leaves an authored skills directory alone", () => {
+  const workspace = makeTempDir();
+  try {
+    const real = path.join(workspace, ".claude/skills/cc-suite/mine");
+    fs.mkdirSync(real, { recursive: true });
+    assert.equal(runSessionStart(workspace).status, 0);
+    assert.equal(fs.existsSync(real), true);
+    assert.equal(
+      fs.lstatSync(path.join(workspace, ".claude/skills/cc-suite")).isSymbolicLink(),
+      false
+    );
+  } finally {
+    cleanupDir(workspace);
+  }
+});
+
+test("both self-heals in one session emit exactly one JSON object", () => {
+  const workspace = makeTempDir();
+  try {
+    writeMcpJson(workspace, { "codex-cli": DEAD_ENTRY });
+    const { link } = makeCacheLink(workspace, "0.9.9");
+    const result = runSessionStart(workspace);
+    assert.equal(result.status, 0, result.stderr);
+    // Two messages, ONE object: SessionStart's stdout contract is a single JSON
+    // object, so a second write would corrupt the first.
+    const lines = result.stdout.trim().split("\n").filter(Boolean);
+    assert.equal(lines.length, 1, `expected one JSON line, got:\n${result.stdout}`);
+    const { systemMessage } = JSON.parse(lines[0]);
+    assert.match(systemMessage, /codex-cli MCP registration/);
+    assert.match(systemMessage, /re-pointed/);
+    assert.equal(fs.readlinkSync(link), WANTED_SKILLS);
+  } finally {
+    cleanupDir(workspace);
+  }
+});
