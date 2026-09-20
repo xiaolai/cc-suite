@@ -87,11 +87,21 @@ test("an already-redacted value is left alone", () => {
 test("redaction is linear on adversarial whitespace runs", () => {
   // `\s*["']?\s*` split a whitespace run n+1 ways, which is quadratic; the
   // input is unbounded here because truncation happens after redaction.
-  const timeFor = (n) => {
+  //
+  // The RATIO is the assertion. Measurements are minimums, not single samples:
+  // this test runs while the rest of the suite does, and one scheduling hiccup
+  // inside a single measurement was enough to fail it on a loaded machine.
+  // Noise only ever adds time, so the minimum of several runs is the cleanest
+  // signal available without serializing the suite.
+  const timeFor = (n, runs = 5) => {
     const input = `token${" ".repeat(n)}x`;
-    const started = process.hrtime.bigint();
-    redactSecrets(input);
-    return Number(process.hrtime.bigint() - started) / 1e6;
+    let best = Infinity;
+    for (let i = 0; i < runs; i += 1) {
+      const started = process.hrtime.bigint();
+      redactSecrets(input);
+      best = Math.min(best, Number(process.hrtime.bigint() - started) / 1e6);
+    }
+    return best;
   };
   timeFor(1000); // warm up the JIT so the ratio measures the algorithm
   const small = Math.max(timeFor(8000), 0.05);
@@ -102,7 +112,10 @@ test("redaction is linear on adversarial whitespace runs", () => {
     large < small * 10,
     `redaction looks super-linear: 8k=${small.toFixed(2)}ms 32k=${large.toFixed(2)}ms`
   );
-  assert.ok(large < 100, `redaction took ${large.toFixed(2)}ms on 32k of whitespace`);
+  // A catastrophe ceiling, not a speed check. The quadratic form took seconds on
+  // this input, so this is deliberately far above anything machine load can
+  // explain — it must never be the assertion that fails on a busy machine.
+  assert.ok(large < 1000, `redaction took ${large.toFixed(2)}ms on 32k of whitespace`);
 });
 
 test("redaction handles non-string input without throwing", () => {
