@@ -168,13 +168,19 @@ def classify_skills_link(project: Path) -> str:
     target = os.readlink(link)
     if target == str(PLUGIN_SKILLS):
         return LINK_CURRENT
-    # A cc-suite skills tree is `<...>/cc-suite/<version>/skills/cc-suite` in the
-    # plugin cache, or `<...>/cc-suite/skills/cc-suite` in a dev checkout.
+    # Only a link into the PLUGIN CACHE is stale-and-ours. The cache path carries
+    # a version, so it is the one that rots — and it is machine-managed, so
+    # repointing it takes nothing away from anybody.
+    #
+    # A link to a checkout outside the cache is deliberate: `/cc-suite:init` run
+    # from a local-scope install points at the developer's working tree on
+    # purpose. Redirecting that into the cache would silently undo someone's
+    # dev wiring, so it is reported as foreign and left alone.
+    cache = config_dir() / "plugins/cache"
     parts = Path(target).parts
-    looks_like_cc_suite = (
-        parts[-2:] == ("skills", "cc-suite") and "cc-suite" in parts[:-2]
-    )
-    if not looks_like_cc_suite:
+    in_cache = str(target).startswith(str(cache) + os.sep)
+    names_skills_tree = parts[-2:] == ("skills", "cc-suite") and "cc-suite" in parts[:-2]
+    if not (in_cache and names_skills_tree):
         return LINK_FOREIGN
     return LINK_STALE if link.resolve().exists() else LINK_DANGLING
 

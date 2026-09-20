@@ -33,7 +33,7 @@ Repairs, because they are provably cc-suite's own and safe without the project's
 - the dead `codex-cli` MCP registration in `.mcp.json` (`prune_codex_mcp.sh`)
 - the same server left behind in a cc-suite-owned `.agents/mcp_config.json` (`bridge_mcp.sh`, run only in projects that actually have that stale mirror)
 
-- a `.claude/skills/cc-suite` symlink still pointing at an older version's cache path (`bridge_skills.sh` re-points it). This one rots on **every** plugin update, because the link names the version-stamped cache directory — and once that version is pruned from the cache the link dangles and cc-suite's skills stop resolving entirely, for Codex and agy too, which reach them through `.agents/skills`. A symlink that does not name a cc-suite skills tree, and a real directory at that path, are someone else's and are left alone.
+- a `.claude/skills/cc-suite` symlink still pointing at an older version's cache path (`bridge_skills.sh` re-points it). This one rots on **every** plugin update, because the link names the version-stamped cache directory — and once that version is pruned from the cache the link dangles and cc-suite's skills stop resolving entirely, for Codex and agy too, which reach them through `.agents/skills`. Only links into the **plugin cache** are repaired — that path carries the version, so it is the one that rots, and it is machine-managed. A link at a checkout outside the cache is deliberate (`/cc-suite:init` from a local-scope install writes exactly that), so it is reported and left alone, as are a real directory at that path and an absent link.
 
 Both repairs run scripts that own more than the one file:
 

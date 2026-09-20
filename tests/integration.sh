@@ -2790,13 +2790,21 @@ section "T82: sweep.py — repoints stale skills symlinks, leaves foreign ones"
 make_tmp
 
 mkdir -p home/.claude/plugins stale/.claude/skills dangling/.claude/skills \
-         foreign/.claude/skills realdir/.claude/skills/cc-suite absent/.claude/skills
-# A resolvable older-version cache tree, and a pruned one that leaves a dangler.
-mkdir -p "$TMP/fakecache/xiaolai/cc-suite/0.9.9/skills/cc-suite"
-ln -s "$TMP/fakecache/xiaolai/cc-suite/0.9.9/skills/cc-suite" stale/.claude/skills/cc-suite
-ln -s "$TMP/fakecache/xiaolai/cc-suite/0.0.1/skills/cc-suite" dangling/.claude/skills/cc-suite
+         foreign/.claude/skills realdir/.claude/skills/cc-suite absent/.claude/skills \
+         devlink/.claude/skills
+# The links that rot live in the plugin cache, because the cache path carries the
+# version. A resolvable older version, and a pruned one that leaves a dangler.
+CACHE="$TMP/home/.claude/plugins/cache/xiaolai/cc-suite"
+mkdir -p "$CACHE/0.9.9/skills/cc-suite"
+ln -s "$CACHE/0.9.9/skills/cc-suite" stale/.claude/skills/cc-suite
+ln -s "$CACHE/0.0.1/skills/cc-suite" dangling/.claude/skills/cc-suite
 mkdir -p "$TMP/somewhere-else"
 ln -s "$TMP/somewhere-else" foreign/.claude/skills/cc-suite
+# A link at a checkout OUTSIDE the cache is deliberate — /cc-suite:init from a
+# local-scope install writes exactly this. Redirecting it into the cache would
+# silently undo the developer's wiring, so it must be left alone.
+mkdir -p "$TMP/devcheckout/cc-suite/skills/cc-suite"
+ln -s "$TMP/devcheckout/cc-suite/skills/cc-suite" devlink/.claude/skills/cc-suite
 
 python3 - "$TMP" <<'PY'
 import json, sys
@@ -2804,7 +2812,7 @@ from pathlib import Path
 tmp = Path(sys.argv[1])
 records = [
     {"scope": "project", "projectPath": str(tmp / name), "version": "2.0.1"}
-    for name in ("stale", "dangling", "foreign", "realdir", "absent")
+    for name in ("stale", "dangling", "foreign", "realdir", "absent", "devlink")
 ]
 out = tmp / "home/.claude/plugins/installed_plugins.json"
 out.write_text(json.dumps({"version": 1, "plugins": {"cc-suite@xiaolai": records}}))
@@ -2825,8 +2833,9 @@ python3 "$SCRIPTS/sweep.py" --fix > skills-fix.txt 2>&1 || true
 PLUGIN_SKILLS="$(cd "$SCRIPTS/.." && pwd)/skills/cc-suite"
 assert_symlink_target "stale/.claude/skills/cc-suite"    "$PLUGIN_SKILLS"
 assert_symlink_target "dangling/.claude/skills/cc-suite" "$PLUGIN_SKILLS"
-# Untouched: neither is cc-suite's to move.
+# Untouched: none of these is cc-suite's to move.
 assert_symlink_target "foreign/.claude/skills/cc-suite"  "$TMP/somewhere-else"
+assert_symlink_target "devlink/.claude/skills/cc-suite"  "$TMP/devcheckout/cc-suite/skills/cc-suite"
 assert_dir            "realdir/.claude/skills/cc-suite"
 assert_no_symlink     "absent/.claude/skills/cc-suite"
 # bridge_skills.sh does the repoint, so its whole footprint lands: the agy link
