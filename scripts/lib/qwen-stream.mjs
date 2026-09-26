@@ -566,6 +566,18 @@ export function consumeQwenEvent(state, event) {
     case "result":
       inspectResult(state, event);
       return;
+    case "stream_event": {
+      // qwen-code 0.24.x wraps internal state notices (e.g. goal_state) in a
+      // stream_event envelope. Allow only known-inert internal types; anything
+      // that could carry tool activity still fails closed. (local patch)
+      const inner = event.event;
+      const innerType = inner && typeof inner === "object" ? inner.type : null;
+      if (innerType === "goal_state") return;
+      throw new QwenStreamError(
+        "unknown_event",
+        `Qwen emitted unsupported stream_event subtype: ${innerType ?? "(missing)"}`
+      );
+    }
     default:
       throw new QwenStreamError(
         "unknown_event",

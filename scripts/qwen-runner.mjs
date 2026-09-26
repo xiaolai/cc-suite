@@ -53,6 +53,9 @@ const MAX_RESUMES_LIMIT = 5;
 // accepting any later stream event. A future unlisted tool therefore fails the
 // init check.
 const QWEN_FORBIDDEN_TOOLS = [
+  // qwen-code 0.24.x internal tools (local patch, report upstream)
+  "report_findings",
+  "tool_call",
   "edit",
   "write_file",
   "grep_search",
