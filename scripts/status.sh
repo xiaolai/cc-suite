@@ -14,6 +14,36 @@ mark() {
   esac
 }
 
+# $1 >= $2 for dotted versions (2.1.284 >= 2.1.277).
+_ver_ge() {
+  local -a a b; local i
+  IFS=. read -r -a a <<< "$1"
+  IFS=. read -r -a b <<< "$2"
+  for i in 0 1 2; do
+    [ "${a[i]:-0}" -gt "${b[i]:-0}" ] && return 0
+    [ "${a[i]:-0}" -lt "${b[i]:-0}" ] && return 1
+  done
+  return 0
+}
+
+# Print the instruction file that makes Claude Code skip AGENTS.md, if any:
+# CLAUDE.local.md or .claude/CLAUDE.md here, or any of the three names in a
+# directory above. ~/.claude/CLAUDE.md is the user file and does not count.
+_suppressing_claude_md() {
+  local d="$PWD" f
+  for f in CLAUDE.local.md .claude/CLAUDE.md; do
+    [ -f "$d/$f" ] && { printf '%s\n' "$d/$f"; return 0; }
+  done
+  while [ "$d" != "/" ]; do
+    d="$(dirname "$d")"
+    for f in CLAUDE.md CLAUDE.local.md .claude/CLAUDE.md; do
+      [ "$d/$f" = "$HOME/.claude/CLAUDE.md" ] && continue
+      [ -f "$d/$f" ] && { printf '%s\n' "$d/$f"; return 0; }
+    done
+  done
+  return 1
+}
+
 # The project's tool selection (.cc-suite.md `## Enabled Tools`), queried once.
 # An artifact whose tool was deliberately deselected is expected to be absent —
 # reporting it as broken trains users to ignore this report. Falls back to the
@@ -52,6 +82,22 @@ if [ -f CLAUDE.md ]; then
     mark "CLAUDE.md" warn "@AGENTS.md import + other content (hybrid) — merge extras into AGENTS.md"
   else
     mark "CLAUDE.md" warn "substantive content (not @import) — consider /cc-suite:init"
+  fi
+elif [ -f AGENTS.md ]; then
+  # Absent is fine on Claude Code 2.1.277+, which reads AGENTS.md itself — unless
+  # a CLAUDE.md above this directory (or a .claude/CLAUDE.md / CLAUDE.local.md
+  # here) makes Claude skip AGENTS.md. ~/.claude/CLAUDE.md does not count.
+  if _above="$(_suppressing_claude_md)"; then
+    mark "CLAUDE.md" warn "absent, but ${_above} makes Claude skip AGENTS.md — rename it, or run /cc-suite:init"
+  else
+    _cc_ver="$(claude --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+    if [ -n "$_cc_ver" ] && _ver_ge "$_cc_ver" 2.1.277; then
+      mark "CLAUDE.md" ok "absent — Claude Code ${_cc_ver} reads AGENTS.md natively"
+    elif [ -n "$_cc_ver" ]; then
+      mark "CLAUDE.md" warn "missing — Claude Code ${_cc_ver} predates native AGENTS.md support (2.1.277); run /cc-suite:init"
+    else
+      mark "CLAUDE.md" warn "missing — Claude Code version unknown (AGENTS.md is read natively from 2.1.277); run /cc-suite:init to be safe"
+    fi
   fi
 else
   mark "CLAUDE.md" miss

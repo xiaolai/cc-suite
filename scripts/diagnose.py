@@ -136,11 +136,59 @@ def check_agents_md() -> dict:
     return check("agents_md", "AGENTS.md", "healthy", f"{size} bytes")
 
 
+AGENTS_MD_NATIVE_SINCE = (2, 1, 277)  # Claude Code reads AGENTS.md itself from this release
+
+
+def claude_code_version() -> tuple[int, int, int] | None:
+    """Installed Claude Code version, or None when the CLI is absent or unparseable."""
+    try:
+        proc = subprocess.run(["claude", "--version"], capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    m = re.search(r"(\d+)\.(\d+)\.(\d+)", proc.stdout or "")
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else None
+
+
+def suppressing_claude_md(root: Path) -> Path | None:
+    """The instruction file that makes Claude Code skip AGENTS.md, if any.
+
+    Claude reads AGENTS.md only when no CLAUDE.md, .claude/CLAUDE.md, or
+    CLAUDE.local.md exists in the working directory or any directory above it.
+    The user file ~/.claude/CLAUDE.md does not count. ROOT/CLAUDE.md itself is
+    the caller's business, so it is skipped here."""
+    user_file = Path.home() / ".claude" / "CLAUDE.md"
+    root = root.resolve()
+    for directory in (root, *root.parents):
+        names = ("CLAUDE.local.md", ".claude/CLAUDE.md") if directory == root else ("CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md")
+        for rel in names:
+            candidate = directory / rel
+            if candidate != user_file and candidate.is_file():
+                return candidate
+    return None
+
+
 def check_claude_md() -> dict:
     p = ROOT / "CLAUDE.md"
     text = _read(p)
     if text is None:
-        return check("claude_md", "CLAUDE.md", "issue", "missing — Claude sessions get no instructions",
+        if not (ROOT / "AGENTS.md").is_file():
+            return check("claude_md", "CLAUDE.md", "issue", "missing — Claude sessions get no instructions",
+                         auto=[f"bash {script('init.sh')}"])
+        above = suppressing_claude_md(ROOT)
+        if above is not None:
+            return check("claude_md", "CLAUDE.md", "issue",
+                         f"absent, but {above} makes Claude skip AGENTS.md — sessions here read that file instead",
+                         manual=f"rename {above} to AGENTS.md, or run /cc-suite:init to add a CLAUDE.md that imports AGENTS.md")
+        ver = claude_code_version()
+        if ver is None:
+            return check("claude_md", "CLAUDE.md", "manual",
+                         "absent — Claude Code reads AGENTS.md natively from 2.1.277, but the installed version could not be determined",
+                         manual="run `claude --version`; below 2.1.277, run /cc-suite:init to add the @AGENTS.md import")
+        label = ".".join(map(str, ver))
+        if ver >= AGENTS_MD_NATIVE_SINCE:
+            return check("claude_md", "CLAUDE.md", "healthy", f"absent — Claude Code {label} reads AGENTS.md natively")
+        return check("claude_md", "CLAUDE.md", "issue",
+                     f"missing — Claude Code {label} predates native AGENTS.md support (2.1.277)",
                      auto=[f"bash {script('init.sh')}"])
     if text.strip() == "@AGENTS.md":
         return check("claude_md", "CLAUDE.md", "healthy", "@AGENTS.md import")

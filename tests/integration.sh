@@ -2562,6 +2562,48 @@ assert d["summary"].get("issue", 0) == 0, d["summary"]
 PY
 cleanup
 
+section "T76f: diagnose.py/status.sh — AGENTS.md without CLAUDE.md is healthy on Claude Code >= 2.1.277"
+# Claude Code reads AGENTS.md itself from 2.1.277 when no CLAUDE.md sits in the
+# working directory or above it. Treating the absent pointer as broken made the
+# report red for every repo that adopted the native layout — including cc-suite's own.
+make_tmp
+printf '# X\n' > AGENTS.md
+mkdir -p bin "$TMP/fakehome"
+printf '#!/usr/bin/env bash\necho "2.1.284 (Claude Code)"\n' > bin/claude; chmod +x bin/claude
+PATH="$TMP/bin:$PATH" HOME="$TMP/fakehome" python3 "$SCRIPTS/diagnose.py" --json --no-preflight > diag.json 2>/dev/null || true
+python3 - <<'PY' && ok_msg "diagnose: claude_md healthy — AGENTS.md read natively on 2.1.284" || fail_msg "diagnose: claude_md should be healthy without CLAUDE.md on 2.1.284"
+import json
+c = {c["id"]: c for c in json.load(open("diag.json"))["checks"]}["claude_md"]
+assert c["status"] == "healthy" and "natively" in c["detail"], c
+PY
+_st="$(PATH="$TMP/bin:$PATH" bash "$SCRIPTS/status.sh" 2>&1)"
+if printf '%s' "$_st" | grep -q '✓ CLAUDE.md.*reads AGENTS.md natively'; then ok_msg "status.sh: absent CLAUDE.md is ok on 2.1.284"
+else fail_msg "status.sh did not report native AGENTS.md reading: $(printf '%s' "$_st" | grep 'CLAUDE.md')"; fi
+# Older Claude Code still needs the import, and the auto fix is init.sh.
+printf '#!/usr/bin/env bash\necho "2.1.200 (Claude Code)"\n' > bin/claude
+PATH="$TMP/bin:$PATH" HOME="$TMP/fakehome" python3 "$SCRIPTS/diagnose.py" --json --no-preflight > diag.json 2>/dev/null || true
+python3 - <<'PY' && ok_msg "diagnose: claude_md is an issue with the init fix on 2.1.200" || fail_msg "diagnose: claude_md should be an issue on 2.1.200"
+import json
+c = {c["id"]: c for c in json.load(open("diag.json"))["checks"]}["claude_md"]
+assert c["status"] == "issue" and c["fix"]["auto"], c
+PY
+_st="$(PATH="$TMP/bin:$PATH" bash "$SCRIPTS/status.sh" 2>&1)"
+if printf '%s' "$_st" | grep -q '! CLAUDE.md.*predates native AGENTS.md'; then ok_msg "status.sh: absent CLAUDE.md warned on 2.1.200"
+else fail_msg "status.sh should warn on 2.1.200: $(printf '%s' "$_st" | grep 'CLAUDE.md')"; fi
+# A CLAUDE.md in a parent directory makes Claude skip AGENTS.md entirely.
+printf '#!/usr/bin/env bash\necho "2.1.284 (Claude Code)"\n' > bin/claude
+mkdir -p sub/proj && printf '# X\n' > sub/proj/AGENTS.md && printf '# parent\n' > sub/CLAUDE.md
+(cd sub/proj && PATH="$TMP/bin:$PATH" HOME="$TMP/fakehome" python3 "$SCRIPTS/diagnose.py" --json --no-preflight > "$TMP/diag2.json" 2>/dev/null || true)
+python3 - "$TMP/diag2.json" <<'PY' && ok_msg "diagnose: parent CLAUDE.md that suppresses AGENTS.md is an issue" || fail_msg "diagnose: parent CLAUDE.md not detected"
+import json, sys
+c = {c["id"]: c for c in json.load(open(sys.argv[1]))["checks"]}["claude_md"]
+assert c["status"] == "issue" and "sub/CLAUDE.md" in c["detail"], c
+PY
+_st="$(cd sub/proj && PATH="$TMP/bin:$PATH" bash "$SCRIPTS/status.sh" 2>&1)"
+if printf '%s' "$_st" | grep -q '! CLAUDE.md.*sub/CLAUDE.md makes Claude skip AGENTS.md'; then ok_msg "status.sh: parent CLAUDE.md flagged"
+else fail_msg "status.sh should flag the parent CLAUDE.md: $(printf '%s' "$_st" | grep 'CLAUDE.md')"; fi
+cleanup
+
 section "T76d: diagnose.py — malformed model field is informational, stale advisor parity is an issue"
 make_tmp
 printf '## Defaults\n\n- **Default model**: latest\n- **Default model**: gpt-old\n' > .cc-suite.md
