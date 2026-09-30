@@ -1,6 +1,7 @@
 ---
 description: Rules auditor — audit .claude/rules/ files for enforceability, token efficiency, conflict detection, and correctness risk
 argument-hint: "[rules-dir] [--full | --mini]"
+disable-model-invocation: true
 ---
 
 ## User Input

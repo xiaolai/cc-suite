@@ -2,6 +2,7 @@
 description: Check Grok Build (xAI) readiness — binary on PATH, authentication, and available models. Fast and local (no network round-trip).
 allowed-tools:
   - Bash
+disable-model-invocation: true
 ---
 
 # Grok Build Preflight
