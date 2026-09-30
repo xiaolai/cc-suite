@@ -1,5 +1,6 @@
 ---
 description: Check local Qwen Code readiness for the bounded review runner without sending a model prompt or inspecting credentials.
+disable-model-invocation: true
 allowed-tools:
   - Bash
 ---

@@ -145,6 +145,6 @@ Show the user:
 - **Restart Claude Code** so the MCP loader picks up the new server.
 - After restart, invoke as: `Use the mcp__<name>__<tool_name> tool to ask...`
 - Codex picks up `.codex/config.toml` changes on next invocation — no restart needed.
-- Run `/cc-suite:bridge-mcp` if Antigravity should consult the advisor; it refreshes
+- Type `/cc-suite:bridge-mcp` if Antigravity should consult the advisor; it refreshes
   the generated `.agents/mcp_config.json` projection.
 ```

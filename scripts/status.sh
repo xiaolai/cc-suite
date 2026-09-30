@@ -108,7 +108,7 @@ fi
 # cc-suite no longer creates it, but never deletes custom content automatically.
 if [ -f GEMINI.md ]; then
   if grep -qE '^@AGENTS\.md\s*$' GEMINI.md && [ "$(tr -d '[:space:]' < GEMINI.md)" = "@AGENTS.md" ]; then
-    mark "GEMINI.md" warn "legacy @AGENTS.md import — remove with /cc-suite:unbridge"
+    mark "GEMINI.md" warn "legacy @AGENTS.md import — ask the user to run /cc-suite:unbridge to remove it"
   else
     mark "GEMINI.md" warn "legacy/custom Google instructions — review or migrate manually"
   fi
@@ -132,7 +132,7 @@ if [ -L .agents/skills ]; then
 elif [ -d .agents/skills ]; then
   mark ".agents/skills" warn "real directory (not symlink)"
 else
-  mark ".agents/skills" miss "→ run /cc-suite:bridge-skills"
+  mark ".agents/skills" miss "→ ask the user to run /cc-suite:bridge-skills"
 fi
 
 # .claude/skills/cc-suite symlink (plugin skills exposed to Codex)
@@ -141,19 +141,19 @@ if [ -L .claude/skills/cc-suite ]; then
     _skill_count="$(find .claude/skills/cc-suite/ -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
     mark ".claude/skills/cc-suite" ok "→ plugin skills (${_skill_count} skills visible to Codex)"
   else
-    mark ".claude/skills/cc-suite" warn "symlink broken — run /cc-suite:bridge-skills"
+    mark ".claude/skills/cc-suite" warn "symlink broken — ask the user to run /cc-suite:bridge-skills"
   fi
 elif [ -d .claude/skills/cc-suite ]; then
   mark ".claude/skills/cc-suite" warn "real directory (not symlink) — Codex may see stale skills"
 else
-  mark ".claude/skills/cc-suite" miss "plugin skills not exposed — run /cc-suite:bridge-skills"
+  mark ".claude/skills/cc-suite" miss "plugin skills not exposed — ask the user to run /cc-suite:bridge-skills"
 fi
 
 # .codex
 if tool_enabled codex; then
   [ -d .codex/prompts ]    && mark ".codex/prompts/"    ok "" || mark ".codex/prompts/"    miss
   [ -f .codex/hooks.json ] && mark ".codex/hooks.json"  ok "$(wc -c < .codex/hooks.json | tr -d ' ') bytes" \
-                           || mark ".codex/hooks.json"  miss "(run /cc-suite:bridge-hooks)"
+                           || mark ".codex/hooks.json"  miss "(ask the user to run /cc-suite:bridge-hooks)"
   [ -f .codex/config.toml ] && mark ".codex/config.toml" ok "" \
                              || mark ".codex/config.toml" miss "(run /cc-suite:init)"
 else
@@ -180,10 +180,10 @@ except Exception:
     mark ".agents/mcp_config.json → agy" warn "user-managed config — cc-suite will not overwrite it"
   fi
 else
-  mark ".agents/mcp_config.json → agy" miss "run /cc-suite:bridge-mcp"
+  mark ".agents/mcp_config.json → agy" miss "ask the user to run /cc-suite:bridge-mcp"
 fi
 
-# Fast local check only; /cc-suite:agy-preflight performs the live model/auth
+# Fast local check only; the user-typed /cc-suite:agy-preflight performs the live model/auth
 # probe with a deadline.
 if ! tool_enabled antigravity; then
   mark "agy CLI" miss "(Antigravity is not enabled)"
@@ -222,8 +222,8 @@ sys.exit({None: 13, ABSENT: 10, DEAD_BUILTIN: 11, DEAD_LEGACY_NPM: 12, FOREIGN: 
 PY
   case "$_codex_cli_rc" in
     10) mark ".mcp.json → Claude" ok   "no dead codex-cli registration" ;;
-    11) mark ".mcp.json → Claude" warn "dead codex-cli entry (codex mcp-server was removed from Codex CLI) — run /cc-suite:repair" ;;
-    12) mark ".mcp.json → Claude" warn "dead codex-cli entry (legacy npm registration) — run /cc-suite:repair" ;;
+    11) mark ".mcp.json → Claude" warn "dead codex-cli entry (codex mcp-server was removed from Codex CLI) — ask the user to run /cc-suite:repair" ;;
+    12) mark ".mcp.json → Claude" warn "dead codex-cli entry (legacy npm registration) — ask the user to run /cc-suite:repair" ;;
     14) mark ".mcp.json → Claude" ok   "codex-cli entry is not cc-suite's — left untouched" ;;
     13) mark ".mcp.json → Claude" warn ".mcp.json unreadable, or top level / mcpServers is not an object" ;;
     *)  mark ".mcp.json → Claude" warn "could not classify the codex-cli entry — inspect with: python3 -c 'import sys; sys.path.insert(0, \"${SCRIPT_DIR}/lib\"); import codex_mcp_entry'" ;;
@@ -247,7 +247,7 @@ elif [ -f .codex/config.toml ]; then
       mark ".codex/config.toml → Codex" ok   "claude-code pinned @${_expected_pin}"
     else
       _live_pin=$(printf '%s' "$_claude_block" | grep -oE 'claude-octopus@[0-9][^"]*' | head -1)
-      mark ".codex/config.toml → Codex" warn "claude-code pinned @${_live_pin:-?} but plugin expects @${_expected_pin} — run /cc-suite:update"
+      mark ".codex/config.toml → Codex" warn "claude-code pinned @${_live_pin:-?} but plugin expects @${_expected_pin} — ask the user to run /cc-suite:update"
     fi
   elif grep -qE '^[[:space:]]*\[mcp_servers\.(claude-code|"claude-code")\][[:space:]]*$' .codex/config.toml; then
     mark ".codex/config.toml → Codex" warn "claude-code registered by another source (not cc-suite-managed)"
@@ -303,7 +303,7 @@ PY
   _tab=$'\t'
   case "$_advisor_report" in
     ok"$_tab"*)   mark ".cc-suite/agents/" ok   "${_advisor_report#ok"$_tab"}" ;;
-    warn"$_tab"*) mark ".cc-suite/agents/" warn "${_advisor_report#warn"$_tab"} — run /cc-suite:repair" ;;
+    warn"$_tab"*) mark ".cc-suite/agents/" warn "${_advisor_report#warn"$_tab"} — ask the user to run /cc-suite:repair" ;;
     *)            mark ".cc-suite/agents/" warn "could not compare declared vs registered advisors (python3 unavailable?)" ;;
   esac
 else
@@ -397,7 +397,7 @@ if mirrored:
     print(f"  ✓ mirrored to .codex/config.toml   {mirrored}")
 if missing:
     print(f"  ! NOT mirrored to Codex config     {missing}")
-    print(f"    → run /cc-suite:sync-mcp to sync")
+    print(f"    → ask the user to run /cc-suite:sync-mcp to sync")
 PY
 fi
 

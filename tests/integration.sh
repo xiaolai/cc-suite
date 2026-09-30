@@ -5,7 +5,10 @@
 
 set -euo pipefail
 
-SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")/../scripts" && pwd)"
+# Physical path (-P): the scripts resolve their own root, so a checkout reached
+# through a symlink (macOS /tmp -> /private/tmp) would otherwise fail every
+# symlink-target comparison.
+SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")/../scripts" && pwd -P)"
 PASS=0
 FAIL=0
 declare -a ERRORS=()
@@ -665,10 +668,12 @@ if printf '%s' "$_stale_out" | grep -q '! \.mcp\.json → Claude'; then
 else
   fail_msg "status.sh: dead codex-cli not flagged with !"
 fi
-if printf '%s' "$_stale_out" | grep -q '/cc-suite:repair'; then
+# repair is user-typed (disable-model-invocation), so the hint must address the
+# user; a bare "run /cc-suite:repair" sends Claude into a refused Skill call.
+if printf '%s' "$_stale_out" | grep -q 'ask the user to run /cc-suite:repair'; then
   ok_msg "status.sh: directs user to /cc-suite:repair"
 else
-  fail_msg "status.sh: missing /cc-suite:repair hint"
+  fail_msg "status.sh: missing user-addressed /cc-suite:repair hint"
 fi
 
 cleanup

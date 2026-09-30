@@ -1,5 +1,6 @@
 ---
 description: Refresh Claude Code convention knowledge — fetch latest docs via context7 and update the reference skill
+disable-model-invocation: true
 argument-hint: "[--check | --update]"
 ---
 

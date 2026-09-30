@@ -273,7 +273,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_tools.py" --set-enabled <comma,sep
 
 If the script exits non-zero, report the error and stop — every later step reads
 this selection, so it must be recorded before continuing. To change it afterwards,
-re-tick `## Enabled Tools` in `.cc-suite.md` and run `/cc-suite:bridge-tools`.
+the user re-ticks `## Enabled Tools` in `.cc-suite.md` and types `/cc-suite:bridge-tools`.
 
 ---
 
@@ -389,7 +389,7 @@ Display a combined status report:
 ### Bridged agents
 
 {one line per tool the user selected in Step 5b}
-{then, if any were skipped: "Not bridged: <list> — re-tick in `.cc-suite.md` and run `/cc-suite:bridge-tools` to add them later."}
+{then, if any were skipped: "Not bridged: <list> — re-tick in `.cc-suite.md` and type `/cc-suite:bridge-tools` to add them later."}
 
 ### MCP delegation
 

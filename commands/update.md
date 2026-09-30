@@ -1,5 +1,6 @@
 ---
 description: Refresh the cc-suite bridge after updating the plugin. Re-renders MCP registrations, pre-warms the npx cache for the pinned claude-octopus, and verifies the pin actually boots and speaks MCP.
+disable-model-invocation: true
 ---
 
 # CC-Suite Update
@@ -82,4 +83,4 @@ Report the result. If status shows all `✓`, end with:
 cc-suite updated and verified. The pinned claude-octopus@<version> boots and responds to MCP.
 ```
 
-If status shows any `·` or `!` lines, summarize what's still off and suggest `/cc-suite:repair` (for missing artifacts) or `/cc-suite:diagnose` (for diagnosis with auto-fix).
+If status shows any `·` or `!` lines, summarize what's still off and tell the user to type `/cc-suite:repair` (for missing artifacts) or `/cc-suite:diagnose` (for diagnosis with auto-fix).

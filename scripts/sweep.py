@@ -448,7 +448,7 @@ def report(result: dict, fixes: dict[str, dict] | None) -> None:
         if i.get("recorded_version") and i["recorded_version"] != result["plugin_version"]
     }
     if drift:
-        print(f"\n  Version drift ({len(drift)}) — reported only, run /cc-suite:update there")
+        print(f"\n  Version drift ({len(drift)}) — reported only; ask the user to run /cc-suite:update in each")
         for path, info in sorted(drift.items()):
             print(f"  · {path}  (recorded {info['recorded_version']})")
 

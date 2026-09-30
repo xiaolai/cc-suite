@@ -1,5 +1,6 @@
 ---
 description: Tear down the cc-suite artifacts in the current repo. Does not delete CLAUDE.md content or .claude/, only the bridge layer.
+disable-model-invocation: true
 allowed-tools:
   - Bash
   - AskUserQuestion

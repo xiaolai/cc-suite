@@ -300,3 +300,84 @@ test("package.json and plugin.json agree on name and version", () => {
   );
   assert.match(plugin.version, /^\d+\.\d+\.\d+$/, "Version must be semver");
 });
+
+// ── User-typed commands stay out of the model's reach ─────────────────────────
+// `disable-model-invocation: true` keeps a command out of the always-on skill
+// listing, and Claude can no longer invoke it. Any text Claude reads that still
+// says "run /cc-suite:<hidden>" would then send it into a refused Skill call, so
+// every such hint must address the user instead ("ask the user to run", "type").
+// A flow that must chain into a hidden command reads its file by path instead.
+
+const USER_TYPED = [
+  "agy-preflight",
+  "bridge-hooks",
+  "bridge-mcp",
+  "bridge-skills",
+  "bridge-tools",
+  "codex-preflight",
+  "qwen-preflight",
+  "refresh-knowledge",
+  "repair",
+  "sync-mcp",
+  "unbridge",
+  "update",
+];
+// Claude drives these itself: job control, and the entry points a plain-words
+// request can only be served by.
+const MODEL_VISIBLE = ["status", "result", "cancel", "init", "setup", "sweep"];
+
+function isHidden(name) {
+  return extractFrontmatter(readCommand(name))["disable-model-invocation"] === "true";
+}
+
+test("setup-maintenance commands are hidden from the model", () => {
+  for (const name of USER_TYPED) {
+    assert.ok(isHidden(name), `commands/${name}.md should set disable-model-invocation: true`);
+  }
+  for (const name of MODEL_VISIBLE) {
+    assert.ok(!isHidden(name), `commands/${name}.md must stay model-invocable`);
+  }
+});
+
+function walkText(dir, out = []) {
+  if (!fs.existsSync(dir)) return out;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name !== "node_modules") walkText(full, out);
+    } else if (/\.(md|sh|py|mjs|js|json|ya?ml|txt)$/.test(entry.name)) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
+test("no text tells Claude to run a hidden command", () => {
+  const hidden = fs
+    .readdirSync(path.join(PLUGIN_ROOT, "commands"))
+    .filter((f) => f.endsWith(".md"))
+    .map((f) => f.slice(0, -3))
+    .filter(isHidden);
+  assert.ok(hidden.length >= USER_TYPED.length, "hidden-command discovery found too few");
+
+  const names = hidden.map((n) => n.replace(/[-]/g, "\\-")).join("|");
+  // An imperative verb (optionally followed by a quote, backtick or bracket)
+  // directly before the command name.
+  const imperative = new RegExp(
+    String.raw`\b(run|re-run|rerun|use|invoke|call|execute|try|suggest|recommend|with)\s+[\x60'"(\[]*/cc-suite:(${names})\b`,
+    "i"
+  );
+  const addressedToUser = /\b(user|type|types|typing)\b/i;
+
+  const offenders = [];
+  for (const dir of ["commands", "skills", "agents", "hooks", "scripts"]) {
+    for (const file of walkText(path.join(PLUGIN_ROOT, dir))) {
+      fs.readFileSync(file, "utf8").split("\n").forEach((line, i) => {
+        if (imperative.test(line) && !addressedToUser.test(line)) {
+          offenders.push(`${path.relative(PLUGIN_ROOT, file)}:${i + 1}: ${line.trim()}`);
+        }
+      });
+    }
+  }
+  assert.deepEqual(offenders, [], `hidden commands still offered to Claude:\n${offenders.join("\n")}`);
+});

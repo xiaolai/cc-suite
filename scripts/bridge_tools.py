@@ -1152,7 +1152,7 @@ def health_check() -> int:
 
     Prints one JSON object: {"schema": 1, "enabled": [...], "tools": [
       {"id", "display_name", "status": "healthy"|"issue", "problems": [...],
-       "fix": "/cc-suite:bridge-tools"}]}.
+       "fix": "ask the user to run /cc-suite:bridge-tools"}]}.
     Unlike --status (which only lists targets), this verifies the artifacts:
     config exists and parses, the cc-suite-managed entries are present, and
     tool-specific extras (Qwen skills symlink, context files) are wired.
@@ -1287,7 +1287,7 @@ def health_check() -> int:
             "display_name": prof["display_name"],
             "status": "issue" if problems else "healthy",
             "problems": problems,
-            "fix": "/cc-suite:bridge-tools",
+            "fix": "ask the user to run /cc-suite:bridge-tools",
         })
 
     # Only a real selection can mark a tool as disabled; under the DEFAULT_TOOLS
@@ -1321,7 +1321,7 @@ def health_check() -> int:
                             f"`python3 bridge_tools.py --unbridge {tool_id}` to revoke it; if another "
                             "project owns it, leave it alone."
                         ],
-                        "fix": "/cc-suite:bridge-tools",
+                        "fix": "ask the user to run /cc-suite:bridge-tools",
                     })
                     continue
                 problem = (f"disabled, but {target} is still bridged with this project's MCP "
@@ -1337,7 +1337,7 @@ def health_check() -> int:
                 "display_name": prof["display_name"],
                 "status": "issue",
                 "problems": [problem],
-                "fix": "/cc-suite:bridge-tools",
+                "fix": "ask the user to run /cc-suite:bridge-tools",
             })
 
     print(json.dumps({"schema": 1, "enabled": enabled, "tools": tools}, indent=2))
@@ -1520,8 +1520,8 @@ def main(argv: list[str]) -> int:
                          and PROFILES.get(t, {}).get("mcp", {}).get("scope") != "global"]
             if transient:
                 warn(f"--tools is a one-off: {', '.join(transient)} not enabled in "
-                     f"{CONFIG.name} — the next plain `bridge_tools.py` run (/cc-suite:update, "
-                     "/cc-suite:repair, /cc-suite:init) removes what this run writes; use "
+                     f"{CONFIG.name} — the next plain `bridge_tools.py` run, which /cc-suite:update, "
+                     "/cc-suite:repair and /cc-suite:init all make, removes what this run writes; use "
                      "`--set-enabled` to make the selection stick")
     else:
         enabled, explicit_selection = _parse_enabled(CONFIG)

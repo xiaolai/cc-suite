@@ -24,7 +24,7 @@ If repair still leaves issues, the next step is `/cc-suite:init` in a Claude Cod
 
 ```bash
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(dirname "$(dirname "$(readlink -f .claude/skills/cc-suite 2>/dev/null)")")}"
-[ -d "${PLUGIN_ROOT}/scripts" ] || echo "! cannot resolve the cc-suite plugin root — run /cc-suite:bridge-skills from Claude Code first, or export CLAUDE_PLUGIN_ROOT"
+[ -d "${PLUGIN_ROOT}/scripts" ] || echo "! cannot resolve the cc-suite plugin root — ask the user to type /cc-suite:bridge-skills in Claude Code first, or export CLAUDE_PLUGIN_ROOT"
 ```
 
 Every command below uses `${PLUGIN_ROOT}`. Stop if it could not be resolved.

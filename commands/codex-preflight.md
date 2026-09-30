@@ -1,5 +1,6 @@
 ---
 description: Check Codex connectivity, authentication, and discover available models
+disable-model-invocation: true
 ---
 
 # Codex Preflight Check

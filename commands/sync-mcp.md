@@ -1,5 +1,6 @@
 ---
 description: Synchronize Claude Code project MCP servers into Codex and Antigravity workspace configs.
+disable-model-invocation: true
 allowed-tools:
   - Bash
 ---

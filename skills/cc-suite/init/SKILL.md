@@ -22,7 +22,7 @@ Bootstrap cc-suite in the current project.
 
 ```bash
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(dirname "$(dirname "$(readlink -f .claude/skills/cc-suite 2>/dev/null)")")}"
-[ -d "${PLUGIN_ROOT}/scripts" ] || echo "! cannot resolve the cc-suite plugin root — run /cc-suite:bridge-skills from Claude Code first, or export CLAUDE_PLUGIN_ROOT"
+[ -d "${PLUGIN_ROOT}/scripts" ] || echo "! cannot resolve the cc-suite plugin root — ask the user to type /cc-suite:bridge-skills in Claude Code first, or export CLAUDE_PLUGIN_ROOT"
 ```
 
 Every command below uses `${PLUGIN_ROOT}`. Stop if it could not be resolved.
@@ -229,7 +229,7 @@ Project config:  .cc-suite.md written ({focus}, {depth}, effort={effort})
 Next steps:
   Edit AGENTS.md to add project-specific conventions
   Run /cc-suite:audit-fix to test the full cycle
-  Run /cc-suite:diagnose to verify health at any time
+  Type /cc-suite:diagnose in Claude Code (or use the diagnose skill here) to verify health at any time
   Commit AGENTS.md, .cc-suite.md, .mcp.json to share with your team
 ```
 

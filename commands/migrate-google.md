@@ -118,5 +118,5 @@ Display:
 ```
 
 Do not remove custom `GEMINI.md` or `.gemini` content without a separate user
-confirmation; use `/cc-suite:unbridge` only for cc-suite-generated artifacts and
-bare `@AGENTS.md` imports.
+confirmation. For cc-suite-generated artifacts and bare `@AGENTS.md` imports, tell
+the user that typing `/cc-suite:unbridge` removes them and nothing else.

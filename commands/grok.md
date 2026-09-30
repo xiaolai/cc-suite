@@ -17,7 +17,7 @@ agent. It streams the answer from `session/update` notifications, is
 deadline-bounded and killable, and registers every call as a job, so
 `/cc-suite:status`, `/result`, `/cancel`, and `/continue` work identically to the
 Codex and agy backends. Grok can call back into Claude through the `claude-code`
-MCP server if it's bridged (`/cc-suite:bridge-tools` with grok enabled).
+MCP server if it's bridged (the user enables grok and types `/cc-suite:bridge-tools`).
 
 > **The delegation boundary is injected for you.** Grok reads `AGENTS.md` and the
 > shared `.agents/skills/` tree natively, so it can see cc-suite's own skills for

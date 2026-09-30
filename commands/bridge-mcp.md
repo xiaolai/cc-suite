@@ -1,5 +1,6 @@
 ---
 description: Mirror MCP servers from .mcp.json into Codex and Antigravity workspace configs
+disable-model-invocation: true
 allowed-tools:
   - Bash
 ---

@@ -5,7 +5,7 @@
 // will, sends a single MCP `initialize` request over stdin, and verifies the
 // server responds with a well-formed `serverInfo`. Then kills the subprocess.
 //
-// Used by /cc-suite:update, /cc-suite:doctor, and tests/integration.sh to
+// Used by /cc-suite:update, diagnose.py --boot-test, and tests/integration.sh to
 // catch "pin published but actually broken" — semver compliance does not
 // imply the package boots on this user's machine.
 //

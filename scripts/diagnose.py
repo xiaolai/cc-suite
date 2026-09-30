@@ -208,7 +208,7 @@ def check_legacy_google() -> list[dict]:
     if (ROOT / "GEMINI.md").is_file() or (ROOT / ".gemini").is_dir():
         out.append(check("legacy_google", "GEMINI.md / .gemini/", "manual",
                          "legacy Google artifacts present — may be deliberate (enterprise Gemini) or leftover",
-                         manual="run /cc-suite:migrate-google to migrate or consciously retain them"))
+                         manual="ask the user to run /cc-suite:migrate-google to migrate them, or to consciously retain them"))
     return out
 
 
@@ -308,9 +308,9 @@ def check_cache_freshness() -> dict:
         return check("cache_freshness", "plugin cache", "healthy", f"skills symlink at v{installed}")
     return check("cache_freshness", "plugin cache", "issue",
                  f"skills symlink at v{m.group(1)}, installed plugin is v{installed}",
-                 manual="run `claude plugin update cc-suite@xiaolai`, then restart Claude Code and run "
-                        "/cc-suite:bridge-skills in the new session (re-bridging from this session would "
-                        "repoint to the old cache)",
+                 manual="ask the user to run `claude plugin update cc-suite@xiaolai`, restart Claude Code, "
+                        "then have the user run /cc-suite:bridge-skills in the new session "
+                        "(re-bridging from this session would repoint to the old cache)",
                  restart_required=True)
 
 

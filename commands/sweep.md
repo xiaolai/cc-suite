@@ -78,7 +78,7 @@ That project also gets a standing note on every later run: `.agents/skills is au
 
 - State how many projects were repaired and how many still need a human, with the reason for each.
 - Tell the user to **restart any Claude Code session that was already open** in a repaired repo. MCP config is read at session start, so a running session keeps showing the old failed connection until it restarts.
-- If anything was refused, give the exact per-project command to finish it (`/cc-suite:diagnose` in that repo).
+- If anything was refused, tell the user the exact per-project command to type to finish it (`/cc-suite:diagnose` in that repo).
 
 ## Notes
 

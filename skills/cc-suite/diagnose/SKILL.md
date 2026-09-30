@@ -22,7 +22,7 @@ Run the structured diagnostic engine and act on its report. Skill counterpart to
 
 ```bash
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(dirname "$(dirname "$(readlink -f .claude/skills/cc-suite 2>/dev/null)")")}"
-[ -d "${PLUGIN_ROOT}/scripts" ] || echo "! cannot resolve the cc-suite plugin root — run /cc-suite:bridge-skills from Claude Code first, or export CLAUDE_PLUGIN_ROOT"
+[ -d "${PLUGIN_ROOT}/scripts" ] || echo "! cannot resolve the cc-suite plugin root — ask the user to type /cc-suite:bridge-skills in Claude Code first, or export CLAUDE_PLUGIN_ROOT"
 ```
 
 Stop if it could not be resolved.
@@ -47,7 +47,7 @@ Ask: "Fix all auto-fixable issues now? (yes / show commands only / cancel)". If 
 
 Run the same engine invocation again and diff per check `id`: fixed (issue → healthy/expected_absent), pending restart (fix applied with `restart_required: true`, still flagged — expected until the host restarts), remaining. Report the three counts. Never claim a fix worked from the fix command's exit code alone.
 
-If issues remain: "Next step: run `/cc-suite:repair` for a full non-interactive re-run of all setup scripts. If that also fails, run `/cc-suite:init` in a Claude Code session."
+If issues remain, tell the user: "Next step: use the repair skill here, or type `/cc-suite:repair` in Claude Code, for a full non-interactive re-run of all setup scripts. If that also fails, type `/cc-suite:init` in a Claude Code session."
 
 ## Example Invocations
 

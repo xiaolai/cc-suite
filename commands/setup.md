@@ -63,10 +63,10 @@ Check each prerequisite:
 2. **Codex CLI**: `codex --version`
 3. **Authentication**: `codex login status`
 
-Antigravity is an independent optional backend. When Google-backed delegation is
-needed, run `/cc-suite:agy-preflight` separately; it checks `agy`, Google
-authentication, model discovery, and the workspace MCP projection. This setup
-command does not substitute the deprecated consumer Gemini CLI.
+Antigravity is an independent optional backend. This setup command does not check
+it and does not substitute the deprecated consumer Gemini CLI. The Antigravity
+check (`agy`, Google authentication, model discovery, the workspace MCP
+projection) is the "Check Antigravity" option in Step 5.
 
 ### Step 4: Display status report
 
@@ -93,14 +93,24 @@ AskUserQuestion:
   question: "Codex is ready. What would you like to configure?"
   header: "Next step"
   options:
-    - label: "Run /cc-suite:codex-preflight"
+    - label: "Check Codex models"
       description: "Discover the latest available Codex model and test connectivity"
-    - label: "Run /cc-suite:agy-preflight"
+    - label: "Check Antigravity"
       description: "Check the optional Antigravity backend and workspace MCP bridge"
-    - label: "Run /init"
+    - label: "Initialize project"
       description: "Generate a .cc-suite.md config for this project"
     - label: "Toggle review gate"
       description: "Enable or disable the stop-time adversarial review"
     - label: "Done"
       description: "Nothing to configure"
 ```
+
+### Step 6: Act on the choice
+
+| Choice | Action |
+|--------|--------|
+| Check Codex models | Read `${CLAUDE_PLUGIN_ROOT}/commands/codex-preflight.md` and follow its workflow. It is a user-typed command, so read the file rather than invoking it. |
+| Check Antigravity | Read `${CLAUDE_PLUGIN_ROOT}/commands/agy-preflight.md` and follow its workflow, the same way. |
+| Initialize project | Invoke `/cc-suite:init`. |
+| Toggle review gate | Apply `--enable-review-gate` or `--disable-review-gate`, whichever flips the current state (Steps 1–2), then show status. |
+| Done | Stop. |

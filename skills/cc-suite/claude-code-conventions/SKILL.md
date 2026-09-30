@@ -1,6 +1,6 @@
 ---
 name: claude-code-conventions
-description: "Canonical reference for Claude Code plugin artifact schemas, hook events, frontmatter fields, and naming conventions. Used to inject domain knowledge into Codex audit prompts. Run /cc-suite:refresh-knowledge to update from latest docs."
+description: "Canonical reference for Claude Code plugin artifact schemas, hook events, frontmatter fields, and naming conventions. Used to inject domain knowledge into Codex audit prompts. To update it from the latest docs, the user types /cc-suite:refresh-knowledge in Claude Code."
 version: 0.2.0
 ---
 
@@ -8,7 +8,7 @@ version: 0.2.0
 
 > **Purpose**: This skill is the single source of truth for Claude Code artifact conventions. Audit commands inject this content into Codex's `developer-instructions` so Codex can accurately validate Claude Code artifacts despite having no native knowledge of the platform.
 >
-> **Freshness**: Last updated 2026-03-25 from context7 (`/websites/code_claude_en_plugins-reference`, `/websites/code_claude_en_plugins`). Run `/cc-suite:refresh-knowledge` to refresh.
+> **Freshness**: Last updated 2026-03-25 from context7 (`/websites/code_claude_en_plugins-reference`, `/websites/code_claude_en_plugins`). To refresh it, ask the user to type `/cc-suite:refresh-knowledge` in Claude Code.
 
 ## When to Use
 

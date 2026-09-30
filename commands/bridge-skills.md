@@ -1,5 +1,6 @@
 ---
 description: Symlink .agents/skills/ → .claude/skills/ so Codex CLI and Antigravity CLI (`agy`) see all Claude skills without duplication.
+disable-model-invocation: true
 allowed-tools:
   - Bash
 ---

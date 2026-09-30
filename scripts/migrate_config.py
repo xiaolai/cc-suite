@@ -59,7 +59,7 @@ def _enabled_tools_section() -> str:
     vpn_cn = [t for t, p in profiles.items() if p.get("china_tier") == "C"]
     intro = textwrap.fill(
         "Which coding agents cc-suite bridges in this project. Tick a tool to "
-        "enable it, then run `/cc-suite:bridge-tools`. "
+        "enable it, then type `/cc-suite:bridge-tools` in Claude Code. "
         f"{_join(own)} use their own bridges (ticked by default). "
         f"{_join(registry)} read AGENTS.md and shared skills natively — only "
         "their MCP config is mirrored, each to its own format.",

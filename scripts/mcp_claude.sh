@@ -216,7 +216,7 @@ sys.exit(1)
 PY
   then
     skip "$TOML already registers [mcp_servers.claude-code] (not cc-suite-managed) — leaving it alone"
-    skip "  to let cc-suite manage it, remove the existing block and re-run /cc-suite:repair"
+    skip "  to let cc-suite manage it, ask the user to remove the existing block and run /cc-suite:repair"
     exit 0
   fi
 fi

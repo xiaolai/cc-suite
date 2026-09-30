@@ -1,5 +1,6 @@
 ---
 description: Check Antigravity CLI (agy) availability, authentication, models, and workspace MCP parity
+disable-model-invocation: true
 allowed-tools:
   - Bash
 ---

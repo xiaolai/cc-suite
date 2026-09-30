@@ -44,8 +44,8 @@ Required block at the top of the fallback report:
 **Codex unavailable — manual analysis.** To restore Codex mode:
 - codex binary on PATH: {yes — <path> / no}
 - codex login: {Logged in using … / not logged in / unknown}
-- Suggested fix: {install codex from https://github.com/openai/codex if not found, `codex login` if not logged in, or `/cc-suite:codex-preflight` for a live auth + model probe}
-- Full diagnostic: `/cc-suite:diagnose`
+- Suggested fix: {install codex from https://github.com/openai/codex if not found, `codex login` if not logged in, or type `/cc-suite:codex-preflight` for a live auth + model probe}
+- Full diagnostic: type `/cc-suite:diagnose`
 ```
 
 Without this block, users see degraded output and don't know it's degraded or how to fix it.

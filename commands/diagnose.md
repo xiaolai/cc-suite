@@ -77,4 +77,4 @@ Report the counts: "{fixed} fixed, {pending} pending restart, {remaining} remain
 
 ### Step 7: If issues remain
 
-Close with: "Issues remain. Next step: run `/cc-suite:repair` for a full non-interactive re-run of all setup scripts. If that also fails, run `/cc-suite:init` for a complete interactive re-initialization."
+Close by telling the user: "Issues remain. Next step: type `/cc-suite:repair` for a full non-interactive re-run of all setup scripts. If that also fails, type `/cc-suite:init` for a complete interactive re-initialization."
