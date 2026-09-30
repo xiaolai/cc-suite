@@ -1,6 +1,7 @@
 ---
 description: "Shared: manual analysis fallback when Codex is unavailable or returns empty"
 user-invocable: false
+disable-model-invocation: true
 ---
 <!-- Shared partial: fallback rules when Codex returns empty or fails -->
 <!-- Referenced by: audit, audit-fix, verify, bug-analyze, review-plan, audit-skill, audit-command, audit-rules, audit-agent, audit-nlp. Do not use standalone. -->

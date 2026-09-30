@@ -4,6 +4,7 @@ argument-hint: "[--skip-import] [--keep-legacy]"
 allowed-tools:
   - Bash
   - AskUserQuestion
+disable-model-invocation: true
 ---
 
 # Migrate Google CLI Integration
@@ -64,8 +65,9 @@ agy plugin import gemini
 This command may update the user's global Antigravity configuration. Report its
 output and stop if it fails.
 
-`--skip-import` skips this step. `--keep-legacy` is the default and documents
-that custom `GEMINI.md`/`.gemini/` content is retained for enterprise users.
+`--skip-import` skips this step. Custom `GEMINI.md`/`.gemini/` content is never
+deleted here, so enterprise Gemini users keep it; `--keep-legacy` only changes
+how the report labels those files.
 
 ## Step 3: Establish the workspace bridge
 

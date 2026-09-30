@@ -384,7 +384,7 @@ Display a combined status report:
 
 ### Bridge artifacts
 
-{output of scripts/status.sh — show the Bridge artifacts section only}
+{output of `bash "${CLAUDE_PLUGIN_ROOT}/scripts/status.sh"` — show the Bridge artifacts section only}
 
 ### Bridged agents
 

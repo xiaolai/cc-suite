@@ -11,7 +11,7 @@ $ARGUMENTS
 
 ## Model & Settings Selection
 
-Follow the instructions in `commands/shared/model-selection.md` to discover available models and present choices.
+Follow the instructions in `${CLAUDE_PLUGIN_ROOT}/commands/shared/model-selection.md` to discover available models and present choices.
 
 - **Recommended model**: first available from preflight
 - **Recommended reasoning effort**: `high`
@@ -54,13 +54,13 @@ Identify scope using symptoms and keywords:
    - What is the data flow?
    - What are the dependencies?
 
-If the bug description references specific files or paths, use `commands/shared/scope-parse.md` for skip pattern enforcement against `{config_skip_patterns}`. When the analysis is unscoped (no bounded file list), instead state `{config_skip_patterns}` in the prompt as paths Codex must not consider or modify.
+If the bug description references specific files or paths, use `${CLAUDE_PLUGIN_ROOT}/commands/shared/scope-parse.md` for skip pattern enforcement against `{config_skip_patterns}`. When the analysis is unscoped (no bounded file list), instead state `{config_skip_patterns}` in the prompt as paths Codex must not consider or modify.
 
 ### Step 3: Deep Analysis with Codex
 
-If `--background` mode was selected, follow the **Background Execution** section in `commands/shared/codex-call.md`. Build the prompt as described below, then hand off to the background runner with `--kind bug-analyze`.
+If `--background` mode was selected, follow the **Background Execution** section in `${CLAUDE_PLUGIN_ROOT}/commands/shared/codex-call.md`. Build the prompt as described below, then hand off to the background runner with `--kind bug-analyze`.
 
-Follow `commands/shared/codex-call.md` for the call pattern (CLI runner) and **Job Tracking**.
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/shared/codex-call.md` for the call pattern (CLI runner) and **Job Tracking**.
 
 - **Command persona**: "You are a root cause analyst. Trace bugs to their origin."
 - **Sandbox**: `read-only`
@@ -191,7 +191,7 @@ Report each as:
 
 ### Step 7: Fallback
 
-Follow `commands/shared/fallback.md`. Use Grep to find related patterns:
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/shared/fallback.md`. Use Grep to find related patterns:
 
 - Key function/variable names from bug description
 - Error handling: `catch|except|error`

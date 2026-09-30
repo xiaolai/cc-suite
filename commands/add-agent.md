@@ -42,7 +42,7 @@ mkdir -p .cc-suite/agents
 cp "${CLAUDE_PLUGIN_ROOT}/templates/agents/<preset-name>.md" ".cc-suite/agents/<preset-name>.md"
 ```
 
-If `<preset-name>` does not match a file under `${CLAUDE_PLUGIN_ROOT}/templates/agents/`, stop before copying and report: `No preset named '<preset-name>'. Available presets: {list from the table above}. Re-run with one of those names or with --custom.`
+If `<preset-name>` does not match a file under `${CLAUDE_PLUGIN_ROOT}/templates/agents/`, stop before copying and report: `No preset named '<preset-name>'. Available presets: {list from the ls output above}. Re-run with one of those names or with --custom.`
 
 If the file already exists, ask the user whether to overwrite, edit, or cancel.
 
@@ -141,7 +141,7 @@ Show the user:
 ### Next steps
 
 - Edit `.cc-suite/agents/<name>.md` to refine the system prompt — the value
-  system is the load-bearing part. Re-run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/bridge_agents.py` after edits.
+  system is the load-bearing part. Re-run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge_agents.py"` after edits.
 - **Restart Claude Code** so the MCP loader picks up the new server.
 - After restart, invoke as: `Use the mcp__<name>__<tool_name> tool to ask...`
 - Codex picks up `.codex/config.toml` changes on next invocation — no restart needed.

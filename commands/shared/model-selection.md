@@ -1,7 +1,11 @@
 ---
 description: "Shared: load project config, run preflight discovery, present model/effort/sandbox choices"
 user-invocable: false
+disable-model-invocation: true
 ---
+
+> **Plugin root:** this file is read as plain text, so `${CLAUDE_PLUGIN_ROOT}` below is not expanded, and it is unset in your shell. Before running any command here, replace it with this plugin's root: the directory two levels above this file (`<root>/commands/shared/`).
+
 <!-- Shared partial: dynamic model selection via codex-preflight -->
 <!-- Referenced by the Codex-delegating commands. Do not use as a standalone command. -->
 
@@ -136,7 +140,7 @@ Validate `{config_default_sandbox}` against the preflight `sandbox_levels` array
 
 ### Step D: Apply project config to Codex calls
 
-The prompt preamble is built ONLY by the canonical recipe in `commands/shared/codex-call.md` (persona, provenance disclosure, delegation boundary, optional conventions, config parts). Do not rebuild or partially restate it here — this partial's job is to supply the config values that recipe consumes:
+The prompt preamble is built ONLY by the canonical recipe in `${CLAUDE_PLUGIN_ROOT}/commands/shared/codex-call.md` (persona, provenance disclosure, delegation boundary, optional conventions, config parts). Do not rebuild or partially restate it here — this partial's job is to supply the config values that recipe consumes:
 
 1. **Preamble config parts** (scoped by command kind — the generated config defines Audit Focus and Skip Patterns as audit-specific):
    - `{config_project_instructions}` feeds part 6 of the canonical preamble on **every** Codex call. It is NOT optional — when the config provides it, it MUST reach the preamble (there is no separate developer-instructions channel in `codex exec`).

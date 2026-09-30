@@ -38,7 +38,7 @@ AskUserQuestion:
 
 ### Step 2: Discover Plugin Artifacts
 
-Follow `commands/shared/plugin-discover.md` to:
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/shared/plugin-discover.md` to:
 1. Resolve `{plugin_dir}` to `{plugin_root}`
 2. Read and validate the plugin manifest
 3. Discover all artifacts (commands, shared partials, agents, skills, hooks, MCP config)

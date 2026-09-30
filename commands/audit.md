@@ -11,7 +11,7 @@ $ARGUMENTS
 
 ## Model & Settings Selection
 
-Follow the instructions in `commands/shared/model-selection.md` to discover available models and present choices.
+Follow the instructions in `${CLAUDE_PLUGIN_ROOT}/commands/shared/model-selection.md` to discover available models and present choices.
 
 - **Recommended model**: first available from preflight (full) / second available (mini)
 - **Recommended reasoning effort**: `high` (full) / `medium` (mini)
@@ -57,7 +57,7 @@ Adjust recommended model/effort based on chosen type (full → first available m
 
 ### Step 2: Scope & Files
 
-Follow `commands/shared/scope-parse.md` to parse remaining arguments, enforce skip patterns, and check for trivial scope.
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/shared/scope-parse.md` to parse remaining arguments, enforce skip patterns, and check for trivial scope.
 
 Identify:
 - Technology stack and languages
@@ -78,9 +78,9 @@ For **full audits**, include test files — they are needed for Dimension 7 (Tes
 
 ### Step 3: Audit Execution
 
-If `--background` mode was selected, follow the **Background Execution** section in `commands/shared/codex-call.md` instead of the inline execution below. Build the prompt as described in this step, then hand off to the background runner with `--kind audit`.
+If `--background` mode was selected, follow the **Background Execution** section in `${CLAUDE_PLUGIN_ROOT}/commands/shared/codex-call.md` instead of the inline execution below. Build the prompt as described in this step, then hand off to the background runner with `--kind audit`.
 
-Follow `commands/shared/codex-call.md` for the call pattern (CLI runner) and **Job Tracking**.
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/shared/codex-call.md` for the call pattern (CLI runner) and **Job Tracking**.
 
 - **Command persona**: "You are a thorough security and code quality auditor." (full) / "You are a fast code quality reviewer focused on logic, duplication, and dead code." (mini)
 - **Sandbox**: `read-only`
@@ -173,7 +173,7 @@ Report each issue as: file:line | severity(Critical/High/Medium/Low) | dimension
 
 ### Step 4: Report
 
-Before rendering the report, if the audit produced at least one finding, write the merged findings to `.cc-suite/audits/audit-{YYYYMMDD-HHMMSS}-findings.md` (create the directory if missing) using the findings-file format from `commands/audit-fix.md` Step 2b, with every row's Status set to `open`. Mention the path in the report header. If the write fails, display the findings inline, note that no findings file was persisted, and continue — the report itself is the primary output. A durable findings file survives context compaction in long sessions and lets a later fix pass start from the audit's exact output instead of re-auditing.
+Before rendering the report, if the audit produced at least one finding, write the merged findings to `.cc-suite/audits/audit-{YYYYMMDD-HHMMSS}-findings.md` (create the directory if missing) using the findings-file format from `${CLAUDE_PLUGIN_ROOT}/commands/audit-fix.md` Step 2b, with every row's Status set to `open`. Mention the path in the report header. If the write fails, display the findings inline, note that no findings file was persisted, and continue — the report itself is the primary output. A durable findings file survives context compaction in long sessions and lets a later fix pass start from the audit's exact output instead of re-auditing.
 
 #### Mini Report
 
@@ -293,7 +293,7 @@ Before rendering the report, if the audit produced at least one finding, write t
 
 ### Step 5: Fallback
 
-Follow `commands/shared/fallback.md`. Use Grep to search for common issues:
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/shared/fallback.md`. Use Grep to search for common issues:
 
 - Dead code markers: `TODO|FIXME|HACK|XXX|DEPRECATED`
 - Security patterns: `password|api_key|secret|token|eval|exec|innerHTML`

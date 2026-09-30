@@ -17,7 +17,7 @@ Audits Claude Code command files (`.md` in `commands/`) across 7 dimensions that
 
 ## Model & Settings Selection
 
-Follow the instructions in `commands/shared/model-selection.md` to discover available models and present choices.
+Follow the instructions in `${CLAUDE_PLUGIN_ROOT}/commands/shared/model-selection.md` to discover available models and present choices.
 
 - **Recommended model**: first available from preflight
 - **Recommended reasoning effort**: `high`
@@ -73,7 +73,7 @@ If no commands found → "No command .md files found. Provide a path or run from
 
 ### Step 3: Send Command Files for Audit
 
-Follow `commands/shared/codex-call.md` for the call pattern (CLI runner).
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/shared/codex-call.md` for the call pattern (CLI runner).
 
 - **Command persona**: "You are a Claude Code command quality auditor. You evaluate slash command definitions for workflow completeness, tool appropriateness, and operational reliability."
 - **Sandbox**: `read-only`
@@ -226,7 +226,7 @@ Display Codex's audit report. Add your own assessment if you disagree or notice 
 
 ### Step 5: Fallback
 
-Follow `commands/shared/fallback.md`.
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/shared/fallback.md`.
 
 1. Read each command file using the Read tool
 2. Walk through all applicable dimensions as described above

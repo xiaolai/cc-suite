@@ -1,6 +1,7 @@
 ---
 description: "Shared: resolve plugin root, validate manifest, discover all artifacts, build cross-reference map"
 user-invocable: false
+disable-model-invocation: true
 ---
 <!-- Shared partial: plugin artifact discovery for Claude Code plugin directories -->
 <!-- Referenced by: audit-plugin. Do not use standalone. -->

@@ -66,7 +66,7 @@ AskUserQuestion:
 
 ### Step 2: Send follow-up to Codex
 
-Resume the session through the CLI runner (per `commands/shared/codex-call.md`):
+Resume the session through the CLI runner (per `${CLAUDE_PLUGIN_ROOT}/commands/shared/codex-call.md`):
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-runner.mjs" \

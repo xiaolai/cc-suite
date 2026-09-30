@@ -1,7 +1,11 @@
 ---
 description: "Shared: Codex call pattern via the CLI runner — developer-instructions builder, fresh/resume calls, timeout/heartbeat, thread handling"
 user-invocable: false
+disable-model-invocation: true
 ---
+
+> **Plugin root:** this file is read as plain text, so `${CLAUDE_PLUGIN_ROOT}` below is not expanded, and it is unset in your shell. Before running any command here, replace it with this plugin's root: the directory two levels above this file (`<root>/commands/shared/`).
+
 <!-- Shared partial: Codex call pattern (developer-instructions builder, runner call, thread handling). -->
 <!-- Referenced by: audit, audit-fix, verify, bug-analyze, review-plan, implement, audit-skill, audit-command, audit-rules, audit-agent, audit-nlp. Do not use standalone. -->
 
@@ -78,7 +82,7 @@ If the runner returns `status` other than `completed` (i.e. `failed` or `stalled
    Job: {jobId} — inspect with /cc-suite:status {jobId}
    Falling back to manual analysis.
    ```
-3. **Skip immediately to the calling command's Fallback section** (`commands/shared/fallback.md`), which performs the same analysis using Claude directly.
+3. **Skip immediately to the calling command's Fallback section** (`${CLAUDE_PLUGIN_ROOT}/commands/shared/fallback.md`), which performs the same analysis using Claude directly.
 4. **If this was a multi-step workflow** (audit→fix→verify) and a middle step fails, report what completed so far, then fall back for the remaining steps.
 
 This guarantees users never wait indefinitely: the runner is bounded by `--timeout-ms` and a missing binary fails in seconds.

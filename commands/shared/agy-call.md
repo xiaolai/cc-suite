@@ -1,7 +1,11 @@
 ---
 description: "Shared: Antigravity CLI (agy) call pattern via the CLI runner — model selection, sandbox mapping, conversation resume, and the limits that differ from Codex"
 user-invocable: false
+disable-model-invocation: true
 ---
+
+> **Plugin root:** this file is read as plain text, so `${CLAUDE_PLUGIN_ROOT}` below is not expanded, and it is unset in your shell. Before running any command here, replace it with this plugin's root: the directory two levels above this file (`<root>/commands/shared/`).
+
 <!-- Shared partial: agy call pattern. Referenced by any command delegating to Antigravity CLI. Do not use standalone. -->
 
 ## agy Call Pattern

@@ -49,7 +49,7 @@ encodes effort in the model display name.
 
 ### Step 3: Run the request
 
-Follow `commands/shared/agy-call.md` and invoke:
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/shared/agy-call.md` and invoke:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/agy-runner.mjs" \

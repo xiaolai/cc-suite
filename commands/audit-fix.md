@@ -32,7 +32,7 @@ The `danger-full-access` sandbox warning below is always shown regardless of `--
 
 ## Model & Settings Selection
 
-Follow the instructions in `commands/shared/model-selection.md` to discover available models and present choices.
+Follow the instructions in `${CLAUDE_PLUGIN_ROOT}/commands/shared/model-selection.md` to discover available models and present choices.
 
 - **Recommended model**: first available from preflight
 - **Recommended reasoning effort**: `high`
@@ -45,21 +45,21 @@ Follow the instructions in `commands/shared/model-selection.md` to discover avai
 
 ### Step 1: Determine audit type and scope
 
-Follow the audit type selection logic in `commands/audit.md` Step 1 to parse `--full`/`--mini` flags from `$ARGUMENTS`, check `{config_default_audit_type}`, and ask the user if neither is set.
+Follow the audit type selection logic in `${CLAUDE_PLUGIN_ROOT}/commands/audit.md` Step 1 to parse `--full`/`--mini` flags from `$ARGUMENTS`, check `{config_default_audit_type}`, and ask the user if neither is set.
 
-Follow `commands/shared/scope-parse.md` for remaining argument parsing, skip pattern enforcement, and trivial scope check.
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/shared/scope-parse.md` for remaining argument parsing, skip pattern enforcement, and trivial scope check.
 
 ### Step 2: Run initial audit
 
-Follow `commands/shared/codex-call.md` for the call pattern (CLI runner — no MCP bridge, no availability ping).
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/shared/codex-call.md` for the call pattern (CLI runner — no MCP bridge, no availability ping).
 
-If the runner returns `failed`/`stalled`, fall back to a manual Claude audit per `commands/shared/fallback.md`, write the findings file per Step 2b, and report the findings — but do not attempt the fix loop. The fix loop requires Codex to apply edits autonomously; without it, report what was found and ask the user to fix manually.
+If the runner returns `failed`/`stalled`, fall back to a manual Claude audit per `${CLAUDE_PLUGIN_ROOT}/commands/shared/fallback.md`, write the findings file per Step 2b, and report the findings — but do not attempt the fix loop. The fix loop requires Codex to apply edits autonomously; without it, report what was found and ask the user to fix manually.
 
 - **Command persona**: "You are a thorough code auditor. Report every issue with exact file:line locations."
 - **Sandbox**: `read-only`
 - **Deadline**: `--timeout-ms 600000` (10 min) per file
 
-Use the audit prompts from `commands/audit.md` (full or mini, matching the chosen type). Run per file — each is its own runner job (own deadline, own heartbeat, isolated blast radius).
+Use the audit prompts from `${CLAUDE_PLUGIN_ROOT}/commands/audit.md` (full or mini, matching the chosen type). Run per file — each is its own runner job (own deadline, own heartbeat, isolated blast radius).
 
 **Save the `threadId`** from the audit result as `{audit_threadId}` for the final report. Note: the fix step changes the sandbox to `workspace-write`, which `resume` cannot do — so the fix and verify steps use **fresh calls** carrying the findings explicitly, not `--resume`.
 
@@ -174,7 +174,7 @@ Store as `{chosen_fixer}`.
 
 ##### If `{chosen_fixer}` is **Codex**:
 
-Use a **fresh** runner call (per `commands/shared/codex-call.md`) at the fix sandbox — not `--resume`, since fixing needs `workspace-write` and resume inherits the audit's `read-only` sandbox. Carry the findings explicitly in the prompt.
+Use a **fresh** runner call (per `${CLAUDE_PLUGIN_ROOT}/commands/shared/codex-call.md`) at the fix sandbox — not `--resume`, since fixing needs `workspace-write` and resume inherits the audit's `read-only` sandbox. Carry the findings explicitly in the prompt.
 
 - **Command persona**: "You are an autonomous code fixer. Fix every finding precisely at the reported location. Do not introduce new findings."
 - **Sandbox**: `{chosen_sandbox}` (typically `workspace-write`)
@@ -194,13 +194,13 @@ Use a **fresh** runner call (per `commands/shared/codex-call.md`) at the fix san
   - Report: what you fixed, what you couldn't fix, and the test results
   ```
 
-If the runner returns `failed`/`stalled`, report the `{jobId}` and fall back per `commands/shared/fallback.md`. Save the result `threadId` as `{fix_threadId}`.
+If the runner returns `failed`/`stalled`, report the `{jobId}` and fall back per `${CLAUDE_PLUGIN_ROOT}/commands/shared/fallback.md`. Save the result `threadId` as `{fix_threadId}`.
 
 Display summary: `git diff --stat` + Codex's fix report (from the runner's `rawOutput`).
 
 #### 3c: Verify fixes
 
-Verification is `read-only`, so it always uses a **fresh** runner call (per `commands/shared/codex-call.md`) — independent of who fixed. This also gives an independent read when Codex was the fixer (a fresh call, not the fixer's own session).
+Verification is `read-only`, so it always uses a **fresh** runner call (per `${CLAUDE_PLUGIN_ROOT}/commands/shared/codex-call.md`) — independent of who fixed. This also gives an independent read when Codex was the fixer (a fresh call, not the fixer's own session).
 
 - **Command persona**: "You are a verification auditor. Only check findings from the provided audit report."
 - **Sandbox**: `read-only`
@@ -219,7 +219,7 @@ Verification is `read-only`, so it always uses a **fresh** runner call (per `com
   - REGRESSED — fix introduced a new problem (describe it)
   ```
 
-Save the result `threadId` as `{verify_threadId}`. If the runner returns `failed`/`stalled`, report the `{jobId}` and fall back per `commands/shared/fallback.md`.
+Save the result `threadId` as `{verify_threadId}`. If the runner returns `failed`/`stalled`, report the `{jobId}` and fall back per `${CLAUDE_PLUGIN_ROOT}/commands/shared/fallback.md`.
 
 After the verify result arrives, update `{findings_file}`: set each verified row's Status to `fixed` / `not-fixed` / `partial` / `regressed` and its Round to the current iteration. Rows verdicted `not-fixed` or `partial` return to the next round's fix set; `regressed` rows stay `regressed` and are reported.
 

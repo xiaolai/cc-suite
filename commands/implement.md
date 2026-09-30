@@ -1,11 +1,11 @@
 ---
-description: Send a plan to Codex MCP for full autonomous implementation — choose model, effort, and sandbox level
+description: Send a plan to Codex through the CLI runner for full autonomous implementation — choose model, effort, and sandbox level
 argument-hint: "<plan-file-or-inline-plan> [--background | --wait]"
 ---
 
 # Codex Implement
 
-Delegate an entire implementation plan to Codex MCP. Claude is the architect, Codex is the builder.
+Delegate an entire implementation plan to Codex through the CLI runner (`codex exec`). Claude is the architect, Codex is the builder.
 
 ## Input
 
@@ -43,7 +43,7 @@ Read the plan content and display a brief summary to the user.
 
 ### Step 2: Let user choose model and settings
 
-Follow the instructions in `commands/shared/model-selection.md` to discover available models and present choices.
+Follow the instructions in `${CLAUDE_PLUGIN_ROOT}/commands/shared/model-selection.md` to discover available models and present choices.
 
 - **Recommended model**: first available from preflight
 - **Recommended reasoning effort**: `medium`
@@ -59,9 +59,9 @@ Show the final configuration:
 - Reasoning effort: {chosen_effort}
 - Sandbox: {chosen_sandbox}
 
-If `--background` mode was selected, follow the **Background Execution** section in `commands/shared/codex-call.md`. Build the prompt as described below, then hand off to the background runner with `--kind implement`.
+If `--background` mode was selected, follow the **Background Execution** section in `${CLAUDE_PLUGIN_ROOT}/commands/shared/codex-call.md`. Build the prompt as described below, then hand off to the background runner with `--kind implement`.
 
-Follow `commands/shared/codex-call.md` for the call pattern (CLI runner) and **Job Tracking**.
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/shared/codex-call.md` for the call pattern (CLI runner) and **Job Tracking**.
 
 - **Command persona**: "You are an autonomous implementation agent. Execute plans completely."
 - **Sandbox**: `{chosen_sandbox}`

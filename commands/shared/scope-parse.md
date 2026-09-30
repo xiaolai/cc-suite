@@ -1,6 +1,7 @@
 ---
 description: "Shared: parse audit scope arguments, enforce skip patterns, detect trivial changes"
 user-invocable: false
+disable-model-invocation: true
 ---
 <!-- Shared partial: scope parsing, trivial check, skip pattern enforcement -->
 <!-- Referenced by: audit, audit-fix, bug-analyze (conditional). Do not use standalone. -->

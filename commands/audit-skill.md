@@ -17,7 +17,7 @@ Audits Claude Code skill files (SKILL.md) across 7 dimensions that matter for sk
 
 ## Model & Settings Selection
 
-Follow the instructions in `commands/shared/model-selection.md` to discover available models and present choices.
+Follow the instructions in `${CLAUDE_PLUGIN_ROOT}/commands/shared/model-selection.md` to discover available models and present choices.
 
 - **Recommended model**: first available from preflight
 - **Recommended reasoning effort**: `high`
@@ -71,7 +71,7 @@ If no skills found → "No SKILL.md files found. Provide a path or run from a di
 
 ### Step 3: Send Skill Files for Audit
 
-Follow `commands/shared/codex-call.md` for the call pattern (CLI runner).
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/shared/codex-call.md` for the call pattern (CLI runner).
 
 - **Command persona**: "You are a Claude Code skill quality auditor. You evaluate SKILL.md files for triggering reliability, teaching effectiveness, and context efficiency."
 - **Sandbox**: `read-only`
@@ -218,7 +218,7 @@ Display Codex's audit report. Add your own assessment if you disagree or notice 
 
 ### Step 5: Fallback
 
-Follow `commands/shared/fallback.md`.
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/shared/fallback.md`.
 
 1. Read each SKILL.md using the Read tool
 2. Walk through all applicable dimensions as described above

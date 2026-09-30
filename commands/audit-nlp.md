@@ -19,7 +19,7 @@ Unlike the targeted auditors (`/audit-skill`, `/audit-command`, `/audit-agent`, 
 
 ## Model & Settings Selection
 
-Follow the instructions in `commands/shared/model-selection.md` to discover available models and present choices.
+Follow the instructions in `${CLAUDE_PLUGIN_ROOT}/commands/shared/model-selection.md` to discover available models and present choices.
 
 - **Recommended model**: first available from preflight
 - **Recommended reasoning effort**: `high`
@@ -123,7 +123,7 @@ Detected project types:
 
 For each category with discovered files, apply the audit dimensions defined below for that category (A1–A3, B1–B3, C1–C3, D1–D3, or E1–E3).
 
-Follow `commands/shared/codex-call.md` for the call pattern (CLI runner).
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/shared/codex-call.md` for the call pattern (CLI runner).
 
 - **Command persona**: "You are a natural language programming auditor. You evaluate all forms of LLM-oriented artifacts — prompts, agents, skills, commands, rules, specs — as executable programs that must be correct, consistent, and effective."
 - **Sandbox**: `read-only`
@@ -323,7 +323,7 @@ After auditing each category, check for contradictions BETWEEN categories:
 
 ### Step 6: Fallback
 
-Follow `commands/shared/fallback.md`.
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/shared/fallback.md`.
 
 1. Read all discovered files using the Read tool
 2. Classify each file into categories A-E

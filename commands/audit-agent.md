@@ -17,7 +17,7 @@ Audits Claude Code agent definitions (`.md` files in `agents/`) across 7 dimensi
 
 ## Model & Settings Selection
 
-Follow the instructions in `commands/shared/model-selection.md` to discover available models and present choices.
+Follow the instructions in `${CLAUDE_PLUGIN_ROOT}/commands/shared/model-selection.md` to discover available models and present choices.
 
 - **Recommended model**: first available from preflight
 - **Recommended reasoning effort**: `high`
@@ -71,7 +71,7 @@ If no agents found → "No agent .md files found. Provide a path or run from a d
 
 ### Step 3: Send Agent Files for Audit
 
-Follow `commands/shared/codex-call.md` for the call pattern (CLI runner).
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/shared/codex-call.md` for the call pattern (CLI runner).
 
 - **Command persona**: "You are a Claude Code agent quality auditor. You evaluate agent definitions for triggering reliability, system prompt effectiveness, and operational safety."
 - **Sandbox**: `read-only`
@@ -243,7 +243,7 @@ Display Codex's audit report. Add your own assessment if you disagree or notice 
 
 ### Step 5: Fallback
 
-Follow `commands/shared/fallback.md`.
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/shared/fallback.md`.
 
 1. Read each agent file using the Read tool
 2. Parse frontmatter: extract description, model, tools, skills, color

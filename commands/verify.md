@@ -11,7 +11,7 @@ $ARGUMENTS
 
 ## Model & Settings Selection
 
-Follow the instructions in `commands/shared/model-selection.md` to discover available models and present choices.
+Follow the instructions in `${CLAUDE_PLUGIN_ROOT}/commands/shared/model-selection.md` to discover available models and present choices.
 
 - **Recommended model**: second available from preflight (verification needs less power). If only one model is available, use it.
 - **Recommended reasoning effort**: `medium`
@@ -43,7 +43,7 @@ And STOP.
 
 ### Step 2: Verify with Codex
 
-Follow `commands/shared/codex-call.md` for the call pattern (CLI runner).
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/shared/codex-call.md` for the call pattern (CLI runner).
 
 - **Command persona**: "You are a verification auditor. Only check findings from a previous audit report."
 - **Sandbox**: `read-only`
@@ -132,7 +132,7 @@ prompt: "Your ONLY job is to confirm fixes from a previous audit.
 
 ### Step 4: Fallback
 
-Follow `commands/shared/fallback.md`.
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/shared/fallback.md`.
 
 1. Parse the audit report to extract all findings by dimension
 2. Read each file at the specified lines

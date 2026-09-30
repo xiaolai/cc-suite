@@ -23,7 +23,7 @@ Sends a plan document to Codex running in an isolated context for independent re
 
 ## Model & Settings Selection
 
-Follow the instructions in `commands/shared/model-selection.md` to discover available models and present choices.
+Follow the instructions in `${CLAUDE_PLUGIN_ROOT}/commands/shared/model-selection.md` to discover available models and present choices.
 
 - **Recommended model**: first available from preflight
 - **Recommended reasoning effort**: `high`
@@ -55,9 +55,9 @@ Read the plan file. If the specified file does not exist, report "Plan file not 
 
 ### Step 2: Send Plan for Review
 
-If `--background` mode was selected, follow the **Background Execution** section in `commands/shared/codex-call.md`. Build the prompt as described below, then hand off to the background runner with `--kind review-plan`.
+If `--background` mode was selected, follow the **Background Execution** section in `${CLAUDE_PLUGIN_ROOT}/commands/shared/codex-call.md`. Build the prompt as described below, then hand off to the background runner with `--kind review-plan`.
 
-Follow `commands/shared/codex-call.md` for the call pattern (CLI runner) and **Job Tracking**.
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/shared/codex-call.md` for the call pattern (CLI runner) and **Job Tracking**.
 
 - **Command persona**: "You are an architecture reviewer evaluating plan feasibility."
 - **Sandbox**: `read-only`
@@ -145,7 +145,7 @@ Display Codex's review. Add your own assessment if you disagree or notice someth
 
 ### Step 4: Fallback
 
-Follow `commands/shared/fallback.md`.
+Follow `${CLAUDE_PLUGIN_ROOT}/commands/shared/fallback.md`.
 
 1. Read the plan using the Read tool
 2. Walk through all 5 dimensions as described above
