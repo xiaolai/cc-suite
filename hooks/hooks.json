@@ -1,5 +1,4 @@
 {
-  "description": "Session lifecycle management and optional stop-time review gate for cc-suite.",
   "hooks": {
     "SessionStart": [
       {

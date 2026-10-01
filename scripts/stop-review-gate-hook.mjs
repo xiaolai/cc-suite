@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 
 import process from "node:process";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { reviewFingerprint } from "./lib/review-fingerprint.mjs";
 import { spawnSync } from "node:child_process";
 
 import { readHookInput } from "./lib/hook-input.mjs";
@@ -179,6 +182,20 @@ function main() {
     return;
   }
 
+  const cacheFile = join(workspaceRoot, '.cc-suite', 'stop-review-cache.json');
+  let fingerprint;
+  try {
+    fingerprint = reviewFingerprint(workspaceRoot);
+    try {
+      const cached = JSON.parse(readFileSync(cacheFile, 'utf8'));
+      if (cached.fingerprint === fingerprint && cached.model === STOP_REVIEW_MODEL && cached.session === input.session_id && cached.schema === 1) {
+        logNote(runningNote); return;
+      }
+    } catch { /* first review or invalid cache: review normally */ }
+  } catch {
+    emitDecision({ decision: 'block', reason: 'Stop-time review could not fingerprint this worktree. No cached pass can be used.' }); return;
+  }
+
   // Check codex availability. The gate is opt-in, so fail closed: a missing
   // reviewer must block like any other review failure, not silently allow.
   const codexStatus = binaryAvailable("codex");
@@ -203,6 +220,17 @@ function main() {
     return;
   }
 
+  try {
+    if (reviewFingerprint(workspaceRoot) !== fingerprint) {
+      emitDecision({ decision: 'block', reason: 'The worktree changed during review. Review the new diff before finishing.' }); return;
+    }
+  } catch {
+    emitDecision({ decision: 'block', reason: 'Could not verify that the reviewed worktree is unchanged.' }); return;
+  }
+  try {
+    mkdirSync(join(workspaceRoot, '.cc-suite'), { recursive: true });
+    writeFileSync(cacheFile, JSON.stringify({ schema: 1, fingerprint, model: STOP_REVIEW_MODEL, session: input.session_id }));
+  } catch { /* a cache failure cannot invent a pass; this review itself succeeded */ }
   logNote(runningNote);
 }
 

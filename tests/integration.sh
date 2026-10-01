@@ -2141,6 +2141,7 @@ cleanup
 section "T61: stop-review-gate-hook.mjs — no removed approval flags"
 make_tmp
 
+git init -q
 mkdir -p bin state
 cat > bin/codex <<'CODEX'
 #!/bin/sh

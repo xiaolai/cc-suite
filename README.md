@@ -6,7 +6,7 @@ One Claude Code plugin to synchronize **Claude Code**, **Codex CLI**, and **Anti
 
 ## Why
 
-Each tool reads from its own files. `CLAUDE.md` and `AGENTS.md` sit next to each other and drift. Skills written for Claude aren't visible to Codex. Hooks must be maintained in two places. MCP servers declared in `.mcp.json` are invisible to Codex's `.codex/config.toml`. And there's no built-in way to say "ask Codex for an adversarial review" from Claude, or "ask Claude to plan this" from Codex.
+Each tool reads from its own files. Older setups can maintain competing instruction files; current Claude can read AGENTS.md directly. Skills written for Claude aren't visible to Codex. Hooks must be maintained in two places. MCP servers declared in `.mcp.json` are invisible to Codex's `.codex/config.toml`. And there's no built-in way to say "ask Codex for an adversarial review" from Claude, or "ask Claude to plan this" from Codex.
 
 `cc-suite` fixes all of this with a single plugin install:
 
@@ -388,3 +388,12 @@ another tool's directory.
 ## License
 
 ISC
+
+## Workflow ownership
+
+Claude Code 2.1.277+ reads AGENTS.md directly when no applicable CLAUDE file masks it. A thin
+CLAUDE import remains a compatibility option; it is not required on every current installation.
+Use cc-suite for cross-tool execution and configuration. When dev-team owns planning, implementation
+and independent review, avoid starting a second orchestration loop here. The opt-in Stop review
+caches a successful review only for the same session, model and exact diff, including untracked
+files. Changed content always requires another review; cache or fingerprint failures never create a pass.
