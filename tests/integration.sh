@@ -2953,6 +2953,191 @@ assert_contains "halfway-after.txt" "cannot see .claude/skills here"
 cleanup
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# T84  CRLF from python3 must never reach a bash consumer (issue #7)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Python writes CRLF in text mode on Windows; bash strips only the LF. The
+# reported symptom was cosmetic (a model pin never matching the catalogue), but
+# the same artifact makes `tool_enabled`'s `grep -qx` match nothing, so every
+# tool reads as DISABLED and the bridge silently skips work the project asked
+# for. The fake python3 below reproduces Windows faithfully for a bash-side
+# strip: it runs the real interpreter and translates LF to CRLF on stdout,
+# preserving the exit status the callers depend on.
+section "T84: CRLF-emitting python3 must not disable every tool"
+make_tmp
+
+REAL_PY="$(command -v python3)"
+mkdir -p bin
+cat > bin/python3 <<EOF
+#!/bin/bash
+"$REAL_PY" "\$@" | sed 's/\$/\r/'
+exit \${PIPESTATUS[0]}
+EOF
+chmod +x bin/python3
+
+# Prove the fake really does emit CRLF, or the rest of this section proves nothing.
+if PATH="$PWD/bin:$PATH" python3 -c "print('x')" | od -c | grep -q '\\r'; then
+  ok_msg "fake python3 emits CRLF (Windows text mode reproduced)"
+else
+  fail_msg "fake python3 does not emit CRLF — T84 would pass vacuously"
+fi
+# ...and that it still reports the real exit status, which init.sh depends on.
+if PATH="$PWD/bin:$PATH" python3 -c "import sys; sys.exit(3)"; then
+  fail_msg "fake python3 masked a non-zero exit status"
+else
+  [ "$?" = "3" ] && ok_msg "fake python3 preserves exit status" \
+                 || fail_msg "fake python3 changed the exit status"
+fi
+
+printf '# X\n' > AGENTS.md
+printf '## Enabled Tools\n- [x] claude\n- [x] codex\n- [x] antigravity\n' > .cc-suite.md
+
+_crlf_status="$(PATH="$PWD/bin:$PATH" bash "$SCRIPTS/status.sh" 2>/dev/null)"
+printf '%s' "$_crlf_status" > crlf-status.txt
+# The regression: with CRLF unstripped every tool_enabled call fails, and the
+# report claims the project selected nothing.
+assert_not_contains "crlf-status.txt" "(Codex is not enabled)"
+assert_not_contains "crlf-status.txt" "(Antigravity is not enabled)"
+assert_contains     "crlf-status.txt" "enabled tools: claude,codex,antigravity"
+
+# A raw CR must not survive into the rendered report either: it returns the
+# cursor to column 0 and garbles whatever was already on the line.
+if printf '%s' "$_crlf_status" | grep -q $'\r'; then
+  fail_msg "status.sh emitted a raw CR into its report"
+else
+  ok_msg "status.sh report is free of raw CR"
+fi
+
+# bridge_mcp.sh must still see codex as enabled and write the projection.
+mkdir -p .codex && printf '# existing\n' > .codex/config.toml
+cat > .mcp.json <<'JSON'
+{"mcpServers": {"demo": {"type": "stdio", "command": "cmd"}}}
+JSON
+PATH="$PWD/bin:$PATH" bash "$SCRIPTS/bridge_mcp.sh" >/dev/null 2>&1 || true
+assert_contains ".codex/config.toml" "[mcp_servers.demo]"
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T85  static guard — every bash capture of python3 stdout strips CR
+# ═══════════════════════════════════════════════════════════════════════════════
+# T84 covers the paths it exercises; this covers the ones it does not, and the
+# ones that do not exist yet. The reporter of #7 looked only at `while read`
+# loops and concluded there was a single site — there were eleven, and three
+# identical slug loops in the very file they quoted.
+section "T85: no unguarded python3 capture in scripts/*.sh"
+make_tmp
+
+python3 - "$SCRIPTS" <<'PY' > guard.txt 2>&1
+import pathlib, sys
+scripts = pathlib.Path(sys.argv[1])
+unguarded = []
+total = 0
+for f in sorted(scripts.glob("*.sh")):
+    lines = f.read_text().splitlines()
+    for i, line in enumerate(lines):
+        if "python3" in line and ("$(" in line or "< <(" in line):
+            total += 1
+            # The capture and its strip may be separated by a heredoc body.
+            window = "\n".join(lines[i:i + 45])
+            if "$'\\r'" not in window:
+                unguarded.append(f"{f.name}:{i + 1}: {line.strip()[:80]}")
+print(f"TOTAL {total}")
+for u in unguarded:
+    print(f"UNGUARDED {u}")
+PY
+
+if grep -q "^UNGUARDED" guard.txt; then
+  fail_msg "python3 capture with no CR strip — CRLF would reach bash on Windows:"
+  grep "^UNGUARDED" guard.txt | sed 's/^/      /'
+else
+  _n="$(grep '^TOTAL' guard.txt | awk '{print $2}')"
+  ok_msg "all ${_n} python3 capture site(s) strip CR"
+fi
+
+cleanup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# T86  grok-preflight merges config.toml-declared models (issue #4)
+# ═══════════════════════════════════════════════════════════════════════════════
+# models_cache.json only ever holds models the backend served, so a locally
+# declared `[model.<slug>]` was missing from the reported catalog. The schema
+# here is confirmed against the shipped grok binary, including the quoted-key
+# form and the `[model_providers.*]` lookalike that must NOT be read as a model.
+section "T86: grok-preflight merges locally declared models from config.toml"
+make_tmp
+
+mkdir -p fakegrok/bin home/.grok
+printf '#!/bin/sh\necho 1.0.46\n' > fakegrok/bin/grok
+chmod +x fakegrok/bin/grok
+printf '{"key":"abcdefghijkl"}' > home/.grok/auth.json
+cat > home/.grok/models_cache.json <<'JSON'
+{"default_model":"grok-4.5","models":{"grok-4.5":{"info":{"name":"Grok 4.5","description":"stock"}}}}
+JSON
+cat > home/.grok/config.toml <<'TOML'
+[models]
+default = "my-custom-model"
+
+[model.my-custom-model]
+name = "Custom"
+
+[model."bedrock-grok-4.6"]
+region = "us-east-1"
+
+[model_providers.messages-gateway]
+base_url = "https://example.invalid"
+
+[ui]
+banner = """
+[model.phantom]
+"""
+TOML
+
+_grok_preflight() { # $1 = file to write the JSON payload to
+  PATH="$PWD/fakegrok/bin:$PATH" GROK_HOME="$PWD/home/.grok" XAI_API_KEY="" \
+    bash "$SCRIPTS/grok-preflight.sh" > "$1"
+}
+_pf_field() { # $1 = payload file, $2 = key -> writes the value to $3
+  python3 -c 'import json,sys; v=json.load(open(sys.argv[1]))[sys.argv[2]]; print(json.dumps(v) if isinstance(v,list) else v)' \
+    "$1" "$2" > "$3"
+}
+
+_grok_preflight pf.json
+_pf_field pf.json models models.txt
+_pf_field pf.json default_model default.txt
+
+assert_contains models.txt "my-custom-model"
+assert_contains models.txt "bedrock-grok-4.6"
+assert_contains models.txt "grok-4.5"
+
+# The lookalike table and the phantom inside a multi-line string must stay out:
+# both would be user-visible wrong entries in the model picker.
+assert_not_contains models.txt "messages-gateway"
+assert_not_contains models.txt "phantom"
+
+# `[models] default` is the user's explicit pin and outranks the cached default.
+assert_file_content default.txt "my-custom-model"
+
+# A pin naming a model that no longer exists must fall back, not be reported.
+sed 's/^default = "my-custom-model"/default = "deleted-model"/' \
+  home/.grok/config.toml > home/.grok/config.toml.new
+mv home/.grok/config.toml.new home/.grok/config.toml
+_grok_preflight pf_stale.json
+_pf_field pf_stale.json default_model default_stale.txt
+assert_file_content default_stale.txt "grok-4.5"
+
+# Degrading on a config it cannot read is mandatory: the preflight is a gate, and
+# failing it here would block the whole grok lane over a cosmetic catalog read.
+printf 'this is not [ valid toml ===\n' > home/.grok/config.toml
+_grok_preflight pf_garbage.json
+assert_contains pf_garbage.json '"status": "ok"'
+
+rm -f home/.grok/config.toml
+_grok_preflight pf_noconfig.json
+_pf_field pf_noconfig.json models models_noconfig.txt
+assert_file_content models_noconfig.txt '["grok-4.5"]'
+
+cleanup
+# ═══════════════════════════════════════════════════════════════════════════════
 # Summary
 # ═══════════════════════════════════════════════════════════════════════════════
 echo

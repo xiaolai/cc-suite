@@ -41,6 +41,11 @@ if ! ENABLED_TOOLS="$(python3 "${SCRIPT_DIR}/bridge_tools.py" --enabled 2>/dev/n
   echo "       Fix the '## Enabled Tools' section of .cc-suite.md (or remove it), then re-run /cc-suite:init." >&2
   exit 1
 fi
+# Python writes CRLF in text mode on Windows and bash strips only the LF, so a
+# captured value keeps a trailing CR. Strip it at the capture, by parameter
+# expansion rather than a pipe: a pipe would replace python3's exit status with
+# the filter's, and the callers below depend on that status.
+ENABLED_TOOLS="${ENABLED_TOOLS//$'\r'/}"
 [ -n "$ENABLED_TOOLS" ] || ENABLED_TOOLS=$'claude\ncodex\nantigravity'
 
 tool_enabled() { printf '%s\n' "$ENABLED_TOOLS" | grep -qx "$1"; }

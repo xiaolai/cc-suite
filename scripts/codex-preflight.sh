@@ -295,6 +295,15 @@ load_models_cache() {
   # Extract and order model metadata. Do not infer recency from the JSON array
   # order: Codex's cache includes older and special-purpose models alongside
   # the current frontier model.
+  #
+  # Every capture below strips CR. Python writes CRLF in text mode on Windows
+  # and `read -r` strips only the LF, so each slug kept a trailing CR — which is
+  # why a valid model pin never matched the catalogue in /cc-suite:diagnose
+  # (#7). The strip sits in the loop body and after the chain, not in the
+  # python3 branch alone: a trailing CR is a line-ending artifact whoever
+  # produced it, and two of these three branches are jq and grep. Parameter
+  # expansion, never a pipe — a pipe would replace the producer's exit status
+  # with the filter's, and the `||` fallbacks here depend on that status.
   if command -v python3 &>/dev/null; then
     MODELS_DETAIL=$(python3 -c "
 import json, re, sys
@@ -338,6 +347,7 @@ except Exception:
 
     # Also populate AVAILABLE array for backward compat and info output
     while IFS= read -r slug; do
+      slug="${slug%$'\r'}"
       [[ -n "$slug" ]] && AVAILABLE+=("$slug")
     done < <(printf '%s' "$MODELS_DETAIL" | python3 -c "
 import json, sys
@@ -363,15 +373,23 @@ print(json.dumps([effort for effort in preferred if effort in seen], separators=
       | sort_by([.__review_only, .__latest_marker, -.__major, -.__minor, (.priority // 0), .__index])
       | map({slug, display_name: (.display_name // .slug), description: (.description // .slug), priority: (.priority // 0), reasoning_efforts: ([.supported_reasoning_levels[]?.effort] // [])})' "$MODELS_CACHE" 2>/dev/null) || MODELS_DETAIL="[]"
     while IFS= read -r slug; do
+      slug="${slug%$'\r'}"
       [[ -n "$slug" ]] && AVAILABLE+=("$slug")
     done < <(echo "$MODELS_DETAIL" | jq -r '.[].slug' 2>/dev/null)
     REASONING_EFFORTS=$(echo "$MODELS_DETAIL" | jq -c '([.[].reasoning_efforts[]] | unique) as $seen | ["minimal","low","medium","high","xhigh","max","ultra"] | map(select(. as $effort | ($seen | index($effort)) != null))' 2>/dev/null) || REASONING_EFFORTS='["low","medium","high"]'
   else
     while IFS= read -r slug; do
+      slug="${slug%$'\r'}"
       [[ -n "$slug" ]] && AVAILABLE+=("$slug")
     done < <(grep -o '"slug"[[:space:]]*:[[:space:]]*"[^"]*"' "$MODELS_CACHE" 2>/dev/null \
       | sed 's/.*"\([^"]*\)"$/\1/')
   fi
+
+  # Raw CR is never valid inside a JSON string, so this can only drop the
+  # line-ending artifact. After the chain: it covers the python3 and jq
+  # branches without duplicating the strip in each.
+  MODELS_DETAIL="${MODELS_DETAIL//$'\r'/}"
+  REASONING_EFFORTS="${REASONING_EFFORTS//$'\r'/}"
 
   if [[ ${#AVAILABLE[@]} -eq 0 ]]; then
     MODELS_DETAIL="[]"

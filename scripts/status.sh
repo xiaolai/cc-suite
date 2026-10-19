@@ -49,6 +49,13 @@ _suppressing_claude_md() {
 # reporting it as broken trains users to ignore this report. Falls back to the
 # same defaults as the bridges when the file or section is missing.
 ENABLED_TOOLS="$(python3 "${SCRIPT_DIR}/bridge_tools.py" --enabled 2>/dev/null || true)"
+# Python writes CRLF in text mode on Windows and bash strips only the LF, so a
+# captured value keeps a trailing CR. Strip it at the capture, by parameter
+# expansion rather than a pipe: a pipe would replace python3's exit status with
+# the filter's, and the callers below depend on that status.
+# Without it `tool_enabled` below matches nothing and every tool reads as
+# disabled, so this report calls a healthy project entirely unbridged.
+ENABLED_TOOLS="${ENABLED_TOOLS//$'\r'/}"
 [ -n "$ENABLED_TOOLS" ] || ENABLED_TOOLS=$'claude\ncodex\nantigravity'
 tool_enabled() { printf '%s\n' "$ENABLED_TOOLS" | grep -qx "$1"; }
 
@@ -175,6 +182,7 @@ try:
 except Exception:
     print(0)
 ' 2>/dev/null || echo 0)
+    _agy_mcp_count="${_agy_mcp_count//$'\r'/}"  # CRLF strip, see ENABLED_TOOLS above
     mark ".agents/mcp_config.json → agy" ok "${_agy_mcp_count} workspace server(s), cc-suite-managed"
   else
     mark ".agents/mcp_config.json → agy" warn "user-managed config — cc-suite will not overwrite it"
@@ -300,6 +308,9 @@ else:
     print(f"ok\t{len(declared)} advisor(s) declared and registered")
 PY
 )
+  # A CR here is not merely cosmetic: it returns the cursor to column 0 mid-line
+  # and garbles the status readout. See the ENABLED_TOOLS note above.
+  _advisor_report="${_advisor_report//$'\r'/}"
   _tab=$'\t'
   case "$_advisor_report" in
     ok"$_tab"*)   mark ".cc-suite/agents/" ok   "${_advisor_report#ok"$_tab"}" ;;
@@ -434,6 +445,7 @@ for line in config.splitlines():
         raise SystemExit(0)
 print("untrusted")
 ' "$CODEX_CFG" "$REPO_ABS" 2>/dev/null)
+  _trust="${_trust//$'\r'/}"  # CRLF strip, see ENABLED_TOOLS above
   if [ "${_trust:-untrusted}" = "trusted" ]; then
     mark "project trust" ok "trusted — hooks, rules, and .codex/config.toml are active"
   else
@@ -455,6 +467,7 @@ from diagnose import plugin_hooks_enabled
 text = pathlib.Path(sys.argv[2]).read_text(encoding="utf-8", errors="replace")
 print("enabled" if plugin_hooks_enabled(text) else "disabled")
 ' "$SCRIPT_DIR" "$CODEX_CFG" 2>/dev/null)
+  _plugin_hooks="${_plugin_hooks//$'\r'/}"  # CRLF strip, see ENABLED_TOOLS above
   case "${_plugin_hooks:-}" in
     enabled)
       mark "plugin_hooks" ok "enabled in ~/.codex/config.toml" ;;

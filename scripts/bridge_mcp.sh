@@ -19,6 +19,13 @@ export CC_SUITE_SCRIPT_DIR="$SCRIPT_DIR"
 # back to claude/codex/antigravity when the file or section is absent, so
 # pre-selection projects keep their old behavior.
 ENABLED_TOOLS="$(python3 "${SCRIPT_DIR}/bridge_tools.py" --enabled 2>/dev/null || true)"
+# Python writes CRLF in text mode on Windows and bash strips only the LF, so a
+# captured value keeps a trailing CR. Strip it at the capture, by parameter
+# expansion rather than a pipe: a pipe would replace python3's exit status with
+# the filter's, and the callers below depend on that status.
+# Without it `tool_enabled` below matches nothing and every tool silently reads
+# as disabled, so the bridge skips work the project asked for.
+ENABLED_TOOLS="${ENABLED_TOOLS//$'\r'/}"
 [ -n "$ENABLED_TOOLS" ] || ENABLED_TOOLS=$'claude\ncodex\nantigravity'
 tool_enabled() { printf '%s\n' "$ENABLED_TOOLS" | grep -qx "$1"; }
 

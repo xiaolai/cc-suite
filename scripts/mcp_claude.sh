@@ -59,6 +59,10 @@ TOML=".codex/config.toml"
 TOML_TARGET="$TOML"
 if [ -L "$TOML" ]; then
   TOML_TARGET="$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$TOML")"
+  # See the CRLF note in bridge_mcp.sh: a trailing CR here becomes part of the
+  # path, and every test and write against it then targets a name that does not
+  # exist.
+  TOML_TARGET="${TOML_TARGET//$'\r'/}"
   [ -d "$(dirname "$TOML_TARGET")" ] \
     || die "$TOML links to $TOML_TARGET, whose directory does not exist — repair the link, then re-run"
 fi
