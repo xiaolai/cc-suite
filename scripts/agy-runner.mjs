@@ -217,6 +217,19 @@ function goDuration(ms) {
 // Anything that writes needs --dangerously-skip-permissions: headless `-p` mode
 // has no TTY to answer a permission prompt, so without it the run would block
 // until the deadline and be killed.
+//
+// read-only deliberately does NOT get --dangerously-skip-permissions, even
+// though adding it would make shell tools work in that lane (#9). agy documents
+// the flag as "auto-approve all tool permission requests" while --sandbox is
+// only "terminal restrictions" -- so unless the sandbox independently blocks
+// file writes, pairing them would quietly grant write access inside the lane
+// every review and audit path relies on being read-only. That is a boundary
+// change, so it needs evidence rather than inference. The decisive check: run
+// `agy --sandbox --dangerously-skip-permissions -p "<edit a file>"` and see
+// whether the file changes. If the sandbox does block the write, pairing them
+// is correct and this comment should go. Until then the cost of being wrong is
+// one-directional, and the empty-output guard in executeAgy makes the denial
+// loud instead of silent.
 function buildAgyArgs(args) {
   const agyArgs = [];
 
@@ -247,7 +260,21 @@ function buildAgyArgs(args) {
   // own skills for delegating to Claude Code. Its skill schema has no
   // allow_implicit_invocation switch, so the prompt is the only place the
   // hand-back can be refused. See lib/delegation-boundary.mjs.
-  agyArgs.push("-p", withDelegationBoundary(args.prompt));
+  // In read-only the runner passes --sandbox WITHOUT
+  // --dangerously-skip-permissions, so any shell tool the delegate reaches for
+  // is auto-denied by headless mode and the run returns nothing (#9). Telling it
+  // up front to prefer file reads avoids spending the whole deadline discovering
+  // that. This is guidance, not enforcement -- the denial is still what stops a
+  // command, and the empty-output guard in executeAgy still reports it.
+  const readOnlyNote =
+    args.sandbox === "read-only"
+      ? "Execution context: a headless, read-only session with no interactive " +
+        "terminal. Shell and terminal commands are auto-denied and will return " +
+        "nothing, so do not run them (no `git diff`, `ls`, etc.). Use your " +
+        "file-reading tools instead, and work from the context provided.\n\n"
+      : "";
+
+  agyArgs.push("-p", readOnlyNote + withDelegationBoundary(args.prompt));
 
   return agyArgs;
 }
@@ -420,6 +447,32 @@ function executeAgy(cwd, args, logFile) {
         finish({
           status: "stalled",
           errorMessage: "agy reported: timeout waiting for response",
+          conversationId,
+          rawOutput,
+        });
+        return;
+      }
+      // Exit 0 with nothing on stdout is never a usable answer from this lane,
+      // and it is the shape agy takes when headless mode auto-denies a tool: the
+      // model asked for the `command` permission, `-p` has no TTY to prompt on,
+      // jetski denied it and agy still exited 0. Reporting that as `completed`
+      // hands the caller an empty string that looks like a successful review
+      // (#9) -- a silent failure wearing a green badge. Fail loudly instead, and
+      // name the remedy, because the caller cannot see agy's stderr.
+      if (!rawOutput) {
+        const denied = /required the "command" permission|no output produced|dangerously-skip-permissions/i.test(
+          stderrTail,
+        );
+        finish({
+          status: "failed",
+          errorMessage: denied
+            ? "agy produced no output: a tool required the \"command\" permission, " +
+              "which headless mode cannot prompt for, so it was auto-denied. Either add an " +
+              "allow-rule under permissions.allow in agy's settings.json, re-run with " +
+              "--sandbox workspace-write, or tell the delegate to read files instead of " +
+              "running shell commands."
+            : "agy exited 0 but produced no output" +
+              (stderrTail.trim() ? `: ${stderrTail.trim()}` : "."),
           conversationId,
           rawOutput,
         });

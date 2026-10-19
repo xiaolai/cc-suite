@@ -3138,6 +3138,99 @@ assert_file_content models_noconfig.txt '["grok-4.5"]'
 
 cleanup
 # ═══════════════════════════════════════════════════════════════════════════════
+# T87  agy-runner: exit 0 with empty stdout is a failure, not a success (issue #9)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Headless `-p` has no TTY, so when the delegate reaches for a shell tool jetski
+# auto-denies it and agy still exits 0 with nothing on stdout. Reporting that as
+# `completed` hands the caller an empty string shaped exactly like a successful
+# review. The guard must make it loud, and must not break the real success path.
+section "T87: agy-runner treats empty output as failed, not completed"
+make_tmp
+
+mkdir -p bin node-bin
+ln -s "$(command -v node)" node-bin/node
+AGY_PATH="$PWD/bin:$PWD/node-bin:/usr/bin:/bin"
+
+# Reproduces the reported shape: auto-denial text on stderr, nothing on stdout,
+# exit 0.
+cat > bin/agy <<'AGY'
+#!/usr/bin/env bash
+case "$*" in
+  *--version*) echo "agy 1.3.3"; exit 0 ;;
+esac
+echo 'jetski: no output produced — a tool required the "command" permission that headless mode cannot prompt for, so it was auto-denied.' >&2
+exit 0
+AGY
+chmod +x bin/agy
+
+env PATH="$AGY_PATH" HOME="$PWD/home" node "$SCRIPTS/agy-runner.mjs" \
+  --kind agy --sandbox read-only --timeout-ms 20000 -- "review this" \
+  > denied.json 2>/dev/null || true
+
+assert_exit0 python3 -c "import json,sys; json.load(open('denied.json'))"
+assert_contains "denied.json" '"status":"failed"'
+assert_not_contains "denied.json" '"status":"completed"'
+# The caller cannot see agy's stderr, so the remedy has to travel in the result.
+assert_contains "denied.json" "auto-denied"
+assert_contains "denied.json" "permissions.allow"
+
+# Empty output with no recognizable denial text must still fail — the guard keys
+# on "no usable answer", not on matching a specific vendor string that could
+# change in any agy release.
+cat > bin/agy <<'AGY'
+#!/usr/bin/env bash
+case "$*" in
+  *--version*) echo "agy 1.3.3"; exit 0 ;;
+esac
+exit 0
+AGY
+chmod +x bin/agy
+env PATH="$AGY_PATH" HOME="$PWD/home" node "$SCRIPTS/agy-runner.mjs" \
+  --kind agy --sandbox read-only --timeout-ms 20000 -- "review this" \
+  > silent.json 2>/dev/null || true
+assert_contains "silent.json" '"status":"failed"'
+assert_contains "silent.json" "no output"
+
+# Control: a real answer must still complete. Without this the guard could pass
+# by failing everything.
+cat > bin/agy <<'AGY'
+#!/usr/bin/env bash
+case "$*" in
+  *--version*) echo "agy 1.3.3"; exit 0 ;;
+esac
+echo "the review body"
+exit 0
+AGY
+chmod +x bin/agy
+env PATH="$AGY_PATH" HOME="$PWD/home" node "$SCRIPTS/agy-runner.mjs" \
+  --kind agy --sandbox read-only --timeout-ms 20000 -- "review this" \
+  > good.json 2>/dev/null || true
+assert_contains "good.json" '"status":"completed"'
+assert_contains "good.json" "the review body"
+
+# The read-only prompt guard must reach agy, so the delegate is told not to run
+# shell commands before it wastes the deadline finding out.
+cat > bin/agy <<'AGY'
+#!/usr/bin/env bash
+case "$*" in
+  *--version*) echo "agy 1.3.3"; exit 0 ;;
+esac
+# Echo the -p payload back so the test can inspect what the runner sent.
+prev=""
+for a in "$@"; do
+  if [ "$prev" = "-p" ]; then printf '%s\n' "$a"; fi
+  prev="$a"
+done
+exit 0
+AGY
+chmod +x bin/agy
+env PATH="$AGY_PATH" HOME="$PWD/home" node "$SCRIPTS/agy-runner.mjs" \
+  --kind agy --sandbox read-only --timeout-ms 20000 -- "review this" \
+  > prompt.json 2>/dev/null || true
+assert_contains "prompt.json" "auto-denied"
+
+cleanup
+# ═══════════════════════════════════════════════════════════════════════════════
 # Summary
 # ═══════════════════════════════════════════════════════════════════════════════
 echo
