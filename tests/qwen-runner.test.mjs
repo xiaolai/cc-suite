@@ -176,6 +176,11 @@ test("qwen runner enforces sandbox and built-in budgets at the CLI boundary", ()
     assert.ok(excluded.includes("zoom_image"));
     assert.ok(excluded.includes("computer_use__click"));
     assert.equal(excluded.includes("read_file"), false);
+    // qwen-code 0.24.x advertises these two in the Plan-mode init event; if
+    // they are not excluded the exact-empty boundary check rejects the run
+    // outright (PR #8), so the review lane fails closed on that version.
+    assert.ok(excluded.includes("report_findings"));
+    assert.ok(excluded.includes("tool_call"));
     assert.equal(args[args.indexOf("--max-tool-calls") + 1], "4");
     assert.equal(args[args.indexOf("--max-session-turns") + 1], "30");
     assert.match(args[args.indexOf("--max-wall-time") + 1], /^\d+s$/);

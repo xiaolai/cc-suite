@@ -567,9 +567,14 @@ export function consumeQwenEvent(state, event) {
       inspectResult(state, event);
       return;
     case "stream_event": {
-      // qwen-code 0.24.x wraps internal state notices (e.g. goal_state) in a
-      // stream_event envelope. Allow only known-inert internal types; anything
-      // that could carry tool activity still fails closed. (local patch)
+      // qwen-code 0.24.x wraps internal state notices in a stream_event
+      // envelope: {"type":"stream_event","event":{"type":"goal_state",...}}.
+      // Only the known-inert goal_state subtype is accepted. Every other
+      // subtype -- including a missing or non-object inner event -- still
+      // throws, so an envelope carrying tool activity fails closed rather than
+      // being silently ignored. Widen this list only for a subtype proven
+      // incapable of carrying a tool call; the whole point of the observer is
+      // that an event it does not understand stops the run.
       const inner = event.event;
       const innerType = inner && typeof inner === "object" ? inner.type : null;
       if (innerType === "goal_state") return;

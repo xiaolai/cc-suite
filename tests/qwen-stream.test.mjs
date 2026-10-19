@@ -536,3 +536,65 @@ test("a success result with unanswered tool calls fails closed", () => {
     cleanupDir(dir);
   }
 });
+
+// ── qwen-code 0.24.x stream_event envelope (PR #8) ───────────────────────────
+// 0.24.x wraps internal state notices in a stream_event envelope. Accepting it
+// is a widening of what the observer tolerates, so the fail-closed half matters
+// more than the happy path: these assert that only goal_state gets through.
+
+test("a stream_event carrying goal_state is accepted as inert", () => {
+  const dir = makeTempDir("qwen-stream-");
+  try {
+    const state = createQwenStreamState({ cwd: dir, targets: [] });
+    consumeQwenEvent(state, initEvent());
+    assert.doesNotThrow(() =>
+      consumeQwenEvent(state, {
+        type: "stream_event",
+        event: { type: "goal_state", state: "in_progress" },
+      })
+    );
+  } finally {
+    cleanupDir(dir);
+  }
+});
+
+test("a stream_event with any other subtype still fails closed", () => {
+  const dir = makeTempDir("qwen-stream-");
+  try {
+    const state = createQwenStreamState({ cwd: dir, targets: [] });
+    consumeQwenEvent(state, initEvent());
+    // The case that would matter in practice: tool activity smuggled inside the
+    // envelope must not be waved through just because the envelope is known.
+    assert.throws(
+      () => consumeQwenEvent(state, {
+        type: "stream_event",
+        event: { type: "tool_use", name: "run_shell_command" },
+      }),
+      (error) => error.code === "unknown_event"
+    );
+  } finally {
+    cleanupDir(dir);
+  }
+});
+
+test("a stream_event with a missing or non-object inner event fails closed", () => {
+  const dir = makeTempDir("qwen-stream-");
+  try {
+    for (const payload of [
+      { type: "stream_event" },
+      { type: "stream_event", event: null },
+      { type: "stream_event", event: "goal_state" },
+      { type: "stream_event", event: {} },
+    ]) {
+      const state = createQwenStreamState({ cwd: dir, targets: [] });
+      consumeQwenEvent(state, initEvent());
+      assert.throws(
+        () => consumeQwenEvent(state, payload),
+        (error) => error.code === "unknown_event",
+        `expected unknown_event for ${JSON.stringify(payload)}`
+      );
+    }
+  } finally {
+    cleanupDir(dir);
+  }
+});

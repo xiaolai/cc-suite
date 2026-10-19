@@ -53,7 +53,8 @@ const MAX_RESUMES_LIMIT = 5;
 // accepting any later stream event. A future unlisted tool therefore fails the
 // init check.
 const QWEN_FORBIDDEN_TOOLS = [
-  // qwen-code 0.24.x internal tools (local patch, report upstream)
+  // Internal tools 0.24.x advertises in the Plan-mode init event. They must be
+  // excluded for the exact-empty boundary check to pass on that version.
   "report_findings",
   "tool_call",
   "edit",
