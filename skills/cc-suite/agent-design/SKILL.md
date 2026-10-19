@@ -172,6 +172,21 @@ python3 "${PLUGIN_ROOT}/scripts/bridge_agents.py"
 
 For Claude to actually see the new MCP server, restart the Claude Code session (the MCP loader reads `.mcp.json` at startup, not on every prompt). Codex picks up `.codex/config.toml` changes per-invocation.
 
+## When a consultation fails
+
+An advisor is reached through a `claude-octopus` MCP server, so a `*_consult`
+call fails in the same ways a `claude_code` call does: runtime and transport
+errors, timeouts, rate limits, and empty results.
+
+The same terminal-failure contract applies, and an advisor consultation is
+always a read-only call: report it as blocked, include the error and any
+`session_id`, and do not silently retry, re-register the server, or substitute
+your own opinion for the advisor's. An advisor that could not be reached has
+given no opinion — saying so is more useful than a guess wearing its name.
+
+The full contract is in `dev-docs/delegation-failure-contract.md` and is carried
+verbatim by every delegating skill.
+
 ## Scope Note
 
 This skill covers **cc-suite advisor agent design** — claude-octopus-backed MCP advisors declared in `.cc-suite/agents/`. It defines the file format, the values-not-procedures prompt convention, model and tool defaults, working-directory scoping, budget caps, and the per-agent timeline model.
