@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -8,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import { makeTempDir, cleanupDir } from "./helpers.mjs";
 
 const PLUGIN_ROOT = path.resolve(
-  path.dirname(new URL(import.meta.url).pathname),
+  path.dirname(fileURLToPath(import.meta.url)),
   ".."
 );
 const SCRIPT = path.join(PLUGIN_ROOT, "scripts", "bridge_tools.py");

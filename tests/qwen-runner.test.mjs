@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import process from "node:process";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -8,7 +9,7 @@ import { spawn, spawnSync } from "node:child_process";
 
 import { cleanupDir, makeTempDir } from "./helpers.mjs";
 
-const PLUGIN_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+const PLUGIN_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const RUNNER = path.join(PLUGIN_ROOT, "scripts", "qwen-runner.mjs");
 const PREFLIGHT = path.join(PLUGIN_ROOT, "scripts", "qwen-preflight.sh");
 
